@@ -97,10 +97,6 @@ export default class extends Controller {
     }
   }
 
-  formatPreview(event) {
-    this.#formatter.formatBody(event.detail.preview)
-  }
-
   recoverPendingMessage(event) {
     const clientMessageId = event.currentTarget.dataset.clientMessageId
     window.dispatchEvent(new CustomEvent("messages:recover", { detail: { clientMessageId } }))

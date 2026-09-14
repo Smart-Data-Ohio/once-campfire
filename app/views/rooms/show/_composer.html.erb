@@ -1,115 +1,38 @@
 <% content_for :footer do %>
-  <div class="composer flex align-end gap position-relative"
+  <div class="composer position-relative"
       data-controller="typing-notifications" data-typing-notifications-active-class="typing-indicator--active">
-    <%= link_to searches_path, class: "btn flex-item-no-shrink composer__context-btn", style: "view-transition-name: input-switcher" do %>
-      <%= image_tag "search.svg", size: 20, aria: { hidden: "true" } %>
-      <span class="for-screen-reader">Search</span>
-    <% end %>
-
-    <turbo-frame id="composer-frame" class="composer__frame min-width flex-item-grow">
+    <turbo-frame id="composer-frame" class="composer__frame min-width">
       <%= composer_form_tag(room) do |form| %>
         <fieldset data-composer-target="fields" contents>
-          <div class="composer__surface">
+          <div class="composer__stack">
             <div class="composer__filelist flex flex--align-center gap flex-wrap" data-composer-target="fileList"></div>
 
-            <div class="composer__markdown-panel"
-                data-composer-target="markdownPanel"
-                data-controller="markdown-editor markdown-preview"
-                data-markdown-preview-url-value="<%= preview_room_messages_path(room) %>">
-              <div class="composer__tabs flex align-center justify-space-between gap">
-                <div class="composer__tablist flex align-center" role="tablist" aria-label="Message editor">
-                  <button type="button" class="composer__tab btn btn--plain" role="tab" aria-selected="true"
-                      data-markdown-preview-target="writeTab" data-action="markdown-preview#showWrite">Write</button>
-                  <button type="button" class="composer__tab btn btn--plain" role="tab" aria-selected="false"
-                      data-markdown-preview-target="previewTab" data-action="markdown-preview#showPreview">Preview</button>
-                </div>
-                <span class="composer__mode-label txt-small txt-subtle" aria-hidden="true">Markdown</span>
-              </div>
-
-              <div data-markdown-preview-target="writePanel">
-                <div class="composer__formatting flex align-center gap" role="toolbar" aria-label="Markdown formatting">
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Heading" aria-label="Heading"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="heading">H</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Bold (Ctrl+B)" aria-label="Bold"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="bold"><strong>B</strong></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Italic (Ctrl+I)" aria-label="Italic"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="italic"><em>I</em></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Strikethrough" aria-label="Strikethrough"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="strike"><s>S</s></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Link (Ctrl+K)" aria-label="Link"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="link">↗</button>
-                  <span class="composer__format-separator" aria-hidden="true"></span>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Quote" aria-label="Quote"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="quote">❯</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Bulleted list" aria-label="Bulleted list"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="list">• List</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Numbered list" aria-label="Numbered list"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="ordered">1.</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Inline code" aria-label="Inline code"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="code">&lt;/&gt;</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Code block" aria-label="Code block"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="fence">```</button>
-                </div>
-
-                <%= form.text_area :markdown_source,
-                      rows: 2,
-                      maxlength: 50_000,
-                      class: "composer__textarea input",
-                      placeholder: "Message ##{room_display_name(room)}",
-                      aria: { multiline: "true", label: "Write a message", describedby: "composer-keyboard-hint" },
-                      data: {
-                        controller: "markdown-autocomplete",
-                        action: "input->markdown-editor#resize input->markdown-preview#sourceChanged input->markdown-autocomplete#search input->typing-notifications#start focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur keydown->markdown-editor#shortcut keydown->composer#submitByKeyboard",
-                        markdown_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
-                        markdown_editor_target: "source",
-                        markdown_preview_target: "source",
-                        composer_target: "markdown",
-                        suggestion_results_placement: "above" } %>
-              </div>
-
-              <div class="composer__preview markdown-preview" role="tabpanel" tabindex="0" hidden
-                  data-markdown-preview-target="previewPanel"></div>
-              <span class="for-screen-reader" aria-live="polite" data-markdown-preview-target="status"></span>
-            </div>
-
-            <div class="composer__rich-panel composer--rich-text" data-composer-target="richTextPanel" hidden>
-              <div class="composer__tabs flex align-center justify-space-between gap">
-                <strong class="composer__rich-heading txt-small">Rich text</strong>
-                <span class="composer__mode-label txt-small txt-subtle">Links pasted here can include a preview</span>
-              </div>
-              <%= form.rich_text_area :body,
-                    rows: 2,
-                    class: "input",
-                    aria: { multiline: "true", label: "Write a message" },
-                    data: {
-                      controller: "rich-autocomplete",
-                      action: rich_text_data_actions,
-                      rich_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
-                      permitted_attachment_types: "application/vnd.actiontext.opengraph-embed",
-                      composer_target: "richText" } %>
-            </div>
-
-            <div class="composer__actions flex align-center gap">
-              <label class="btn btn--borderless txt-small flex-item-no-shrink composer__attachment-btn input--file">
-                <%= image_tag "attachment.svg", size: 20, class: "colorize--black", aria: { hidden: "true" } %>
+            <div class="composer__surface flex align-end gap">
+              <label class="composer__attachment-btn btn btn--borderless flex-item-no-shrink input--file" title="Attach a file">
+                <span class="composer__attachment-mark" aria-hidden="true">+</span>
                 <input type="file" data-action="composer#filePicked" multiple />
                 <span class="for-screen-reader">Attach a file</span>
               </label>
 
-              <button class="composer__mode-btn btn btn--borderless txt-small flex-item-no-shrink" type="button"
-                  aria-label="Rich text" aria-pressed="false" data-action="composer#toggleMode">
-                <%= image_tag "text-options.svg", size: 18, class: "colorize--black", aria: { hidden: "true" } %>
-                <span data-composer-target="modeLabel">Rich text</span>
-              </button>
-
-              <span id="composer-keyboard-hint" class="composer__keyboard-hint txt-small txt-subtle flex-item-grow">
-                <span class="composer__desktop-hint">Enter to send · Shift+Enter for a new line</span>
-                <span class="composer__mobile-hint">Use the send button when ready</span>
-              </span>
+              <div class="composer__editor min-width flex-item-grow" data-controller="markdown-editor">
+                <%= form.text_area :markdown_source,
+                      rows: 1,
+                      maxlength: 50_000,
+                      class: "composer__textarea input",
+                      placeholder: "Message ##{room_display_name(room)}",
+                      aria: { multiline: "true", label: "Write a message" },
+                      data: {
+                        controller: "markdown-autocomplete",
+                        action: "input->markdown-editor#resize input->markdown-autocomplete#search input->typing-notifications#start focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur keydown->markdown-editor#shortcut keydown->composer#submitByKeyboard",
+                        markdown_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
+                        markdown_editor_target: "source",
+                        composer_target: "markdown",
+                        suggestion_results_placement: "above" } %>
+              </div>
 
               <%= form.button name: "send", type: "submit", data: { action: "composer#submit" },
-                    class: "composer__send btn btn--reversed flex-item-no-shrink txt-small" do %>
-                <%= image_tag "arrow-up.svg", size: 18, aria: { hidden: "true" } %>
+                    class: "composer__send btn btn--reversed flex-item-no-shrink" do %>
+                <%= image_tag "arrow-up.svg", size: 17, aria: { hidden: "true" } %>
                 <span class="for-screen-reader">Send Message</span>
               <% end %>
             </div>

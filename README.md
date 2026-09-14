@@ -12,7 +12,7 @@ expect, including:
 - API, with support for bot integrations
 
 This Smart Data fork adds a responsive channel workspace, system light/dark
-themes, and Markdown composition with preview and source-preserving editing.
+themes, and compact Markdown composition with source-preserving editing.
 See the [workspace and Markdown guide](docs/workspace-markdown.md) and
 [self-hosted huddle guide](docs/huddles.md). Build the Docker image from this
 repository to include these additions.

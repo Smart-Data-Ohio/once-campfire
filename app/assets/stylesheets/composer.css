@@ -1,207 +1,144 @@
 /* Message composer */
 .composer {
-  --composer-editor-min-size: 4.5rem;
-  --composer-editor-max-size: min(32vh, 18rem);
+  --composer-editor-min-size: 2.4rem;
+  --composer-editor-max-size: min(32vh, 12rem);
 
   flex: none;
   inline-size: 100%;
-  padding: var(--block-space-half) calc(var(--inline-space) + 1vw);
+  padding: 0.55rem clamp(0.75rem, 2vw, 1.5rem) max(0.55rem, env(safe-area-inset-bottom));
 }
 
 .composer__frame {
   display: block;
+  inline-size: 100%;
+  margin-inline: auto;
   max-inline-size: 76rem;
+}
+
+.composer__stack {
+  min-inline-size: 0;
 }
 
 .composer__surface {
   background: var(--workspace-surface, var(--color-bg));
   border: 1px solid var(--workspace-border, var(--color-border-darker));
-  border-radius: 0.85rem;
-  box-shadow: 0 0.45rem 1.6rem color-mix(in oklch, var(--color-text) 8%, transparent);
+  border-radius: 0.75rem;
+  box-shadow: 0 0.2rem 0.8rem color-mix(in oklch, var(--color-text) 5%, transparent);
+  gap: 0.35rem;
   min-inline-size: 0;
-  overflow: hidden;
+  padding: 0.3rem 0.35rem;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-.composer__context-btn {
-  margin-block-end: 0.25rem;
+.composer__surface:focus-within,
+.composer__edit-input:focus-within {
+  border-color: var(--workspace-accent, var(--color-link));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--workspace-accent, var(--color-link)) 22%, transparent);
 }
 
-.composer__tabs {
-  border-block-end: 1px solid var(--workspace-border, var(--color-border));
-  min-block-size: 2.25rem;
-  padding-inline: 0.7rem;
-}
-
-.composer__tablist {
-  align-self: stretch;
-  gap: 0.9rem;
-}
-
-.composer__tab {
-  --btn-padding: 0.45rem 0.15rem;
-
-  border-radius: 0;
-  color: var(--workspace-text-muted, var(--color-border-darker));
-  font-size: 0.78rem;
-  position: relative;
-
-  &[aria-selected="true"] {
-    color: var(--color-text);
-
-    &::after {
-      background: var(--color-link);
-      block-size: 2px;
-      content: "";
-      inset-block-end: -1px;
-      inset-inline: 0;
-      position: absolute;
-    }
-  }
-}
-
-.composer__mode-label,
-.composer__rich-heading {
-  color: var(--workspace-text-muted, var(--color-border-darker));
-  white-space: nowrap;
-}
-
-.composer__formatting {
-  border-block-end: 1px solid var(--workspace-border, var(--color-border));
-  gap: 0.15rem;
-  overflow-x: auto;
-  padding: 0.25rem 0.55rem;
-  scrollbar-width: thin;
-}
-
-.composer__format-btn {
-  --btn-padding: 0.25rem 0.4rem;
-
-  border-radius: 0.35rem;
-  flex: none;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.74rem;
-  min-block-size: 1.8rem;
-  min-inline-size: 1.8rem;
-
-  &:hover,
-  &:focus-visible {
-    background: var(--workspace-sidebar-hover, var(--color-border));
-  }
-}
-
-.composer__format-separator {
-  align-self: stretch;
-  border-inline-start: 1px solid var(--workspace-border, var(--color-border-dark));
-  flex: none;
-  margin: 0.25rem;
+.composer__editor {
+  min-inline-size: 0;
 }
 
 .composer__textarea {
-  --input-padding: 0.8rem;
+  --input-background: transparent;
   --input-border-color: transparent;
-  --hover-color: var(--workspace-accent, var(--color-link));
+  --input-border-radius: 0;
+  --input-border-size: 0;
+  --input-padding: 0.45rem 0.3rem;
+  --hover-size: 0;
+  --outline-size: 0;
 
-  background: transparent;
   block-size: var(--composer-editor-min-size);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  line-height: 1.45;
+  color: var(--workspace-text, var(--color-text));
+  font-family: var(--font-family);
+  line-height: 1.5;
   max-block-size: var(--composer-editor-max-size);
   min-block-size: var(--composer-editor-min-size);
   overflow-y: auto;
   overscroll-behavior: contain;
   resize: none;
-  color: var(--workspace-text, var(--color-text));
 }
 
-.composer__preview {
-  max-block-size: var(--composer-editor-max-size);
-  min-block-size: var(--composer-editor-min-size);
-  overflow: auto;
-  padding: 0.8rem;
-}
-
-.composer__preview[aria-busy="true"] {
-  opacity: 0.58;
-}
-
-.composer__preview-notice {
+.composer__textarea::placeholder {
   color: var(--workspace-text-muted, var(--color-border-darker));
-  margin: 0;
+  opacity: 0.85;
 }
 
-.composer__rich-panel {
-  padding-block-end: 0.25rem;
-
-  trix-toolbar {
-    border-block-end: 1px solid var(--workspace-border, var(--color-border));
-    display: block;
-    margin: 0;
-    padding: 0.35rem 0.55rem;
-  }
-
-  trix-editor.input {
-    background: transparent !important;
-    color: var(--workspace-text, var(--color-text));
-    max-block-size: var(--composer-editor-max-size);
-    min-block-size: var(--composer-editor-min-size);
-    overflow-y: auto;
-    padding: 0.8rem;
-  }
-}
-
-.composer__actions {
-  border-block-start: 1px solid var(--workspace-border, var(--color-border));
-  min-block-size: 2.85rem;
-  padding: 0.35rem 0.5rem;
+.composer__textarea:focus,
+.composer__textarea:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+  filter: none;
+  outline: none;
 }
 
 .composer__attachment-btn,
-.composer__mode-btn {
+.composer__send {
+  --btn-size: 2.15rem;
+  align-self: flex-end;
+}
+
+.composer__attachment-btn {
   --btn-background: transparent;
   --btn-border-color: transparent;
-  --btn-padding: 0.42rem 0.55rem;
-  --hover-filter: brightness(0.85);
+  --btn-padding: 0;
+  --hover-filter: none;
 
   color: var(--workspace-text-muted, var(--color-text));
+  aspect-ratio: 1;
+  block-size: var(--btn-size);
+  display: grid;
+  font-weight: 400;
+  inline-size: var(--btn-size);
+  place-items: center;
+
+  > * {
+    grid-area: 1 / 1;
+  }
 
   &:hover,
   &:focus-visible {
     --btn-background: var(--workspace-sidebar-hover, var(--color-border));
-
     color: var(--workspace-text, var(--color-text));
   }
+}
+
+.composer__attachment-mark {
+  font-size: 1.65rem;
+  font-weight: 300;
+  line-height: 1;
+  margin-block-start: -0.1em;
 }
 
 .composer__send {
   --btn-background: var(--workspace-accent, var(--color-text));
   --btn-color: #ffffff;
-  --btn-size: 2.25rem;
-
-  margin-inline-start: auto;
+  --hover-filter: brightness(0.88);
 
   img {
     filter: brightness(0) invert(1) !important;
   }
 }
 
-.composer__keyboard-hint {
-  color: var(--workspace-text-muted, var(--color-border-darker));
-}
-
-.composer__mobile-hint {
-  display: none;
-}
-
 /* Attachments waiting to upload */
 .composer__filelist {
   --row-gap: var(--block-space-half);
 
-  background: color-mix(in oklch, var(--color-border) 55%, transparent);
-  padding: var(--block-space-half);
+  background: var(--workspace-surface, var(--color-bg));
+  border: 1px solid var(--workspace-border, var(--color-border-darker));
+  border-block-end: 0;
+  border-radius: 0.75rem 0.75rem 0 0;
+  margin-block-end: -0.75rem;
+  padding: 0.55rem 0.55rem 1.3rem;
 
   &:empty {
     display: none;
   }
+}
+
+.composer__stack:has(.composer__filelist:not(:empty)) .composer__surface {
+  position: relative;
 }
 
 .composer__file {
@@ -260,10 +197,16 @@
   inline-size: min(72ch, calc(100vw - 4rem));
   max-inline-size: 100%;
 
-  .composer__markdown-panel.input {
+  .composer__edit-input {
     --input-padding: 0;
     background: var(--workspace-surface, var(--color-bg));
     overflow: hidden;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .composer__textarea--edit {
+    --composer-editor-min-size: 6rem;
+    --input-padding: 0.65rem 0.75rem;
   }
 }
 
@@ -300,32 +243,7 @@
 
 @media (max-width: 48rem), (pointer: coarse) {
   .composer {
-    --composer-editor-min-size: 4rem;
-    --composer-editor-max-size: min(38vh, 15rem);
-
+    --composer-editor-max-size: min(38vh, 10rem);
     padding: 0.4rem 0.55rem max(0.4rem, env(safe-area-inset-bottom));
-  }
-
-  .composer__context-btn {
-    display: none;
-  }
-
-  .composer__mode-label,
-  .composer__keyboard-hint {
-    font-size: 0.7rem;
-  }
-
-  .composer__mode-btn span {
-    display: none;
-  }
-
-  .composer__desktop-hint { display: none; }
-  .composer__mobile-hint { display: inline; }
-}
-
-@media (max-width: 28rem) {
-  .composer__mode-label,
-  .composer__keyboard-hint {
-    display: none;
   }
 }

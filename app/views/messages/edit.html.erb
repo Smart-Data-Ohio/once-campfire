@@ -15,59 +15,16 @@
         <div class="composer--edit composer--markdown">
           <%= form_with model: @message, url: room_message_path(@room, @message), id: dom_id(@message, :form), data: {
                 controller: "form", action: "keydown.esc->form#cancel keydown.ctrl+enter->form#submit:prevent keydown.meta+enter->form#submit:prevent" } do |form| %>
-            <div class="composer__markdown-panel input input--actor full-width min-width"
-                data-controller="markdown-editor markdown-preview"
-                data-markdown-preview-url-value="<%= preview_room_messages_path(@room) %>">
-              <div class="composer__tabs flex align-center justify-space-between gap">
-                <div class="composer__tablist flex align-center" role="tablist" aria-label="Message editor">
-                  <button type="button" class="composer__tab btn btn--plain" role="tab" aria-selected="true"
-                      data-markdown-preview-target="writeTab" data-action="markdown-preview#showWrite">Write</button>
-                  <button type="button" class="composer__tab btn btn--plain" role="tab" aria-selected="false"
-                      data-markdown-preview-target="previewTab" data-action="markdown-preview#showPreview">Preview</button>
-                </div>
-                <span class="composer__mode-label txt-small txt-subtle" aria-hidden="true">Markdown</span>
-              </div>
-
-              <div data-markdown-preview-target="writePanel">
-                <div class="composer__formatting flex align-center gap" role="toolbar" aria-label="Markdown formatting">
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Heading" aria-label="Heading"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="heading">H</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Bold (Ctrl+B)" aria-label="Bold"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="bold"><strong>B</strong></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Italic (Ctrl+I)" aria-label="Italic"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="italic"><em>I</em></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Strikethrough" aria-label="Strikethrough"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="strike"><s>S</s></button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Link (Ctrl+K)" aria-label="Link"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="link">↗</button>
-                  <span class="composer__format-separator" aria-hidden="true"></span>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Quote" aria-label="Quote"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="quote">❯</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Bulleted list" aria-label="Bulleted list"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="list">• List</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Numbered list" aria-label="Numbered list"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="ordered">1.</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Inline code" aria-label="Inline code"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="code">&lt;/&gt;</button>
-                  <button type="button" class="composer__format-btn btn btn--plain" title="Code block" aria-label="Code block"
-                      data-action="markdown-editor#format" data-markdown-editor-style-param="fence">```</button>
-                </div>
-
-                <%= form.text_area :markdown_source,
-                      rows: 3,
-                      maxlength: 50_000,
-                      class: "composer__textarea input",
-                      aria: { multiline: "true", label: "Edit message" },
-                      autofocus: true,
-                      data: {
-                        action: "input->markdown-editor#resize input->markdown-preview#sourceChanged keydown->markdown-editor#shortcut",
-                        markdown_editor_target: "source",
-                        markdown_preview_target: "source" } %>
-              </div>
-
-              <div class="composer__preview markdown-preview" role="tabpanel" tabindex="0" hidden
-                  data-markdown-preview-target="previewPanel"></div>
-              <span class="for-screen-reader" aria-live="polite" data-markdown-preview-target="status"></span>
+            <div class="composer__edit-input input input--actor full-width min-width" data-controller="markdown-editor">
+              <%= form.text_area :markdown_source,
+                    rows: 3,
+                    maxlength: 50_000,
+                    class: "composer__textarea composer__textarea--edit input",
+                    aria: { multiline: "true", label: "Edit message" },
+                    autofocus: true,
+                    data: {
+                      action: "input->markdown-editor#resize keydown->markdown-editor#shortcut",
+                      markdown_editor_target: "source" } %>
             </div>
 
             <%= link_to "Close editor and discard changes", room_message_path(@room, @message), data: { form_target: "cancel" }, hidden: true %>
@@ -99,7 +56,8 @@
                     data: {
                       controller: "rich-autocomplete",
                       action: rich_text_data_actions,
-                      rich_autocomplete_url_value: autocompletable_users_path(room_id: @room.id) } %>
+                      rich_autocomplete_url_value: autocompletable_users_path(room_id: @room.id),
+                      permitted_attachment_types: "application/vnd.actiontext.opengraph-embed" } %>
             </div>
 
             <%= link_to "Close editor and discard changes", room_message_path(@room, @message), data: { form_target: "cancel" }, hidden: true %>

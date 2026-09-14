@@ -171,6 +171,8 @@ body.sidebar {
 
 /* Workspace navigation */
 .sidebar #sidebar {
+  --workspace-sidebar-panel-width: 100%;
+
   background: var(--workspace-sidebar);
   border-inline-end: 1px solid var(--workspace-border);
   block-size: 100dvh;
@@ -191,7 +193,7 @@ body.sidebar {
   block-size: calc(100dvh - 4.5rem);
   display: flex;
   flex-direction: column;
-  inline-size: 100%;
+  inline-size: var(--workspace-sidebar-panel-width);
   max-block-size: none;
   padding: 0;
 }
@@ -457,14 +459,17 @@ body.sidebar {
   font: inherit;
 }
 
-.sidebar__tools {
+.sidebar .sidebar__tools {
   align-items: center;
   backdrop-filter: none;
   background: var(--workspace-surface);
   border-block-start: 1px solid var(--workspace-border);
+  box-sizing: border-box;
   display: flex;
   gap: 0.5rem;
   inset: auto 0 0;
+  inline-size: var(--workspace-sidebar-panel-width);
+  max-inline-size: 100%;
   min-block-size: 4.5rem;
   padding: 0.65rem 0.75rem;
   position: absolute;
@@ -736,6 +741,8 @@ body.sidebar {
   }
 
   .sidebar #sidebar {
+    --workspace-sidebar-panel-width: min(20rem, calc(100dvw - 2.5rem));
+
     background: transparent;
     border: 0;
     inline-size: 100dvw;
@@ -772,8 +779,8 @@ body.sidebar {
   }
 
   .sidebar__container,
-  .sidebar__tools {
-    inline-size: min(20rem, calc(100dvw - 2.5rem));
+  .sidebar .sidebar__tools {
+    inline-size: var(--workspace-sidebar-panel-width);
   }
 
   .sidebar__container {
@@ -788,7 +795,7 @@ body.sidebar {
     transform: translateX(0);
   }
 
-  .sidebar__tools {
+  .sidebar .sidebar__tools {
     transform: translateX(-102%);
     transition: transform 220ms ease;
     z-index: 2;

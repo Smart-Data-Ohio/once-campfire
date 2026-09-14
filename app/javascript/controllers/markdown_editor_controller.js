@@ -1,11 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 
-const PLACEHOLDERS = {
-  bold: "bold text",
-  italic: "italic text",
-  strike: "struck text",
-  code: "code",
-}
+const PLACEHOLDERS = { bold: "bold text", italic: "italic text" }
 
 export default class extends Controller {
   static targets = [ "source" ]
@@ -17,21 +12,6 @@ export default class extends Controller {
   resize() {
     this.sourceTarget.style.blockSize = "auto"
     this.sourceTarget.style.blockSize = `${this.sourceTarget.scrollHeight}px`
-  }
-
-  format(event) {
-    event.preventDefault()
-
-    const style = event.params.style
-    if ([ "bold", "italic", "strike", "code" ].includes(style)) {
-      this.#wrapSelection(style)
-    } else if (style === "link") {
-      this.#insertLink()
-    } else if (style === "fence") {
-      this.#insertFence()
-    } else {
-      this.#prefixLines(style)
-    }
   }
 
   shortcut(event) {
@@ -49,7 +29,7 @@ export default class extends Controller {
   }
 
   #wrapSelection(style) {
-    const markers = { bold: "**", italic: "*", strike: "~~", code: "`" }
+    const markers = { bold: "**", italic: "*" }
     const marker = markers[style]
     const selected = this.#selectedText || PLACEHOLDERS[style]
     const replacement = `${marker}${selected}${marker}`
@@ -66,34 +46,6 @@ export default class extends Controller {
     const selectStart = this.sourceTarget.selectionStart + prefix.length
 
     this.#replaceSelection(replacement, selectStart, selectStart + url.length)
-  }
-
-  #insertFence() {
-    const selected = this.#selectedText || "code"
-    const needsLeadingNewline = this.sourceTarget.selectionStart > 0 && this.sourceTarget.value[this.sourceTarget.selectionStart - 1] !== "\n"
-    const prefix = `${needsLeadingNewline ? "\n" : ""}\`\`\`\n`
-    const replacement = `${prefix}${selected}\n\`\`\``
-    const selectStart = this.sourceTarget.selectionStart + prefix.length
-
-    this.#replaceSelection(replacement, selectStart, selectStart + selected.length)
-  }
-
-  #prefixLines(style) {
-    const prefixes = { heading: "## ", quote: "> ", list: "- ", ordered: "1. " }
-    const prefix = prefixes[style]
-    if (!prefix) return
-
-    const value = this.sourceTarget.value
-    const selectionStart = this.sourceTarget.selectionStart
-    const selectionEnd = this.sourceTarget.selectionEnd
-    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1
-    const nextNewline = value.indexOf("\n", selectionEnd)
-    const lineEnd = nextNewline === -1 ? value.length : nextNewline
-    const selectedLines = value.slice(lineStart, lineEnd)
-    const replacement = selectedLines.split("\n").map(line => `${prefix}${line}`).join("\n")
-
-    this.sourceTarget.setSelectionRange(lineStart, lineEnd)
-    this.#replaceSelection(replacement, lineStart, lineStart + replacement.length)
   }
 
   #replaceSelection(replacement, selectionStart, selectionEnd) {

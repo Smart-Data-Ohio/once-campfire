@@ -42,25 +42,14 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     emulate_theme "light"
   end
 
-  test "Markdown preview and delivered messages agree and editing preserves the original source" do
+  test "Markdown messages reach other users and editing preserves the original source" do
     using_session("Kevin") do
       sign_in "kevin@37signals.com"
       join_room rooms(:designers)
     end
 
     fill_in_markdown "Write a message", with: MARKDOWN
-    click_on "Preview", exact: true
-    within("#composer") { assert_markdown_content }
-    click_on "Write", exact: true
     assert_field "Write a message", with: MARKDOWN
-    fill_in_markdown "Write a message", with: ""
-    click_on "Preview", exact: true
-    within("#composer") { assert_no_selector "table" }
-    click_on "Write", exact: true
-    fill_in_markdown "Write a message", with: MARKDOWN
-    click_on "Preview", exact: true
-    within("#composer") { assert_markdown_content }
-    click_on "Write", exact: true
     click_on "Send Message"
 
     assert_selector ".message__body h2", text: "Design review"
@@ -115,7 +104,7 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_field "Edit message", with: "First line\nSecond line"
   end
 
-  test "untrusted markup stays inert in preview and the delivered message" do
+  test "untrusted markup stays inert in the delivered message" do
     payload = <<~'MARKDOWN'
       Safety check
 
@@ -129,13 +118,6 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     MARKDOWN
 
     fill_in_markdown "Write a message", with: payload
-    click_on "Preview", exact: true
-    within("#composer") do
-      assert_selector "pre code", text: '<img onerror="literal code">'
-      assert_no_selector "script, img[onerror], a[href^='javascript:']", visible: :all
-    end
-    assert_not page.evaluate_script("window.markdownPayloadExecuted === true")
-    click_on "Write", exact: true
     click_on "Send Message"
     assert_message_text "Safety check"
     message = Message.find_by!(markdown_source: payload)
@@ -158,15 +140,13 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_includes reply, ">"
     assert_includes reply, "A useful point"
     assert_not_includes reply, "Copy code"
-    click_on "Preview", exact: true
-    within("#composer") { assert_selector "blockquote", text: "A useful point" }
-    click_on "Write", exact: true
 
     upload_path = Rails.root.join("tmp/markdown-workspace-attachment.txt")
     File.write(upload_path, "An attachment sent from the Markdown composer.\n")
     find("#composer input[type='file']", visible: :all).set(upload_path)
     assert_selector "#composer", text: "markdown-workspace-attachment"
     click_on "Send Message"
+    assert_selector ".message[data-message-id] blockquote", text: "A useful point"
     assert_message_text "markdown-workspace-attachment.txt"
     assert Message.joins(:attachment_attachment).exists?
   ensure
@@ -189,9 +169,6 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
 
     source = "@[Kevin] please review **the layout**."
     fill_in_markdown "Write a message", with: source
-    click_on "Preview", exact: true
-    within("#composer") { assert_selector ".mention", text: "Kevin" }
-    click_on "Write", exact: true
     click_on "Send Message"
     assert_selector ".message__body .mention", text: "Kevin"
     message = Message.find_by!(markdown_source: source)
@@ -248,6 +225,8 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     send_message MARKDOWN
     assert_selector ".message__body h2", text: "Design review"
     assert_no_horizontal_overflow
+    assert_compact_composer
+    assert_profile_bar_within_navigation
     light_background = main_background
     settle_visual_transitions
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-light.png")
@@ -256,14 +235,17 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert page.evaluate_script("matchMedia('(prefers-color-scheme: dark)').matches")
     assert_not_equal light_background, main_background
     settle_visual_transitions
+    assert_profile_bar_within_navigation
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-dark.png")
 
     page.current_window.resize_to(390, 844)
     assert_no_horizontal_overflow
+    assert_compact_composer
     opener = find_button("Open workspace navigation")
     opener.click
     assert_button "Close workspace navigation"
     settle_visual_transitions
+    assert_profile_bar_within_navigation
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-mobile-navigation.png")
     within("#sidebar") { click_link "HQ", exact: true }
     assert_selector ".room--current", text: "HQ"
@@ -287,6 +269,37 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
   end
 
   private
+    def assert_compact_composer
+      assert_field "Write a message", with: ""
+      within("#composer") do
+        assert_no_selector "[role='tablist'], [role='toolbar'], trix-editor"
+        assert_no_text "Enter to send"
+        assert_no_button "Rich text"
+        assert_button "Send Message"
+        assert_selector "input[type='file']", visible: :all
+      end
+      assert page.evaluate_script(<<~JS), "the empty composer should fit on a single compact row"
+        (() => {
+          const surface = document.querySelector('#composer .composer__surface').getBoundingClientRect();
+          const field = document.querySelector('#composer textarea').getBoundingClientRect();
+          const send = document.querySelector('#composer button[name="send"]').getBoundingClientRect();
+          return surface.height <= 72 && send.top >= surface.top && send.bottom <= surface.bottom + 1 &&
+            send.left >= field.right - 1;
+        })()
+      JS
+    end
+
+    def assert_profile_bar_within_navigation
+      assert page.evaluate_script(<<~JS), "the profile bar must stay inside the navigation column"
+        (() => {
+          const navigation = document.querySelector('.sidebar__container').getBoundingClientRect();
+          const profile = document.querySelector('.sidebar__tools').getBoundingClientRect();
+          return Math.abs(profile.left - navigation.left) <= 1 &&
+            Math.abs(profile.right - navigation.right) <= 1;
+        })()
+      JS
+    end
+
     def assert_markdown_content
       assert_selector "h2", text: "Design review"
       assert_selector "strong", text: "Ready for review"

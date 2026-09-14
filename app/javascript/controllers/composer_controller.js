@@ -4,21 +4,18 @@ import { onNextEventLoopTick, nextFrame } from "helpers/timing_helpers"
 import { escapeHTML } from "helpers/string_helpers"
 
 export default class extends Controller {
-  static targets = [ "clientid", "fields", "fileList", "markdown", "markdownPanel", "richText", "richTextPanel", "modeLabel" ]
+  static targets = [ "clientid", "fields", "fileList", "markdown" ]
   static values = { roomId: Number }
   static outlets = [ "messages" ]
 
   #files = []
-  #mode = "markdown"
   #submitting = false
   #inFlightSubmission
   #failedDrafts = new Map()
 
   connect() {
-    this.#setMode("markdown")
-
     if (!this.#usingTouchDevice) {
-      onNextEventLoopTick(() => this.#activeInput.focus())
+      onNextEventLoopTick(() => this.markdownTarget.focus())
     }
   }
 
@@ -28,7 +25,7 @@ export default class extends Controller {
     if (!this.fieldsTarget.disabled) {
       this.#submitFiles()
       this.#submitMessage()
-      this.#activeInput.focus()
+      this.markdownTarget.focus()
     }
   }
 
@@ -40,9 +37,7 @@ export default class extends Controller {
     if (!submission) return
 
     if (event.detail.success) {
-      if (this.#mode === submission.mode && this.#contentForMode(submission.mode) === submission.content) {
-        this.#reset(submission.mode)
-      }
+      if (this.markdownTarget.value === submission.content) this.#reset()
       this.#failedDrafts.delete(submission.clientMessageId)
     } else {
       this.#failedDrafts.set(submission.clientMessageId, submission)
@@ -56,53 +51,24 @@ export default class extends Controller {
     if (!submission || !(body instanceof FormData || body instanceof URLSearchParams)) return
 
     body.set("message[client_message_id]", submission.clientMessageId)
-
-    if (submission.mode === "markdown") {
-      body.set("message[markdown_source]", submission.content)
-      body.delete("message[body]")
-    } else {
-      body.set("message[body]", submission.content)
-      body.delete("message[markdown_source]")
-    }
+    body.set("message[markdown_source]", submission.content)
+    body.delete("message[body]")
   }
 
   recover(event) {
     const submission = this.#failedDrafts.get(event.detail.clientMessageId)
     if (!submission) return
 
-    this.#setMode(submission.mode)
-    const current = this.#contentForMode(submission.mode)
-
-    if (submission.mode === "markdown") {
-      this.markdownTarget.value = current === submission.content ? current : [ current, submission.content ].filter(Boolean).join("\n\n")
-      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
-    } else {
-      const recovered = current === submission.content ? current : [ current, submission.content ].filter(Boolean).join("<br>")
-      this.richTextTarget.editor.loadHTML(recovered)
-    }
-
+    const current = this.markdownTarget.value
+    this.markdownTarget.value = current === submission.content ? current : [ current, submission.content ].filter(Boolean).join("\n\n")
+    this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
     this.#failedDrafts.delete(submission.clientMessageId)
-    this.#activeInput.focus()
+    this.markdownTarget.focus()
   }
 
-  toggleMode() {
-    this.#setMode(this.#mode === "markdown" ? "rich-text" : "markdown")
-    onNextEventLoopTick(() => this.#activeInput.focus())
-  }
-
-  replaceMessageContent({ markdown, richText }) {
-    if (this.#mode === "markdown") {
-      this.markdownTarget.value = markdown
-      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
-    } else {
-      const editor = this.richTextTarget.editor
-
-      editor.recordUndoEntry("Format reply")
-      editor.setSelectedRange([ 0, editor.getDocument().toString().length ])
-      editor.deleteInDirection("forward")
-      editor.insertHTML(richText)
-      editor.setSelectedRange([ editor.getDocument().toString().length - 1 ])
-    }
+  replaceMessageContent({ markdown }) {
+    this.markdownTarget.value = markdown
+    this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
   }
 
   submitByKeyboard(event) {
@@ -153,20 +119,15 @@ export default class extends Controller {
     return window.matchMedia("(pointer: coarse), (max-width: 48rem)").matches
   }
 
-  get #activeInput() {
-    return this.#mode === "markdown" ? this.markdownTarget : this.richTextTarget
-  }
-
   async #submitMessage() {
     if (!this.#submitting && this.#validInput()) {
       this.#submitting = true
       const clientMessageId = this.#generateClientId()
-      const mode = this.#mode
-      const content = this.#contentForMode(mode)
-      const pendingInput = this.#activeInput.cloneNode(true)
-      if (pendingInput instanceof HTMLTextAreaElement) pendingInput.value = content
+      const content = this.markdownTarget.value
+      const pendingInput = this.markdownTarget.cloneNode(true)
+      pendingInput.value = content
 
-      this.#inFlightSubmission = { clientMessageId, mode, content }
+      this.#inFlightSubmission = { clientMessageId, content }
 
       try {
         await this.messagesOutlet.insertPendingMessage(clientMessageId, pendingInput)
@@ -183,8 +144,7 @@ export default class extends Controller {
   }
 
   #validInput() {
-    const content = this.#mode === "markdown" ? this.markdownTarget.value : this.richTextTarget.textContent
-    return content.trim().length > 0
+    return this.markdownTarget.value.trim().length > 0
   }
 
   async #submitFiles() {
@@ -218,35 +178,9 @@ export default class extends Controller {
     return Math.random().toString(36).slice(2)
   }
 
-  #reset(mode) {
-    if (mode === "markdown") {
-      this.markdownTarget.value = ""
-      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
-    } else {
-      this.richTextTarget.editor.loadHTML("")
-    }
-  }
-
-  #contentForMode(mode) {
-    return mode === "markdown" ? this.markdownTarget.value : this.#richTextInput.value
-  }
-
-  #setMode(mode) {
-    this.#mode = mode
-    const markdownActive = mode === "markdown"
-
-    this.markdownPanelTarget.hidden = !markdownActive
-    this.richTextPanelTarget.hidden = markdownActive
-    this.markdownTarget.disabled = !markdownActive
-    this.#richTextInput.disabled = markdownActive
-    this.modeLabelTarget.textContent = markdownActive ? "Rich text" : "Markdown"
-    const modeButton = this.modeLabelTarget.closest("button")
-    modeButton.setAttribute("aria-label", this.modeLabelTarget.textContent)
-    modeButton.setAttribute("aria-pressed", String(!markdownActive))
-  }
-
-  get #richTextInput() {
-    return document.getElementById(this.richTextTarget.getAttribute("input"))
+  #reset() {
+    this.markdownTarget.value = ""
+    this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
   }
 
   #addFiles(files) {

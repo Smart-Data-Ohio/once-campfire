@@ -9,7 +9,11 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
 
     sign_in "jz@37signals.com"
     join_room rooms(:designers)
-    click_on "Rich text"
+    within_message messages(:third) do
+      reveal_message_actions
+      click_on "Edit", exact: true
+      assert_selector "trix-editor"
+    end
   end
 
   teardown do
@@ -17,7 +21,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
   end
 
   test "a quote in the opengraph image URL cannot add attributes to the preview" do
-    paste_into_composer @website.page_url
+    paste_into_legacy_editor @website.page_url
 
     assert_selector "trix-editor .og-embed__title", text: "A normal looking link"
 
@@ -26,7 +30,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
   end
 
   private
-    def paste_into_composer(url)
+    def paste_into_legacy_editor(url)
       page.execute_script(<<~JS, url)
         const editor = document.querySelector("trix-editor")
         editor.focus()
