@@ -1,0 +1,220 @@
+#!/usr/bin/env ruby
+
+require "digest"
+require "sqlite3"
+
+class AdditiveSqliteMigrationVerifier
+  INTERNAL_TABLES = %w[ ar_internal_metadata schema_migrations ].freeze
+
+  def initialize(before_path, after_path, output: $stdout)
+    @before_path = before_path
+    @after_path = after_path
+    @output = output
+    @mismatches = []
+  end
+
+  def verify
+    if File.file?(@before_path) && File.file?(@after_path) && File.identical?(@before_path, @after_path)
+      mismatch("inputs", "before and after must be separate database files")
+      @output.puts "MISMATCH: 1 preservation check failed"
+      return false
+    end
+
+    before = open_readonly(@before_path)
+    after = open_readonly(@after_path)
+
+    verify_integrity("before", before)
+    verify_integrity("after", after)
+
+    before_tables = table_names(before)
+    after_tables = table_names(after)
+    missing_tables = before_tables - after_tables
+    additive_tables = after_tables - before_tables
+
+    missing_tables.each { |table| mismatch(table, "table is missing") }
+
+    additive_columns = 0
+    (before_tables & after_tables).each do |table|
+      additive_columns += verify_table(table, before, after)
+    end
+
+    if @mismatches.empty?
+      @output.puts "MATCH: #{before_tables.size} preexisting tables preserved"
+      @output.puts "ADDITIVE: #{additive_tables.size} tables, #{additive_columns} columns"
+      true
+    else
+      @output.puts "MISMATCH: #{@mismatches.size} preservation checks failed"
+      false
+    end
+  ensure
+    before&.close
+    after&.close
+  end
+
+  private
+    def open_readonly(path)
+      abort "Usage: #{$PROGRAM_NAME} BEFORE.sqlite3 AFTER.sqlite3" unless path && File.file?(path)
+
+      SQLite3::Database.new(path, readonly: true).tap do |database|
+        database.execute("PRAGMA query_only = ON")
+      end
+    end
+
+    def verify_integrity(label, database)
+      if database.get_first_value("PRAGMA quick_check") == "ok"
+        @output.puts "#{label}: integrity MATCH"
+      else
+        mismatch(label, "integrity check failed")
+      end
+    end
+
+    def table_names(database)
+      database.execute(<<~SQL, INTERNAL_TABLES).flatten
+        SELECT name
+          FROM sqlite_schema
+         WHERE type = 'table'
+           AND name NOT LIKE 'sqlite_%'
+           AND name NOT IN (?, ?)
+         ORDER BY name
+      SQL
+    end
+
+    def verify_table(table, before, after)
+      before_columns = columns(before, table)
+      after_columns = columns(after, table)
+      after_columns_by_name = after_columns.to_h { |column| [ column.fetch(1), column ] }
+
+      schema_matches = before_columns.all? do |column|
+        after_columns_by_name[column.fetch(1)] == column
+      end
+      schema_matches &&= preserved_indexes?(before, after, table)
+      schema_matches &&= preserved_foreign_keys?(before, after, table)
+      schema_matches &&= preserved_triggers?(before, after, table)
+
+      mismatch(table, "preexisting schema changed") unless schema_matches
+
+      before_count, before_digest = table_fingerprint(before, table, before_columns)
+      after_count, after_digest = table_fingerprint(after, table, before_columns)
+      data_matches = before_count == after_count && before_digest == after_digest
+      mismatch(table, "preexisting row data changed") unless data_matches
+
+      @output.puts format(
+        "%s: rows %d -> %d, schema %s, data %s",
+        table,
+        before_count,
+        after_count,
+        schema_matches ? "MATCH" : "MISMATCH",
+        data_matches ? "MATCH" : "MISMATCH"
+      )
+
+      [ after_columns.size - before_columns.size, 0 ].max
+    rescue SQLite3::Exception
+      mismatch(table, "could not compare table")
+      0
+    end
+
+    def columns(database, table)
+      database.execute("PRAGMA table_xinfo(#{quote_identifier(table)})")
+    end
+
+    def preserved_indexes?(before, after, table)
+      before_indexes = index_signatures(before, table)
+      after_indexes = index_signatures(after, table)
+
+      before_indexes.all? { |name, signature| after_indexes[name] == signature }
+    end
+
+    def index_signatures(database, table)
+      database.execute("PRAGMA index_list(#{quote_identifier(table)})").to_h do |row|
+        name = row.fetch(1)
+        details = [ row.drop(2), database.execute("PRAGMA index_xinfo(#{quote_identifier(name)})") ]
+        [ name, details ]
+      end
+    end
+
+    def preserved_foreign_keys?(before, after, table)
+      before_keys = database_rows(before, "foreign_key_list", table)
+      after_keys = database_rows(after, "foreign_key_list", table)
+
+      (before_keys - after_keys).empty?
+    end
+
+    def preserved_triggers?(before, after, table)
+      before_triggers = triggers(before, table)
+      after_triggers = triggers(after, table)
+
+      before_triggers.all? { |name, sql| after_triggers[name] == sql }
+    end
+
+    def triggers(database, table)
+      database.execute(
+        "SELECT name, sql FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = ? ORDER BY name",
+        table
+      ).to_h
+    end
+
+    def database_rows(database, pragma, table)
+      database.execute("PRAGMA #{pragma}(#{quote_identifier(table)})")
+    end
+
+    def table_fingerprint(database, table, columns)
+      names = columns.map { |column| column.fetch(1) }
+      selection = names.map { |name| quote_identifier(name) }.join(", ")
+      row_digests = []
+
+      database.execute("SELECT #{selection} FROM #{quote_identifier(table)}") do |row|
+        row_digests << fingerprint_row(row)
+      end
+
+      digest = Digest::SHA256.new
+      row_digests.sort.each { |row_digest| digest.update(row_digest) }
+      [ row_digests.size, digest.digest ]
+    end
+
+    def fingerprint_row(row)
+      digest = Digest::SHA256.new
+      row.each { |value| fingerprint_value(digest, value) }
+      digest.digest
+    end
+
+    def fingerprint_value(digest, value)
+      type, bytes = case value
+      when nil
+        [ "N", "" ]
+      when Integer
+        [ "I", [ value ].pack("q>") ]
+      when Float
+        [ "F", [ value ].pack("G") ]
+      when SQLite3::Blob
+        [ "B", value.b ]
+      else
+        [ "S", value.to_s.b ]
+      end
+
+      digest.update(type)
+      digest.update([ bytes.bytesize ].pack("Q>"))
+      digest.update(bytes)
+    end
+
+    def quote_identifier(identifier)
+      %Q("#{identifier.to_s.gsub('"', '""')}")
+    end
+
+    def mismatch(scope, reason)
+      @mismatches << [ scope, reason ]
+      @output.puts "#{scope}: #{reason} MISMATCH"
+    end
+end
+
+unless ARGV.length == 2
+  warn "Usage: #{$PROGRAM_NAME} BEFORE.sqlite3 AFTER.sqlite3"
+  exit 2
+end
+
+begin
+  verified = AdditiveSqliteMigrationVerifier.new(ARGV.fetch(0), ARGV.fetch(1)).verify
+  exit(verified ? 0 : 1)
+rescue SQLite3::Exception
+  warn "ERROR: SQLite verification could not be completed"
+  exit 2
+end

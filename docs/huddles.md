@@ -44,6 +44,17 @@ LIVEKIT_SYSTEM_TESTS=1 PARALLEL_WORKERS=1 bin/rails test test/system/huddles_tes
 
 The test suite starts its own gateway on port 7884. The `start` and `gateway` commands run the private server or gateway separately for that kind of controlled test and for diagnosis. They are not safe substitutes for `serve` in normal operation because a separately launched LiveKit process can outlive gateway enforcement.
 
+The same suite can opt into a remote production-shaped media stack while keeping Rails, fixtures, and application data local. Point `LIVEKIT_INTERNAL_URL` through a local SSH forward to remote port 7880 (for example, `http://127.0.0.1:7880`). Use a separate reverse forward from remote `127.0.0.1:3301` to the local fixture Rails server on port 3001, and set the remote gateway's `GATEWAY_CAMPFIRE_URL=http://127.0.0.1:3301`. Then run:
+
+```sh
+LIVEKIT_SYSTEM_TESTS=1 \
+LIVEKIT_SYSTEM_TEST_GATEWAY_URL=wss://huddles.chat.smartdata.net \
+LIVEKIT_SYSTEM_TEST_FORCE_RELAY=1 \
+PARALLEL_WORKERS=1 bin/rails test test/system/huddles_test.rb --name /two_users_exchange_audio/
+```
+
+`LIVEKIT_SYSTEM_TEST_GATEWAY_URL` makes the browser use that public gateway and prevents the suite from spawning its local gateway. `LIVEKIT_SYSTEM_TEST_FORCE_RELAY=1` modifies only the test browser's peer-connection configuration, requires a selected relay candidate, and retains the existing received-audio and decoded-screen assertions. Use isolated media-test API and gateway credentials: the remote gateway callback must target the local fixture server on `127.0.0.1:3001`, never a production Campfire database. The test harness does not print credentials or captured signaling URLs.
+
 Campfire serves a checked-in LiveKit browser bundle. See the [browser SDK rebuild guide](../script/livekit-client/README.md) when updating its pinned version.
 
 ## Behavior and access control
@@ -83,5 +94,7 @@ The existing deployment target is GCP project `smart-data-campfire`, VM `campfir
 Corporate and restrictive networks may also require TURN/TLS, normally with its own domain and certificate. The loopback setup deliberately provides no HTTPS, public ICE candidates, firewall rules, or TURN relay, so it does not prove that two-machine connectivity will work.
 
 See LiveKit's official [ports and firewall reference](https://docs.livekit.io/transport/self-hosting/ports-firewall/) and [deployment guide](https://docs.livekit.io/transport/self-hosting/deployment/) before exposing a server.
+
+The checked-in [production media-host package](../deploy/huddles/README.md) supplies the separate-host container, fail-closed supervisor, TLS routing, exact network boundary, and operator checks for `chat.smartdata.net`.
 
 The [audio and video quality assessment](huddle-quality.md) records the next pilot and product decisions.

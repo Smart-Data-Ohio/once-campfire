@@ -1,0 +1,59 @@
+name: campfire-huddles
+
+services:
+  media:
+    build:
+      context: ../..
+      dockerfile: deploy/huddles/Dockerfile
+    image: campfire-huddles-media:1.0.0
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ${HUDDLES_ENV_FILE:-/etc/campfire-huddles/env}
+    environment:
+      GATEWAY_CAMPFIRE_URL: https://chat.smartdata.net
+      HUDDLES_DOMAIN: huddles.chat.smartdata.net
+      LIVEKIT_GATEWAY_PORT: "7883"
+      LIVEKIT_INTERNAL_URL: http://127.0.0.1:7880
+      TURN_DOMAIN: turn.chat.smartdata.net
+    read_only: true
+    tmpfs:
+      - /run/campfire-huddles:uid=1000,gid=1000,mode=0700,size=1m
+      - /tmp:uid=1000,gid=1000,mode=0700,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 8s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const net=require('node:net');let n=2,f=()=>{if(!--n)process.exit(0)};
+          for(const p of [7880,7883]){const s=net.connect(p,'127.0.0.1',()=>{s.end();f()});
+          s.setTimeout(1000,()=>process.exit(1));s.on('error',()=>process.exit(1))}
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  caddy:
+    image: livekit/caddyl4:latest@sha256:9dd090159a6042a907dbff0ce9dda27a21d2a559dc7b03b60a8e6b1b60b8348e
+    command: run --config /etc/caddy.yaml --adapter yaml
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      media:
+        condition: service_healthy
+    volumes:
+      - ./caddy.yaml:/etc/caddy.yaml:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  caddy_data:
+  caddy_config:

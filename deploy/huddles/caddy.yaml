@@ -1,0 +1,39 @@
+logging:
+  logs:
+    default:
+      level: INFO
+storage:
+  module: file_system
+  root: /data
+apps:
+  tls:
+    certificates:
+      automate:
+        - huddles.chat.smartdata.net
+        - turn.chat.smartdata.net
+  layer4:
+    servers:
+      main:
+        listen: [":443"]
+        routes:
+          - match:
+              - tls:
+                  sni:
+                    - turn.chat.smartdata.net
+            handle:
+              - handler: tls
+              - handler: proxy
+                proxy_protocol: v2
+                upstreams:
+                  - dial: ["127.0.0.1:5349"]
+          - match:
+              - tls:
+                  sni:
+                    - huddles.chat.smartdata.net
+            handle:
+              - handler: tls
+                connection_policies:
+                  - alpn: ["http/1.1"]
+              - handler: proxy
+                upstreams:
+                  - dial: ["127.0.0.1:7883"]

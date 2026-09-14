@@ -2,5 +2,9 @@
 
 require_relative "../config/environment"
 
+abort "Huddle reconciliation requires a complete gateway-separated LiveKit configuration" unless Huddle.configured?
+
 interval = Float(ENV.fetch("HUDDLE_RECONCILE_INTERVAL", Huddle::Reconciler::DEFAULT_INTERVAL.to_i))
+abort "HUDDLE_RECONCILE_INTERVAL must be a positive finite number" unless interval.positive? && interval.finite?
+
 Huddle::Reconciler.new(interval: interval).run

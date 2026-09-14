@@ -5,6 +5,11 @@ require "yaml"
 
 class ProcessMonitor
   SIGNALS = %w[ INT TERM CLD ]
+  OPTIONAL_PROCESS_ENVIRONMENT = {
+    "huddle_reconciler" => %w[
+      LIVEKIT_URL LIVEKIT_INTERNAL_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_GATEWAY_SECRET
+    ]
+  }.freeze
 
   def initialize(procfile)
     @procs = process_list(procfile)
@@ -17,7 +22,19 @@ class ProcessMonitor
   private
     def process_list(procfile)
       config = YAML.load_file(procfile)
-      config.map { |name, cmd| MonitoredProcess.new(name, cmd) }
+      config.filter_map do |name, cmd|
+        MonitoredProcess.new(name, cmd) if process_enabled?(name)
+      end
+    end
+
+    def process_enabled?(name)
+      return true unless required_environment = OPTIONAL_PROCESS_ENVIRONMENT[name]
+
+      configured = required_environment.count { |variable| ENV[variable].to_s != "" }
+      return false if configured.zero?
+      return true if configured == required_environment.size
+
+      abort "Incomplete huddle configuration: all LiveKit environment variables must be set together"
     end
 
     def handle_signals
@@ -51,4 +68,4 @@ class MonitoredProcess
   end
 end
 
-ProcessMonitor.new("Procfile")
+ProcessMonitor.new("Procfile") if $PROGRAM_NAME == __FILE__

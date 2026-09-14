@@ -18,16 +18,17 @@ class HuddlesTest < ApplicationSystemTestCase
   end
 
   setup do
-    skip "Run with LIVEKIT_SYSTEM_TESTS=1 and a local LiveKit server" unless ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
+    skip "Run with LIVEKIT_SYSTEM_TESTS=1 and a configured LiveKit server" unless ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
     @original_livekit_url = ENV["LIVEKIT_URL"]
-    ENV["LIVEKIT_URL"] = "ws://127.0.0.1:#{GATEWAY_PORT}"
+    gateway_url = ENV["LIVEKIT_SYSTEM_TEST_GATEWAY_URL"].presence
+    ENV["LIVEKIT_URL"] = gateway_url || "ws://127.0.0.1:#{GATEWAY_PORT}"
     @forgery_protection = ActionController::Base.allow_forgery_protection
-    assert Huddle.configured?, "Source the local LiveKit environment before running huddle tests"
+    assert Huddle.configured?, "Source the LiveKit environment before running huddle tests"
     HuddleCleanup.delete_all
     HuddleGrant.delete_all
     Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
     ActionController::Base.allow_forgery_protection = true
-    start_gateway
+    start_gateway unless gateway_url
   end
 
   teardown do
@@ -275,10 +276,11 @@ class HuddlesTest < ApplicationSystemTestCase
     end
 
     def prepare_browser
-      page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source: <<~'JS')
+      source = <<~'JS'
         (() => {
         if (window.huddleTestInstrumentationInstalled) return;
         window.huddleTestInstrumentationInstalled = true;
+        const forceRelay = __HUDDLE_TEST_FORCE_RELAY__;
 
         window.huddleTestPeerConnections = [];
         window.huddleTestLocalTracks = [];
@@ -311,8 +313,18 @@ class HuddlesTest < ApplicationSystemTestCase
         const NativePeerConnection = window.RTCPeerConnection;
         window.RTCPeerConnection = class extends NativePeerConnection {
           constructor(...args) {
+            if (forceRelay) {
+              args[0] = { ...(args[0] || {}), iceTransportPolicy: 'relay' };
+            }
             super(...args);
             window.huddleTestPeerConnections.push(this);
+          }
+
+          setConfiguration(configuration) {
+            const nextConfiguration = forceRelay
+              ? { ...(configuration || {}), iceTransportPolicy: 'relay' }
+              : configuration;
+            super.setConfiguration(nextConfiguration);
           }
         };
         const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -345,6 +357,8 @@ class HuddlesTest < ApplicationSystemTestCase
         };
         })();
       JS
+      source = source.sub("__HUDDLE_TEST_FORCE_RELAY__", force_relay?.to_s)
+      page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source:)
     end
 
     def captured_credentials(index = 0)
@@ -532,6 +546,7 @@ class HuddlesTest < ApplicationSystemTestCase
             .catch(() => done(false));
         JS
       end
+      assert_selected_local_candidate_is_relay if force_relay?
     end
 
     def assert_new_active_media_received(kind, after:)
@@ -549,6 +564,51 @@ class HuddlesTest < ApplicationSystemTestCase
             .catch(() => done(false));
         JS
       end
+      assert_selected_local_candidate_is_relay(after:) if force_relay?
+    end
+
+    def assert_selected_local_candidate_is_relay(after: 0)
+      candidate_types = []
+      wait_for_condition("WebRTC did not select a relay candidate") do
+        candidate_types = selected_local_candidate_types(after:)
+        candidate_types.any? && candidate_types.all? { |type| type == "relay" }
+      end
+      assert_equal [ "relay" ], candidate_types.uniq
+    end
+
+    def selected_local_candidate_types(after:)
+      page.evaluate_async_script(<<~JS, after)
+        const after = arguments[0];
+        const done = arguments[arguments.length - 1];
+        const connections = window.huddleTestPeerConnections.slice(after);
+
+        Promise.all(connections.map(connection => connection.getStats()))
+          .then(reports => {
+            const candidateTypes = reports.flatMap(report => {
+              const pairs = [];
+              report.forEach(stat => {
+                if (stat.type === 'transport' && stat.selectedCandidatePairId) {
+                  const pair = report.get(stat.selectedCandidatePairId);
+                  if (pair) pairs.push(pair);
+                }
+              });
+              if (pairs.length === 0) {
+                report.forEach(stat => {
+                  if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && (stat.nominated || stat.selected)) {
+                    pairs.push(stat);
+                  }
+                });
+              }
+              return pairs.map(pair => report.get(pair.localCandidateId)?.candidateType).filter(Boolean);
+            });
+            done(candidateTypes);
+          })
+          .catch(() => done([]));
+      JS
+    end
+
+    def force_relay?
+      ENV["LIVEKIT_SYSTEM_TEST_FORCE_RELAY"] == "1"
     end
 
     def inbound_rtp_bytes(kind)
