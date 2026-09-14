@@ -25,9 +25,22 @@ class MessagesController < ApplicationController
     deliver_webhooks_to_bots
   rescue ActiveRecord::RecordNotFound
     render action: :room_not_found
+  rescue ActiveRecord::RecordInvalid => error
+    render_record_invalid(error)
   end
 
   def show
+  end
+
+  def preview
+    source = params.require(:message).permit(:markdown_source).fetch(:markdown_source)
+
+    if source.length > Message::Markdown::SOURCE_LIMIT
+      render json: { error: "Markdown is limited to #{Message::Markdown::SOURCE_LIMIT.to_fs(:delimited)} characters" }, status: :unprocessable_content
+    else
+      content = ActionText::Content.new(Message::Markdown.render(source, room: @room))
+      render json: { html: view_context.markdown_message_presentation(content) }
+    end
   end
 
   def edit
@@ -42,6 +55,8 @@ class MessagesController < ApplicationController
       format.html { redirect_to room_message_url(@room, @message) }
       format.json { render :show }
     end
+  rescue ActiveRecord::RecordInvalid => error
+    render_record_invalid(error)
   end
 
   def destroy
@@ -72,7 +87,22 @@ class MessagesController < ApplicationController
 
 
     def message_params
-      params.require(:message).permit(:body, :attachment, :client_message_id)
+      permitted = params.require(:message).permit(:body, :attachment, :client_message_id, :markdown_source)
+
+      if permitted.key?(:markdown_source) && !permitted[:markdown_source].nil?
+        permitted.delete(:body)
+      elsif action_name == "update"
+        permitted[:markdown_source] = nil
+      end
+
+      permitted
+    end
+
+    def render_record_invalid(error)
+      respond_to do |format|
+        format.json { render json: { errors: error.record.errors.to_hash }, status: :unprocessable_content }
+        format.any { head :unprocessable_content }
+      end
     end
 
 

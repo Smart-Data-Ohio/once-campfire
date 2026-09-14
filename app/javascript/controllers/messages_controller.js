@@ -88,12 +88,24 @@ export default class extends Controller {
     this.#scrollManager.autoscroll(true)
   }
 
-  async editMyLastMessage() {
-    const editorEmpty = document.querySelector("#composer trix-editor").matches(":empty")
+  async editMyLastMessage(event) {
+    const editor = event.target.closest("#composer textarea, #composer trix-editor")
+    const editorEmpty = editor instanceof HTMLTextAreaElement ? !editor.value : editor?.matches(":empty")
 
-    if (editorEmpty && this.#paginator.upToDate) {
+    if (editor && editorEmpty && this.#paginator.upToDate) {
       this.#myLastMessage?.querySelector(".message__edit-btn")?.click()
     }
+  }
+
+  formatPreview(event) {
+    this.#formatter.formatBody(event.detail.preview)
+  }
+
+  recoverPendingMessage(event) {
+    const clientMessageId = event.currentTarget.dataset.clientMessageId
+    window.dispatchEvent(new CustomEvent("messages:recover", { detail: { clientMessageId } }))
+    event.currentTarget.disabled = true
+    event.currentTarget.textContent = "Draft restored"
   }
 
 

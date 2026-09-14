@@ -1,4 +1,4 @@
-<div class="mention" sgid="<%= user.attachable_sgid %>">
+<div class="mention mention--user-<%= user.id %>" sgid="<%= user.attachable_sgid %>" data-user-id="<%= user.id %>">
   <%= avatar_tag user %>
   <%= user.name %>
 </div>

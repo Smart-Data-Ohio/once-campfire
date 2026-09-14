@@ -57,7 +57,11 @@ module MessagesHelper
     when "sound"
       message_sound_presentation(message)
     else
-      auto_link h(ContentFilters::TextMessagePresentationFilters.apply(message.body.body)), html: { target: "_blank" }
+      if message.markdown?
+        markdown_message_presentation(message.body.body)
+      else
+        auto_link h(ContentFilters::TextMessagePresentationFilters.apply(message.body.body)), html: { target: "_blank" }
+      end
     end
   rescue Exception => e
     Sentry.capture_exception(e, extra: { message: message })
@@ -66,9 +70,20 @@ module MessagesHelper
     ""
   end
 
+  def markdown_message_presentation(content)
+    rendered = content.render_attachments do |attachment|
+      attachment.node.tap do |node|
+        if attachment.attachable.is_a?(User)
+          node.inner_html = render partial: "users/mention", formats: :html, locals: { user: attachment.attachable }
+        end
+      end
+    end
+    tag.div Message::Markdown.sanitize_presentation(rendered.to_html).html_safe, class: "markdown-body"
+  end
+
   private
     def messages_actions
-      "turbo:before-stream-render@document->messages#beforeStreamRender keydown.up@document->messages#editMyLastMessage"
+      "turbo:before-stream-render@document->messages#beforeStreamRender keydown.up@document->messages#editMyLastMessage markdown-preview:rendered@window->messages#formatPreview"
     end
 
     def maintain_scroll_actions

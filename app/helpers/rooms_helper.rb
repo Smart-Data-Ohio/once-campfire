@@ -64,9 +64,9 @@ module RoomsHelper
     def composer_data_options(room)
       {
         controller: "composer drop-target",
-        action: composer_data_actions,
+        action: "#{composer_data_actions} turbo:before-fetch-request->composer#prepareRequest messages:recover@window->composer#recover",
         composer_messages_outlet: "#message-area",
-        composer_toolbar_class: "composer--rich-text", composer_room_id_value: room.id
+        composer_room_id_value: room.id
       }
     end
 
@@ -77,7 +77,7 @@ module RoomsHelper
         "trix-file-accept->composer#preventAttachment refresh-room:online@window->composer#online"
 
       remaining_actions =
-        "typing-notifications#stop paste->composer#pasteFiles turbo:submit-end->composer#submitEnd refresh-room:offline@window->composer#offline"
+        "submit->typing-notifications#stop paste->composer#pasteFiles turbo:submit-end->composer#submitEnd refresh-room:offline@window->composer#offline"
 
       [ drop_target_actions, drag_and_drop_actions, trix_attachment_actions, remaining_actions ].join(" ")
     end

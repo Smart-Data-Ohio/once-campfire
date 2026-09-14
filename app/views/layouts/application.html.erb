@@ -7,7 +7,7 @@
     <meta name="view-transition" content="same-origin">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#15171c" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
@@ -29,10 +29,22 @@
     <%= yield :head %>
   </head>
 
-  <body class="<%= body_classes %>" data-controller="local-time lightbox">
+  <body class="<%= body_classes %>"
+        data-controller="local-time lightbox workspace-navigation"
+        data-action="keydown.esc@window->workspace-navigation#close turbo:frame-load@document->workspace-navigation#syncCurrentRoom turbo:load@document->workspace-navigation#syncCurrentRoom rooms-list:unread@window->workspace-navigation#updateUnreadStatus rooms-list:read@window->workspace-navigation#updateUnreadStatus">
     <a href="#main-content" class="skip-navigation btn">Skip to main content</a>
 
     <nav id="nav">
+      <button type="button"
+              class="btn workspace-navigation__open"
+              aria-controls="sidebar"
+              aria-expanded="false"
+              aria-label="Open workspace navigation"
+              data-workspace-navigation-target="opener"
+              data-action="workspace-navigation#open">
+        <%= image_tag "menu.svg", size: 20, aria: { hidden: "true" } %>
+      </button>
+
       <%= yield :nav %>
     </nav>
 
@@ -57,7 +69,25 @@
       </footer>
     </main>
 
-    <aside id="sidebar" data-controller="toggle-class" data-toggle-class-toggle-class="open">
+    <aside id="sidebar"
+           role="navigation"
+           aria-label="Workspace navigation"
+           data-workspace-navigation-target="sidebar"
+           data-action="click->workspace-navigation#navigate keydown.tab->workspace-navigation#trapFocus">
+      <button type="button"
+              class="workspace-navigation__backdrop"
+              aria-hidden="true"
+              tabindex="-1"
+              data-workspace-navigation-target="backdrop"
+              data-action="workspace-navigation#close"
+              hidden></button>
+      <button type="button"
+              class="btn workspace-navigation__close"
+              aria-label="Close workspace navigation"
+              data-workspace-navigation-target="close"
+              data-action="workspace-navigation#close">
+        <%= image_tag "remove.svg", size: 18, aria: { hidden: "true" } %>
+      </button>
       <%= yield :sidebar %>
     </aside>
 

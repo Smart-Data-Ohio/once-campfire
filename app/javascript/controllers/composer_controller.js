@@ -4,16 +4,21 @@ import { onNextEventLoopTick, nextFrame } from "helpers/timing_helpers"
 import { escapeHTML } from "helpers/string_helpers"
 
 export default class extends Controller {
-  static classes = ["toolbar"]
-  static targets = [ "clientid", "fields", "fileList", "text" ]
+  static targets = [ "clientid", "fields", "fileList", "markdown", "markdownPanel", "richText", "richTextPanel", "modeLabel" ]
   static values = { roomId: Number }
   static outlets = [ "messages" ]
 
   #files = []
+  #mode = "markdown"
+  #submitting = false
+  #inFlightSubmission
+  #failedDrafts = new Map()
 
   connect() {
+    this.#setMode("markdown")
+
     if (!this.#usingTouchDevice) {
-      onNextEventLoopTick(() => this.textTarget.focus())
+      onNextEventLoopTick(() => this.#activeInput.focus())
     }
   }
 
@@ -23,52 +28,97 @@ export default class extends Controller {
     if (!this.fieldsTarget.disabled) {
       this.#submitFiles()
       this.#submitMessage()
-      this.collapseToolbar()
-      this.textTarget.focus()
+      this.#activeInput.focus()
     }
   }
 
   submitEnd(event) {
-    if (!event.detail.success) {
-      this.messagesOutlet.failPendingMessage(this.clientidTarget.value)
+    const submission = this.#inFlightSubmission
+    this.#submitting = false
+    this.#inFlightSubmission = null
+
+    if (!submission) return
+
+    if (event.detail.success) {
+      if (this.#mode === submission.mode && this.#contentForMode(submission.mode) === submission.content) {
+        this.#reset(submission.mode)
+      }
+      this.#failedDrafts.delete(submission.clientMessageId)
+    } else {
+      this.#failedDrafts.set(submission.clientMessageId, submission)
+      this.messagesOutlet.failPendingMessage(submission.clientMessageId)
     }
   }
 
-  toggleToolbar() {
-    this.element.classList.toggle(this.toolbarClass)
-    this.textTarget.focus()
+  prepareRequest(event) {
+    const submission = this.#inFlightSubmission
+    const body = event.detail.fetchOptions.body
+    if (!submission || !(body instanceof FormData || body instanceof URLSearchParams)) return
+
+    body.set("message[client_message_id]", submission.clientMessageId)
+
+    if (submission.mode === "markdown") {
+      body.set("message[markdown_source]", submission.content)
+      body.delete("message[body]")
+    } else {
+      body.set("message[body]", submission.content)
+      body.delete("message[markdown_source]")
+    }
   }
 
-  collapseToolbar() {
-    this.element.classList.remove(this.toolbarClass)
+  recover(event) {
+    const submission = this.#failedDrafts.get(event.detail.clientMessageId)
+    if (!submission) return
+
+    this.#setMode(submission.mode)
+    const current = this.#contentForMode(submission.mode)
+
+    if (submission.mode === "markdown") {
+      this.markdownTarget.value = current === submission.content ? current : [ current, submission.content ].filter(Boolean).join("\n\n")
+      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
+    } else {
+      const recovered = current === submission.content ? current : [ current, submission.content ].filter(Boolean).join("<br>")
+      this.richTextTarget.editor.loadHTML(recovered)
+    }
+
+    this.#failedDrafts.delete(submission.clientMessageId)
+    this.#activeInput.focus()
   }
 
-  replaceMessageContent(content) {
-    const editor = this.textTarget.editor
+  toggleMode() {
+    this.#setMode(this.#mode === "markdown" ? "rich-text" : "markdown")
+    onNextEventLoopTick(() => this.#activeInput.focus())
+  }
 
-    editor.recordUndoEntry("Format reply")
-    editor.setSelectedRange([0, editor.getDocument().toString().length])
-    editor.deleteInDirection("forward")
-    editor.insertHTML(content)
-    editor.setSelectedRange([editor.getDocument().toString().length - 1])
+  replaceMessageContent({ markdown, richText }) {
+    if (this.#mode === "markdown") {
+      this.markdownTarget.value = markdown
+      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
+    } else {
+      const editor = this.richTextTarget.editor
+
+      editor.recordUndoEntry("Format reply")
+      editor.setSelectedRange([ 0, editor.getDocument().toString().length ])
+      editor.deleteInDirection("forward")
+      editor.insertHTML(richText)
+      editor.setSelectedRange([ editor.getDocument().toString().length - 1 ])
+    }
   }
 
   submitByKeyboard(event) {
-    const toolbarVisible = this.element.classList.contains(this.toolbarClass)
-    const metaEnter = event.key == "Enter" && (event.metaKey || event.ctrlKey)
-    const plainEnter = event.keyCode == 13 && !event.shiftKey && !event.isComposing
+    if (event.defaultPrevented || event.key !== "Enter" || event.isComposing || event.keyCode === 229) return
 
-    if (!this.#usingTouchDevice && (metaEnter || (plainEnter && !toolbarVisible))) {
+    const modifiedEnter = event.metaKey || event.ctrlKey
+    const plainEnter = !event.shiftKey && !event.altKey && !modifiedEnter
+
+    if (modifiedEnter || (plainEnter && !this.#usingTouchDevice)) {
       this.submit(event)
     }
   }
 
   filePicked(event) {
-    for (const file of event.target.files) {
-      this.#files.push(file)
-    }
+    this.#addFiles(event.target.files)
     event.target.value = null
-    this.#updateFileList()
   }
 
   fileUnpicked(event) {
@@ -79,21 +129,12 @@ export default class extends Controller {
   pasteFiles(event) {
     if (event.clipboardData.files.length > 0) {
       event.preventDefault()
+      this.#addFiles(event.clipboardData.files)
     }
-
-    for (const file of event.clipboardData.files) {
-      this.#files.push(file)
-    }
-
-    this.#updateFileList()
   }
 
   dropFiles({ detail: { files } }) {
-    for (const file of files) {
-      this.#files.push(file)
-    }
-
-    this.#updateFileList()
+    this.#addFiles(files)
   }
 
   preventAttachment(event) {
@@ -109,24 +150,41 @@ export default class extends Controller {
   }
 
   get #usingTouchDevice() {
-    return 'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+    return window.matchMedia("(pointer: coarse), (max-width: 48rem)").matches
+  }
+
+  get #activeInput() {
+    return this.#mode === "markdown" ? this.markdownTarget : this.richTextTarget
   }
 
   async #submitMessage() {
-    if (this.#validInput()) {
+    if (!this.#submitting && this.#validInput()) {
+      this.#submitting = true
       const clientMessageId = this.#generateClientId()
+      const mode = this.#mode
+      const content = this.#contentForMode(mode)
+      const pendingInput = this.#activeInput.cloneNode(true)
+      if (pendingInput instanceof HTMLTextAreaElement) pendingInput.value = content
 
-      await this.messagesOutlet.insertPendingMessage(clientMessageId, this.textTarget)
-      await nextFrame()
+      this.#inFlightSubmission = { clientMessageId, mode, content }
 
-      this.clientidTarget.value = clientMessageId
-      this.element.requestSubmit()
-      this.#reset()
+      try {
+        await this.messagesOutlet.insertPendingMessage(clientMessageId, pendingInput)
+        await nextFrame()
+
+        this.clientidTarget.value = clientMessageId
+        this.element.requestSubmit()
+      } catch (error) {
+        this.#submitting = false
+        this.#inFlightSubmission = null
+        throw error
+      }
     }
   }
 
   #validInput() {
-    return this.textTarget.textContent.trim().length > 0
+    const content = this.#mode === "markdown" ? this.markdownTarget.value : this.richTextTarget.textContent
+    return content.trim().length > 0
   }
 
   async #submitFiles() {
@@ -142,9 +200,12 @@ export default class extends Controller {
       const body = this.#pendingUploadProgress(file.name)
       await this.messagesOutlet.insertPendingMessage(clientMessageId, body)
 
-      const resp = await uploader.upload()
-
-      Turbo.renderStreamMessage(resp)
+      try {
+        const response = await uploader.upload()
+        Turbo.renderStreamMessage(response)
+      } catch {
+        this.messagesOutlet.failPendingMessage(clientMessageId)
+      }
     }
   }
 
@@ -157,25 +218,81 @@ export default class extends Controller {
     return Math.random().toString(36).slice(2)
   }
 
-  #reset() {
-    this.textTarget.value = ""
+  #reset(mode) {
+    if (mode === "markdown") {
+      this.markdownTarget.value = ""
+      this.markdownTarget.dispatchEvent(new Event("input", { bubbles: true }))
+    } else {
+      this.richTextTarget.editor.loadHTML("")
+    }
+  }
+
+  #contentForMode(mode) {
+    return mode === "markdown" ? this.markdownTarget.value : this.#richTextInput.value
+  }
+
+  #setMode(mode) {
+    this.#mode = mode
+    const markdownActive = mode === "markdown"
+
+    this.markdownPanelTarget.hidden = !markdownActive
+    this.richTextPanelTarget.hidden = markdownActive
+    this.markdownTarget.disabled = !markdownActive
+    this.#richTextInput.disabled = markdownActive
+    this.modeLabelTarget.textContent = markdownActive ? "Rich text" : "Markdown"
+    const modeButton = this.modeLabelTarget.closest("button")
+    modeButton.setAttribute("aria-label", this.modeLabelTarget.textContent)
+    modeButton.setAttribute("aria-pressed", String(!markdownActive))
+  }
+
+  get #richTextInput() {
+    return document.getElementById(this.richTextTarget.getAttribute("input"))
+  }
+
+  #addFiles(files) {
+    this.#files.push(...files)
+    this.#updateFileList()
   }
 
   #updateFileList() {
     this.#files.sort((a, b) => a.name.localeCompare(b.name))
 
     const fileNodes = this.#files.map((file, index) => {
-      const filename = file.name.split(".").slice(0, -1).join(".")
-      const extension = file.name.split(".").pop()
+      const parts = file.name.split(".")
+      const extension = parts.length > 1 ? `.${parts.pop()}` : ""
+      const filename = parts.join(".") || file.name
 
       const node = document.createElement("button")
-      node.setAttribute("type","button")
-      node.setAttribute("style","gap: 0")
+      node.type = "button"
+      node.style.gap = "0"
       node.dataset.action = "composer#fileUnpicked"
       node.dataset.composerIndexParam = index
       node.className = "btn btn--plain composer__file txt-normal position-relative unpad flex-column"
-      node.innerHTML = file.type.match(/^image\/.*/) ? `<img role="presentation" class="flex-item-no-shrink composer__file-thumbnail" src="${URL.createObjectURL(file)}">` : `<span class="composer__file-thumbnail composer__file-thumbnail--common colorize--black"></span>`
-      node.innerHTML += `<span class="pad-inline txt-small flex align-center max-width composer__file-caption"><span class="overflow-ellipsis">${escapeHTML(filename)}.</span><span class="flex-item-no-shrink">${escapeHTML(extension)}</span></span>`
+      node.setAttribute("aria-label", `Remove ${file.name}`)
+
+      if (file.type.match(/^image\//)) {
+        const image = document.createElement("img")
+        image.role = "presentation"
+        image.className = "flex-item-no-shrink composer__file-thumbnail"
+        image.src = URL.createObjectURL(file)
+        image.addEventListener("load", () => URL.revokeObjectURL(image.src), { once: true })
+        node.append(image)
+      } else {
+        const thumbnail = document.createElement("span")
+        thumbnail.className = "composer__file-thumbnail composer__file-thumbnail--common colorize--black"
+        node.append(thumbnail)
+      }
+
+      const caption = document.createElement("span")
+      caption.className = "pad-inline txt-small flex align-center max-width composer__file-caption"
+      const name = document.createElement("span")
+      name.className = "overflow-ellipsis"
+      name.textContent = filename
+      const suffix = document.createElement("span")
+      suffix.className = "flex-item-no-shrink"
+      suffix.textContent = extension
+      caption.append(name, suffix)
+      node.append(caption)
 
       return node
     })
@@ -183,7 +300,7 @@ export default class extends Controller {
     this.fileListTarget.replaceChildren(...fileNodes)
   }
 
-  #pendingUploadProgress(filename, percent=0) {
+  #pendingUploadProgress(filename, percent = 0) {
     return `
       <div class="message__pending-upload flex align-center gap" style="--percentage: ${percent}%">
         <div class="composer__file-thumbnail composer__file-thumbnail--common colorize--black borderless flex-item-no-shrink"></div>

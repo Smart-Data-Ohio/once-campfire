@@ -11,6 +11,12 @@ expect, including:
 - @mentions
 - API, with support for bot integrations
 
+This Smart Data fork adds a responsive channel workspace, system light/dark
+themes, and Markdown composition with preview and source-preserving editing.
+See the [workspace and Markdown guide](docs/workspace-markdown.md) and
+[self-hosted huddle guide](docs/huddles.md). Build the Docker image from this
+repository to include these additions.
+
 ## Running your own Campfire instance
 
 Campfire's Docker image contains everything needed for a fully-functional,

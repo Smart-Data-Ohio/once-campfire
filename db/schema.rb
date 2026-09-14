@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_14_160000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_14_170000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -134,6 +134,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_160000) do
     t.string "client_message_id", null: false
     t.datetime "created_at", null: false
     t.integer "creator_id", null: false
+    t.text "markdown_source"
     t.integer "room_id", null: false
     t.datetime "updated_at", null: false
     t.index ["creator_id"], name: "index_messages_on_creator_id"

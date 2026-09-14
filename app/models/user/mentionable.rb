@@ -1,6 +1,10 @@
 module User::Mentionable
   include ActionText::Attachable
 
+  def attachable_content_type
+    "application/vnd.campfire.mention"
+  end
+
   def to_attachable_partial_path
     "users/mention"
   end

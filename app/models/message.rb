@@ -8,6 +8,10 @@ class Message < ApplicationRecord
 
   has_rich_text :body
 
+  validates :markdown_source, length: { maximum: Markdown::SOURCE_LIMIT }, allow_nil: true
+  validate :markdown_source_or_attachment, if: :markdown?
+
+  before_validation :render_markdown_body, if: :will_save_change_to_markdown_source?
   before_create -> { self.client_message_id ||= Random.uuid } # Bots don't care
   after_create_commit -> { room.receive(self) }
 
@@ -21,7 +25,12 @@ class Message < ApplicationRecord
   scope :with_boosts, -> { includes(boosts: :booster) }
 
   def plain_text_body
-    body.to_plain_text.presence || attachment&.filename&.to_s || ""
+    text = markdown? ? Markdown.plain_text(body.body) : body.to_plain_text
+    text.presence || attachment&.filename&.to_s || ""
+  end
+
+  def markdown?
+    !markdown_source.nil?
   end
 
   def to_key
@@ -41,4 +50,18 @@ class Message < ApplicationRecord
       Sound.find_by_name match[:name]
     end
   end
+
+
+  private
+    def render_markdown_body
+      return unless markdown? && markdown_source.length <= Markdown::SOURCE_LIMIT
+
+      self.body = Markdown.render(markdown_source, room:)
+    end
+
+    def markdown_source_or_attachment
+      if markdown_source.blank? && !attachment.attached?
+        errors.add :markdown_source, "can't be blank"
+      end
+    end
 end

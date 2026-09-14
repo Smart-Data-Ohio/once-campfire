@@ -55,10 +55,12 @@ class Messages::ByBotsController < MessagesController
     end
 
     def message_params
-      if params[:attachment]
+      attributes = if params[:attachment]
         params.permit(:attachment)
       else
         { body: raw_request_body }
       end
+
+      attributes.merge(markdown_source: nil)
     end
 end

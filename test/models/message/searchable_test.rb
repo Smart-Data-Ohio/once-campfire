@@ -26,4 +26,15 @@ class Message::SearchableTest < ActiveSupport::TestCase
     assert_equal [], rooms(:designers).messages.search("span")
     assert_equal [ message ], rooms(:designers).messages.search("eel")
   end
+
+  test "Markdown is indexed as readable text rather than source syntax" do
+    message = rooms(:designers).messages.create!(
+      markdown_source: "## Release Notes\n\n**Hovercraft** status",
+      client_message_id: "markdown-search",
+      creator: users(:david)
+    )
+
+    assert_equal [ message ], rooms(:designers).messages.search("release")
+    assert_equal [ message ], rooms(:designers).messages.search("hovercraft")
+  end
 end

@@ -9,6 +9,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
 
     sign_in "jz@37signals.com"
     join_room rooms(:designers)
+    click_on "Rich text"
   end
 
   teardown do

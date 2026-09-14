@@ -26,6 +26,19 @@ class Autocompletable::UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal "David", response.parsed_body.first["name"]
+    assert_equal "David", response.parsed_body.first["markdown_display_name"]
+    assert_equal "@[David]", response.parsed_body.first["mention_token"]
+  end
+
+  test "room search omits the Markdown token for duplicate display names" do
+    User.create!(name: "David")
+
+    get autocompletable_users_url(room_id: rooms(:hq).id, format: :json), params: { query: "da" }
+
+    assert_response :success
+    david_results = response.parsed_body.select { |result| result["markdown_display_name"] == "David" }
+    assert_equal 2, david_results.size
+    assert david_results.all? { |result| !result.key?("mention_token") }
   end
 
   test "room search is scoped by membership" do

@@ -20,8 +20,26 @@ module SystemTestHelper
   end
 
   def send_message(message)
-    fill_in_rich_text_area "message_body", with: message
-    click_on "send"
+    if page.has_field?("message_markdown_source", visible: true, wait: 0)
+      fill_in_markdown "message_markdown_source", with: message
+    else
+      fill_in_rich_text_area "message_body", with: message
+    end
+    click_on "Send Message"
+  end
+
+  def fill_in_markdown(locator, with:)
+    editor = find_field(locator)
+    editor.click
+    # Pasting multiline source must not simulate desktop Enter-to-send. The
+    # keyboard system tests exercise physical Enter and Shift+Enter separately.
+    page.execute_script <<~JS, editor, with
+      const [editor, source] = arguments;
+      editor.value = source;
+      editor.dispatchEvent(new InputEvent('input', {
+        bubbles: true, inputType: 'insertFromPaste', data: source
+      }));
+    JS
   end
 
   def within_message(message, &block)
@@ -29,7 +47,7 @@ module SystemTestHelper
   end
 
   def assert_message_text(text, **options)
-    assert_selector ".message__body", text: text, **options
+    assert_selector ".message[data-message-id] .message__body", text: text, **options
   end
 
   def assert_room_read(room)

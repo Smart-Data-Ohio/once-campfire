@@ -121,7 +121,9 @@ class HuddlesTest < ApplicationSystemTestCase
     click_button "Join huddle"
     assert_selector "#channel-huddle[data-state='failed']"
     assert_selector "[data-huddle-target='notice']", text: /Microphone access was denied/
-    using_session("Kevin") { assert_selector ".huddle__participant", count: 1 }
+    # A failed join can close signaling before LiveKit processes the leave packet.
+    # Allow the gateway's three-second reconnect grace plus its cleanup request.
+    using_session("Kevin") { assert_selector ".huddle__participant", count: 1, wait: 5 }
 
     page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
     click_button "Try again"

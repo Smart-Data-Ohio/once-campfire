@@ -65,7 +65,9 @@ Rails.application.routes.draw do
   end
 
   resources :rooms do
-    resources :messages
+    resources :messages do
+      post :preview, on: :collection
+    end
 
     nested do
       scope path: ":bot_key", as: :bot, defaults: { format: :json } do
