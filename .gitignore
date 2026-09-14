@@ -31,6 +31,9 @@
 
 /public/assets
 
+# Ignore dependencies for the vendored LiveKit browser SDK build.
+/script/livekit-client/node_modules/
+
 # Ignore master key for decrypting credentials and more.
 /config/master.key
 

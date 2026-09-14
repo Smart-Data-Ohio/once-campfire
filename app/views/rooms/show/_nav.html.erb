@@ -11,6 +11,18 @@
     </h1>
   <% end %>
 
+  <% if !room.direct? && Huddle.configured? %>
+    <%= tag.button type: "button", class: "btn huddle-launcher", aria: { pressed: "false" },
+          data: {
+            controller: "huddle-launcher",
+            action: "huddle-launcher#join",
+            huddle_launcher_room_id_value: room.id,
+            huddle_launcher_room_name_value: room_display_name(room)
+          } do %>
+      <span data-huddle-launcher-target="label">Join huddle</span>
+    <% end %>
+  <% end %>
+
   <%= link_to_edit_room(room) do %>
     <%= image_tag "menu-dots-horizontal.svg", size: 20, aria: { hidden: "true" } %>
     <span class="for-screen-reader">Settings for this <%= room.direct? ? "Ping" : "room" %></span>

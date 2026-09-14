@@ -71,6 +71,7 @@ Rails.application.routes.draw do
     end
 
     scope module: "rooms" do
+      resource :huddle, only: %i[ show create ]
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]

@@ -22,6 +22,8 @@ class Room < ApplicationRecord
 
   belongs_to :creator, class_name: "User", default: -> { Current.user }
 
+  before_destroy :capture_huddle_room_name
+  after_destroy_commit :delete_huddle_room
   validate :direct_rooms_keep_their_type, on: :update
 
   scope :opens,           -> { where(type: "Rooms::Open") }
@@ -67,6 +69,14 @@ class Room < ApplicationRecord
   end
 
   private
+    def capture_huddle_room_name
+      @huddle_room_name = Huddle.room_name(id) if Huddle.configured?
+    end
+
+    def delete_huddle_room
+      Huddle.enqueue_room_deletion(@huddle_room_name)
+    end
+
     # Open and closed rooms convert into each other freely. A direct room can't become
     # either: its participants agreed to a private conversation, not to one whose
     # audience someone else gets to widen afterwards.

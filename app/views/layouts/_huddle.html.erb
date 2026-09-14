@@ -1,0 +1,48 @@
+<section id="channel-huddle"
+         class="huddle shadow"
+         data-turbo-permanent
+         data-controller="huddle"
+         data-huddle-current-user-id-value="<%= Current.user.id %>"
+         data-state="idle"
+         aria-labelledby="huddle-room-name"
+         hidden>
+  <header class="huddle__header">
+    <div class="min-width">
+      <h2 id="huddle-room-name" class="huddle__title overflow-ellipsis" data-huddle-target="roomName">Huddle</h2>
+      <p class="huddle__status" data-huddle-target="status" role="status" aria-live="polite">Not in a huddle</p>
+    </div>
+
+    <button type="button" class="btn btn--plain huddle__leave" data-action="huddle#leave">
+      <span data-huddle-target="leaveLabel">Leave</span>
+    </button>
+  </header>
+
+  <p class="huddle__notice" data-huddle-target="notice" role="alert" hidden></p>
+
+  <button type="button" class="btn huddle__resume-audio" data-huddle-target="resumeAudio" data-action="huddle#resumeAudio" hidden>
+    Play huddle audio
+  </button>
+
+  <div class="huddle__screens" data-huddle-target="screens" aria-label="Shared screens" hidden></div>
+
+  <div class="huddle__people" data-huddle-target="people" hidden>
+    <div class="huddle__people-heading">
+      <h3>People</h3>
+      <span class="txt-small txt-subtle" data-huddle-target="participantCount">0 participants</span>
+    </div>
+    <ul class="huddle__participants" data-huddle-target="participantList"></ul>
+  </div>
+
+  <div class="huddle__controls" data-huddle-target="activeControls" hidden>
+    <button type="button" class="btn" data-huddle-target="mute" data-action="huddle#toggleMute" aria-pressed="false">
+      <span data-huddle-target="muteLabel">Mute</span>
+    </button>
+    <button type="button" class="btn" data-huddle-target="share" data-action="huddle#toggleScreenShare" aria-pressed="false">
+      <span data-huddle-target="shareLabel">Share screen</span>
+    </button>
+  </div>
+
+  <button type="button" class="btn btn--reversed huddle__retry" data-huddle-target="retry" data-action="huddle#retry" hidden>
+    Try again
+  </button>
+</section>
