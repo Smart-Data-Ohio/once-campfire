@@ -10,14 +10,17 @@ class Rooms::HuddlesController < ApplicationController
   end
 
   def create
-    huddle = Huddle.new(room: @room, user: Current.user, session: Current.session)
+    huddle = Huddle.new(room: @room, user: Current.user, session: Current.session, membership: @membership)
 
     render json: {
       url: huddle.url,
       token: huddle.token,
       room: room_json,
-      identity: huddle.identity
+      identity: huddle.identity,
+      grant_id: huddle.grant_id
     }
+  rescue HuddleGrant::Ineligible
+    render_error "Room not found or inaccessible", :not_found
   end
 
   private
@@ -42,8 +45,9 @@ class Rooms::HuddlesController < ApplicationController
     end
 
     def set_room
-      @room = Current.user.rooms.find_by(id: params[:room_id])
-      render_error "Room not found or inaccessible", :not_found unless @room
+      @membership = Current.user.memberships.find_by(room_id: params[:room_id])
+      @room = @membership&.room
+      render_error "Room not found or inaccessible", :not_found unless @membership && @room
     end
 
     def room_json

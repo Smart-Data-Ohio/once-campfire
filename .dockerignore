@@ -53,3 +53,4 @@
 
 # The LiveKit browser bundle is checked in; its build tools are not needed at runtime.
 /script/livekit-client/node_modules/
+/script/livekit-gateway/node_modules/

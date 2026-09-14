@@ -1,6 +1,16 @@
 require "application_system_test_case"
+require "socket"
+require "timeout"
+require "uri"
 
 class HuddlesTest < ApplicationSystemTestCase
+  self.use_transactional_tests = false
+
+  CAMPFIRE_PORT = 3001
+  GATEWAY_PORT = 7884
+
+  Capybara.server_port = CAMPFIRE_PORT
+
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1000 ], options: { name: :huddle_chrome } do |options|
     options.add_argument "--use-fake-device-for-media-stream"
     options.add_argument "--use-fake-ui-for-media-stream"
@@ -9,24 +19,45 @@ class HuddlesTest < ApplicationSystemTestCase
 
   setup do
     skip "Run with LIVEKIT_SYSTEM_TESTS=1 and a local LiveKit server" unless ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
-    assert Huddle.configured?, "Source the local LiveKit environment before running huddle tests"
-    Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
+    @original_livekit_url = ENV["LIVEKIT_URL"]
+    ENV["LIVEKIT_URL"] = "ws://127.0.0.1:#{GATEWAY_PORT}"
     @forgery_protection = ActionController::Base.allow_forgery_protection
+    assert Huddle.configured?, "Source the local LiveKit environment before running huddle tests"
+    HuddleCleanup.delete_all
+    HuddleGrant.delete_all
+    Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
     ActionController::Base.allow_forgery_protection = true
+    start_gateway
   end
 
   teardown do
     if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
-      [ :default, "Kevin" ].each do |name|
-        using_session(name) do
-          if page.has_css?("#channel-huddle:not([hidden])", wait: 0)
-            find("[data-action='huddle#leave']").click
-            assert_no_selector "#channel-huddle:not([hidden])"
+      begin
+        [ :default, "Kevin" ].each do |name|
+          using_session(name) do
+            if page.has_css?("#channel-huddle:not([hidden])", wait: 0)
+              find("[data-action='huddle#leave']").click
+              assert_no_selector "#channel-huddle:not([hidden])"
+            end
+          end
+        end
+      ensure
+        ActionController::Base.allow_forgery_protection = @forgery_protection
+        begin
+          stop_gateway
+        ensure
+          begin
+            Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
+          ensure
+            begin
+              HuddleCleanup.delete_all
+              HuddleGrant.delete_all
+            ensure
+              ENV["LIVEKIT_URL"] = @original_livekit_url
+            end
           end
         end
       end
-      ActionController::Base.allow_forgery_protection = @forgery_protection
-      Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
     end
   end
 
@@ -101,14 +132,14 @@ class HuddlesTest < ApplicationSystemTestCase
 
   test "server removal disconnects only the targeted participant and stops their media" do
     open_huddle_as "jz@37signals.com"
+    identity = captured_credentials.fetch("identity")
     using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
 
     # Exercise the real server API without relying on the client's access poll
     # or a Campfire navigation to end the connection.
-    session = users(:jz).sessions.order(:created_at).last
-    Huddle::RevokeParticipantJob.perform_now(Huddle.room_name(rooms(:designers).id), Huddle.identity(session.id))
+    Huddle::RoomService.new.remove_participant(room_name: Huddle.room_name(rooms(:designers).id), identity: identity)
 
     assert_selector "#channel-huddle[data-state='failed']", wait: 10
     assert_no_selector "#channel-huddle audio", visible: :all
@@ -119,6 +150,116 @@ class HuddlesTest < ApplicationSystemTestCase
       assert_selector "#channel-huddle[data-state='connected']"
       assert_selector ".huddle__participant", count: 1
     end
+  end
+
+  test "the SDK reconnects through the gateway with LiveKit's refreshed token" do
+    open_huddle_as "jz@37signals.com"
+    credentials = captured_credentials
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+
+    original_token = credentials.fetch("token")
+    refreshed_token = wait_for_refreshed_token(original_token)
+    original_claims = decode_token(original_token)
+    refreshed_claims = decode_token(refreshed_token)
+
+    assert original_token != refreshed_token, "LiveKit did not replace the original token"
+    assert_equal credentials.fetch("identity"), original_claims.fetch("sub")
+    assert_equal original_claims.fetch("sub"), refreshed_claims.fetch("sub")
+    assert_equal original_claims.dig("video", "room"), refreshed_claims.dig("video", "room")
+
+    socket_count = signal_socket_urls.length
+    peer_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+    force_full_reconnect
+
+    wait_for_condition("the SDK did not reconnect with LiveKit's refreshed token") do
+      signal_socket_urls.drop(socket_count).any? { |url| signal_token(url) == refreshed_token }
+    end
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_new_active_media_received "audio", after: peer_connection_count
+    using_session("Kevin") do
+      assert_selector "#channel-huddle[data-state='connected']"
+      assert_selector ".huddle__participant", count: 2
+    end
+  end
+
+  test "membership revocation rejects original and refreshed tokens even after membership is restored" do
+    open_huddle_as "jz@37signals.com"
+    credentials = captured_credentials
+    original_signal_url = signal_socket_urls.first
+    original_token = credentials.fetch("token")
+    refreshed_token = wait_for_refreshed_token(original_token)
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+
+    with_rescuable_server_exceptions do
+      rooms(:designers).memberships.revoke_from(users(:jz))
+
+      assert_huddle_access_ended
+      using_session("Kevin") { assert_remaining_participant_connected }
+      assert_tokens_unexpired original_token, refreshed_token
+      assert_signal_token_rejected original_signal_url, original_token
+      assert_signal_token_rejected original_signal_url, refreshed_token
+
+      rooms(:designers).memberships.grant_to(users(:jz))
+      click_button "Try again"
+      assert_selector "#channel-huddle[data-state='connected']", wait: 20
+      replacement_credentials = captured_credentials(1)
+
+      assert_not_equal credentials.fetch("grant_id"), replacement_credentials.fetch("grant_id")
+      assert_not_equal credentials.fetch("identity"), replacement_credentials.fetch("identity")
+
+      # Current room membership is valid again. These still have to fail because
+      # they belong to the revoked grant rather than the new authorization.
+      assert_tokens_unexpired original_token, refreshed_token
+      assert_signal_token_rejected original_signal_url, original_token
+      assert_signal_token_rejected original_signal_url, refreshed_token
+      using_session("Kevin") do
+        assert_selector ".huddle__participant", count: 2
+        assert_media_received "audio"
+      end
+    end
+  end
+
+  test "session revocation rejects both tokens and leaves the other participant connected" do
+    open_huddle_as "jz@37signals.com"
+    credentials = captured_credentials
+    original_signal_url = signal_socket_urls.first
+    original_token = credentials.fetch("token")
+    refreshed_token = wait_for_refreshed_token(original_token)
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+
+    HuddleGrant.find(credentials.fetch("grant_id")).session.destroy!
+
+    assert_huddle_access_ended
+    using_session("Kevin") { assert_remaining_participant_connected }
+    assert_tokens_unexpired original_token, refreshed_token
+    assert_signal_token_rejected original_signal_url, original_token
+    assert_signal_token_rejected original_signal_url, refreshed_token
+    using_session("Kevin") { assert_remaining_participant_connected }
+  end
+
+  test "server enforcement removes a revoked participant that ignores browser access checks" do
+    open_huddle_as "jz@37signals.com"
+    credentials = captured_credentials
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+    received_before_revocation = inbound_rtp_bytes("audio")
+    assert_operator received_before_revocation, :>, 0
+    ignore_huddle_access_checks
+
+    HuddleGrant.find(credentials.fetch("grant_id")).revoke!
+
+    using_session("Kevin") do
+      assert_selector "#channel-huddle[data-state='connected']"
+      assert_selector ".huddle__participant", count: 1, wait: 20
+    end
+    assert_inbound_media_stopped "audio"
   end
 
   private
@@ -132,9 +273,39 @@ class HuddlesTest < ApplicationSystemTestCase
     end
 
     def prepare_browser
-      page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source: <<~JS)
+      page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source: <<~'JS')
+        (() => {
+        if (window.huddleTestInstrumentationInstalled) return;
+        window.huddleTestInstrumentationInstalled = true;
+
         window.huddleTestPeerConnections = [];
         window.huddleTestLocalTracks = [];
+        window.huddleTestCredentials = [];
+        window.huddleTestWebSocketUrls = [];
+
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+          const response = await nativeFetch(...args);
+          try {
+            const input = args[0];
+            const options = args[1] || {};
+            const url = typeof input === 'string' ? input : input.url;
+            const method = (options.method || input.method || 'GET').toUpperCase();
+            if (method === 'POST' && new URL(url, window.location.origin).pathname.match(/^\/rooms\/\d+\/huddle$/)) {
+              response.clone().json().then(body => window.huddleTestCredentials.push(body));
+            }
+          } catch (_) {}
+          return response;
+        };
+
+        const NativeWebSocket = window.WebSocket;
+        window.WebSocket = class extends NativeWebSocket {
+          constructor(...args) {
+            super(...args);
+            window.huddleTestWebSocketUrls.push(String(args[0]));
+          }
+        };
+
         const NativePeerConnection = window.RTCPeerConnection;
         window.RTCPeerConnection = class extends NativePeerConnection {
           constructor(...args) {
@@ -170,7 +341,182 @@ class HuddlesTest < ApplicationSystemTestCase
           window.huddleTestLocalTracks.push(...stream.getTracks());
           return stream;
         };
+        })();
       JS
+    end
+
+    def captured_credentials(index = 0)
+      wait_for_condition("the browser did not capture huddle credentials") do
+        page.evaluate_script("window.huddleTestCredentials.length") > index
+      end
+      page.evaluate_script("window.huddleTestCredentials[#{Integer(index)}]")
+    end
+
+    def ignore_huddle_access_checks
+      page.execute_script <<~'JS'
+        const nativeAccessFetch = window.fetch.bind(window);
+        window.fetch = (...args) => {
+          const input = args[0];
+          const options = args[1] || {};
+          const url = typeof input === 'string' ? input : input.url;
+          const method = (options.method || input.method || 'GET').toUpperCase();
+
+          if (method === 'GET' && new URL(url, window.location.origin).pathname.match(/^\/rooms\/\d+\/huddle$/)) {
+            return Promise.resolve(new Response('{}', {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            }));
+          }
+
+          return nativeAccessFetch(...args);
+        };
+      JS
+    end
+
+    def signal_socket_urls
+      page.evaluate_script("window.huddleTestWebSocketUrls").select do |url|
+        URI.parse(url).path.match?(%r{\A/rtc(?:/v1)?\z})
+      end
+    end
+
+    def signal_token(url)
+      URI.decode_www_form(URI.parse(url).query.to_s).to_h.fetch("access_token")
+    end
+
+    def wait_for_refreshed_token(original_token)
+      refreshed_token = nil
+      wait_for_condition("LiveKit did not give the SDK a refreshed token") do
+        refreshed_token = page.evaluate_script(<<~JS)
+          window.Stimulus
+            .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+            ?.room?.engine?.token
+        JS
+        refreshed_token.present? && refreshed_token != original_token
+      end
+      refreshed_token
+    end
+
+    def decode_token(token)
+      JWT.decode(token, nil, false).first
+    end
+
+    def assert_tokens_unexpired(*tokens)
+      tokens.each do |token|
+        assert_operator decode_token(token).fetch("exp"), :>, Time.current.to_i,
+          "gateway must reject an unexpired token because its authorization was revoked"
+      end
+    end
+
+    def force_full_reconnect
+      result = page.evaluate_async_script(<<~JS)
+        const done = arguments[arguments.length - 1];
+        const controller = window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle');
+        controller.room.simulateScenario('full-reconnect')
+          .then(() => done({ ok: true }))
+          .catch(error => done({ ok: false, message: error.message }));
+      JS
+      assert result.fetch("ok"), "SDK could not start a full reconnect"
+    end
+
+    def assert_huddle_access_ended
+      assert_selector "#channel-huddle[data-state='failed']", wait: 20
+      assert_selector "[data-huddle-target='status']", text: "Huddle ended"
+      assert_no_selector "#channel-huddle audio", visible: :all
+      wait_for_condition("revoked participant's local media was not stopped") do
+        page.evaluate_script("window.huddleTestLocalTracks.every(track => track.readyState === 'ended')")
+      end
+    end
+
+    def assert_remaining_participant_connected
+      assert_selector "#channel-huddle[data-state='connected']"
+      assert_selector ".huddle__participant", count: 1
+      wait_for_condition("the remaining participant lost their peer connection") do
+        page.evaluate_script("window.huddleTestPeerConnections.some(connection => connection.connectionState === 'connected')")
+      end
+    end
+
+    def assert_signal_token_rejected(signal_url, token)
+      result = page.evaluate_async_script(<<~JS, signal_url, token)
+        const template = arguments[0];
+        const token = arguments[1];
+        const done = arguments[arguments.length - 1];
+        const url = new URL(template);
+        url.searchParams.set('access_token', token);
+
+        let finished = false;
+        let opened = false;
+        const finish = details => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timeout);
+          done({ opened, ...details });
+        };
+        const socket = new WebSocket(url);
+        socket.addEventListener('open', () => {
+          opened = true;
+          socket.close();
+        });
+        socket.addEventListener('error', () => {});
+        socket.addEventListener('close', event => finish({ code: event.code, timedOut: false }));
+        const timeout = setTimeout(() => {
+          socket.close();
+          finish({ code: null, timedOut: true });
+        }, 5_000);
+      JS
+
+      assert_not result.fetch("timedOut"), "gateway left an unauthorized signal attempt pending"
+      assert_not result.fetch("opened"), "gateway accepted a signal socket with a revoked token"
+    end
+
+    def start_gateway
+      gateway_log_path = Rails.root.join("tmp/livekit-gateway-system-test.log")
+      @gateway_log = File.open(gateway_log_path, "w")
+      environment = {
+        "GATEWAY_CAMPFIRE_URL" => "http://127.0.0.1:#{CAMPFIRE_PORT}",
+        "LIVEKIT_GATEWAY_PORT" => GATEWAY_PORT.to_s
+      }
+      @gateway_pid = Process.spawn(
+        environment,
+        "node", Rails.root.join("script/livekit-gateway/server.mjs").to_s,
+        chdir: Rails.root.to_s,
+        out: @gateway_log,
+        err: @gateway_log,
+        pgroup: true
+      )
+      wait_for_gateway(gateway_log_path)
+    end
+
+    def wait_for_gateway(log_path)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+
+      loop do
+        begin
+          TCPSocket.new("127.0.0.1", GATEWAY_PORT).close
+          break
+        rescue Errno::ECONNREFUSED
+          if Process.waitpid(@gateway_pid, Process::WNOHANG)
+            flunk "LiveKit gateway exited during startup:\n#{File.read(log_path)}"
+          end
+          flunk "LiveKit gateway did not start:\n#{File.read(log_path)}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          sleep 0.05
+        end
+      end
+    end
+
+    def stop_gateway
+      return unless @gateway_pid
+
+      Process.kill("TERM", -@gateway_pid)
+      Timeout.timeout(5) { Process.wait(@gateway_pid) }
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    rescue Timeout::Error
+      Process.kill("KILL", -@gateway_pid)
+      Process.wait(@gateway_pid)
+    ensure
+      @gateway_log&.close
+      @gateway_pid = nil
     end
 
     def assert_media_received(kind)
@@ -184,6 +530,62 @@ class HuddlesTest < ApplicationSystemTestCase
             .catch(() => done(false));
         JS
       end
+    end
+
+    def assert_new_active_media_received(kind, after:)
+      wait_for_condition("no #{kind} RTP media arrived on the reconnected peer connection") do
+        page.evaluate_async_script(<<~JS, kind, after)
+          const kind = arguments[0];
+          const after = arguments[1];
+          const done = arguments[arguments.length - 1];
+          const activeConnections = window.huddleTestPeerConnections
+            .slice(after)
+            .filter(connection => ['connected', 'completed'].includes(connection.connectionState));
+          Promise.all(activeConnections.map(connection => connection.getStats()))
+            .then(reports => done(reports.some(report => Array.from(report.values()).some(stat =>
+              stat.type === 'inbound-rtp' && stat.kind === kind && stat.bytesReceived > 0))))
+            .catch(() => done(false));
+        JS
+      end
+    end
+
+    def inbound_rtp_bytes(kind)
+      page.evaluate_async_script(<<~JS, kind)
+        const kind = arguments[0];
+        const done = arguments[arguments.length - 1];
+        Promise.all(window.huddleTestPeerConnections.map(connection => connection.getStats()))
+          .then(reports => done(reports.reduce((total, report) => total + Array.from(report.values())
+            .filter(stat => stat.type === 'inbound-rtp' && stat.kind === kind)
+            .reduce((bytes, stat) => bytes + stat.bytesReceived, 0), 0)))
+          .catch(() => done(-1));
+      JS
+    end
+
+    def assert_inbound_media_stopped(kind)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
+      previous_bytes = inbound_rtp_bytes(kind)
+      assert_operator previous_bytes, :>=, 0, "could not read inbound #{kind} RTP statistics"
+      stable_samples = 0
+
+      loop do
+        sleep 0.25
+        current_bytes = inbound_rtp_bytes(kind)
+        assert_operator current_bytes, :>=, 0, "could not read inbound #{kind} RTP statistics"
+        stable_samples = current_bytes == previous_bytes ? stable_samples + 1 : 0
+        return assert true if stable_samples >= 4
+
+        flunk "#{kind} RTP bytes kept increasing after server revocation" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        previous_bytes = current_bytes
+      end
+    end
+
+    def with_rescuable_server_exceptions
+      env_config = Rails.application.env_config
+      original = env_config["action_dispatch.show_exceptions"]
+      env_config["action_dispatch.show_exceptions"] = :rescuable
+      yield
+    ensure
+      env_config["action_dispatch.show_exceptions"] = original
     end
 
     def wait_for_condition(message)

@@ -13,6 +13,8 @@ BINARY="$RUNTIME_DIR/livekit-server"
 ARCHIVE_PATH="$RUNTIME_DIR/$LIVEKIT_ARCHIVE"
 ENV_FILE="$RUNTIME_DIR/env"
 CONFIG_FILE="$RUNTIME_DIR/config.yaml"
+GATEWAY_DIR="$ROOT_DIR/script/livekit-gateway"
+GATEWAY_SERVER="$GATEWAY_DIR/server.mjs"
 
 usage() {
   cat <<'USAGE'
@@ -20,8 +22,11 @@ Usage: bin/livekit-local <command>
 
 Commands:
   setup   Install and configure the pinned project-local LiveKit server
-  start   Verify setup and run LiveKit in the foreground
-  status  Check whether the local signal endpoint is ready
+  serve   Run LiveKit, the authorization gateway, and cleanup reconciliation
+  start   Run only the private LiveKit server (test and diagnostic use)
+  gateway Run only the authorization gateway (test and diagnostic use)
+  status  Check whether the private LiveKit server is ready
+  gateway-status  Check whether the authorization gateway is ready
   paths   Print the non-secret runtime paths used by the integration
 USAGE
 }
@@ -74,28 +79,56 @@ install_binary() {
 }
 
 load_or_create_environment() {
-  local api_key api_secret
+  local api_key api_secret gateway_secret env_temp
 
-  if [[ ! -f "$ENV_FILE" ]]; then
+  unset LIVEKIT_URL LIVEKIT_INTERNAL_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_GATEWAY_SECRET
+  if [[ -f "$ENV_FILE" ]]; then
+    chmod 0600 "$ENV_FILE"
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    api_key="${LIVEKIT_API_KEY:-}"
+    api_secret="${LIVEKIT_API_SECRET:-}"
+    gateway_secret="${LIVEKIT_GATEWAY_SECRET:-}"
+  else
     api_key="local_$(openssl rand -hex 12)"
     api_secret="$(openssl rand -hex 32)"
-    umask 077
-    {
-      printf "export LIVEKIT_URL='%s'\n" "ws://127.0.0.1:7880"
-      printf "export LIVEKIT_API_KEY='%s'\n" "$api_key"
-      printf "export LIVEKIT_API_SECRET='%s'\n" "$api_secret"
-    } > "$ENV_FILE"
+    gateway_secret=""
   fi
 
-  chmod 0600 "$ENV_FILE"
+  if [[ ! "$api_key" =~ ^local_[0-9a-f]{24}$ ]] || [[ ! "$api_secret" =~ ^[0-9a-f]{64}$ ]]; then
+    printf '%s contains invalid local LiveKit credentials; move it aside and run setup again.\n' "$ENV_FILE" >&2
+    exit 1
+  fi
+  if [[ -n "$gateway_secret" && ! "$gateway_secret" =~ ^[0-9a-f]{32,}$ ]]; then
+    printf '%s contains an invalid gateway secret; remove that entry and run setup again.\n' "$ENV_FILE" >&2
+    exit 1
+  fi
+  if [[ -z "$gateway_secret" ]]; then
+    gateway_secret="$(openssl rand -hex 32)"
+  fi
+
+  umask 077
+  env_temp=$(mktemp "$RUNTIME_DIR/env.XXXXXX")
+  {
+    printf "export LIVEKIT_URL='%s'\n" "ws://127.0.0.1:7883"
+    printf "export LIVEKIT_INTERNAL_URL='%s'\n" "http://127.0.0.1:7880"
+    printf "export LIVEKIT_API_KEY='%s'\n" "$api_key"
+    printf "export LIVEKIT_API_SECRET='%s'\n" "$api_secret"
+    printf "export LIVEKIT_GATEWAY_SECRET='%s'\n" "$gateway_secret"
+  } > "$env_temp"
+  chmod 0600 "$env_temp"
+  mv "$env_temp" "$ENV_FILE"
+
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+}
 
-  if [[ "${LIVEKIT_URL:-}" != "ws://127.0.0.1:7880" ]] ||
-    [[ ! "${LIVEKIT_API_KEY:-}" =~ ^local_[0-9a-f]{24}$ ]] ||
-    [[ ! "${LIVEKIT_API_SECRET:-}" =~ ^[0-9a-f]{64}$ ]]; then
-    printf '%s is invalid; move it aside and run setup again.\n' "$ENV_FILE" >&2
-    exit 1
+install_gateway_dependencies() {
+  command -v node >/dev/null || { printf 'Node.js is required for the LiveKit authorization gateway.\n' >&2; exit 1; }
+  command -v npm >/dev/null || { printf 'npm is required for the LiveKit authorization gateway.\n' >&2; exit 1; }
+  if ! node -e 'const version = require(process.argv[1]); if (version.version !== "8.21.3") process.exit(1)' \
+    "$GATEWAY_DIR/node_modules/ws/package.json" 2>/dev/null; then
+    npm ci --ignore-scripts --no-audit --no-fund --prefix "$GATEWAY_DIR"
   fi
 }
 
@@ -135,31 +168,113 @@ setup() {
   mkdir -p "$RUNTIME_DIR"
   install_binary
   load_or_create_environment
+  install_gateway_dependencies
   write_config
 
-  printf 'LiveKit Server v%s is installed for ws://127.0.0.1:7880.\n' "$LIVEKIT_VERSION"
+  printf 'LiveKit Server v%s is installed behind ws://127.0.0.1:7883.\n' "$LIVEKIT_VERSION"
+  printf 'The private signaling and administration endpoint is http://127.0.0.1:7880.\n'
   printf 'Environment: %s\n' "$ENV_FILE"
 }
 
 status() {
   if curl --fail --silent --show-error --output /dev/null http://127.0.0.1:7880/; then
-    printf 'LiveKit is ready at ws://127.0.0.1:7880.\n'
+    printf 'Private LiveKit is ready at http://127.0.0.1:7880.\n'
   else
-    printf 'LiveKit is not ready at ws://127.0.0.1:7880.\n' >&2
+    printf 'Private LiveKit is not ready at http://127.0.0.1:7880.\n' >&2
     exit 1
   fi
+}
+
+gateway_status() {
+  local status_code
+  status_code=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:7883/rtc/validate || true)
+  if [[ "$status_code" == "401" ]]; then
+    printf 'LiveKit authorization gateway is ready at ws://127.0.0.1:7883.\n'
+  else
+    printf 'LiveKit authorization gateway is not ready at ws://127.0.0.1:7883.\n' >&2
+    exit 1
+  fi
+}
+
+serve() {
+  local child_status interrupted=0 deadline alive pid
+  local -a child_pids=()
+
+  setup
+
+  stop_children() {
+    for pid in "${child_pids[@]}"; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+    deadline=$((SECONDS + 5))
+    while (( SECONDS < deadline )); do
+      alive=0
+      for pid in "${child_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then alive=1; fi
+      done
+      (( alive == 0 )) && break
+      sleep 0.1
+    done
+    for pid in "${child_pids[@]}"; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done
+    for pid in "${child_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  }
+
+  on_signal() {
+    interrupted=1
+    stop_children
+  }
+  run_reconciler() {
+    cd "$ROOT_DIR"
+    if [[ -x "$ROOT_DIR/.bundle/run" ]]; then
+      exec "$ROOT_DIR/.bundle/run" bin/huddle-reconcile
+    fi
+    exec bin/huddle-reconcile
+  }
+  trap on_signal INT TERM
+
+  "$BINARY" --config "$CONFIG_FILE" &
+  child_pids+=("$!")
+  node "$GATEWAY_SERVER" &
+  child_pids+=("$!")
+  run_reconciler &
+  child_pids+=("$!")
+
+  set +e
+  wait -n "${child_pids[@]}"
+  child_status=$?
+  set -e
+  trap - INT TERM
+  stop_children
+
+  if (( interrupted == 1 )); then exit 130; fi
+  if (( child_status == 0 )); then exit 1; fi
+  exit "$child_status"
 }
 
 case "${1:-}" in
   setup)
     setup
     ;;
+  serve)
+    serve
+    ;;
   start)
     setup
     exec "$BINARY" --config "$CONFIG_FILE"
     ;;
+  gateway)
+    setup
+    exec node "$GATEWAY_SERVER"
+    ;;
   status)
     status
+    ;;
+  gateway-status)
+    gateway_status
     ;;
   paths)
     printf 'Environment: %s\nConfig: %s\nBinary: %s\n' "$ENV_FILE" "$CONFIG_FILE" "$BINARY"

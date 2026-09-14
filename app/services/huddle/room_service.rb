@@ -39,7 +39,7 @@ class Huddle::RoomService
     end
 
     def endpoint_uri(action)
-      source = URI.parse(ENV.fetch("LIVEKIT_URL"))
+      source = URI.parse(ENV.fetch("LIVEKIT_INTERNAL_URL"))
       scheme = { "ws" => "http", "wss" => "https", "http" => "http", "https" => "https" }.fetch(source.scheme)
       raise URI::InvalidURIError, "LiveKit URL must include a host" if source.host.blank?
 

@@ -231,7 +231,10 @@ export default class extends Controller {
     }
 
     on(RoomEvent.Reconnecting, () => {
-      if (room === this.room) this.#setState("reconnecting", "Connection interrupted. Reconnecting…")
+      if (room === this.room) {
+        this.#setState("reconnecting", "Connection interrupted. Reconnecting…")
+        this.#checkAuthentication()
+      }
     })
     on(RoomEvent.Reconnected, () => {
       if (room === this.room) {
@@ -241,7 +244,7 @@ export default class extends Controller {
         this.#updateAudioPlaybackControl()
       }
     })
-    on(RoomEvent.Disconnected, () => this.#unexpectedDisconnect(room))
+    on(RoomEvent.Disconnected, (reason) => this.#unexpectedDisconnect(room, reason))
     on(RoomEvent.ParticipantConnected, () => this.#renderRoster())
     on(RoomEvent.ParticipantDisconnected, (participant) => {
       for (const publication of participant.trackPublications.values()) {
@@ -283,7 +286,7 @@ export default class extends Controller {
     this.roomListeners.delete(room)
   }
 
-  async #unexpectedDisconnect(room) {
+  async #unexpectedDisconnect(room, reason) {
     if (room !== this.room) return
 
     ++this.operation
@@ -292,7 +295,7 @@ export default class extends Controller {
     this.#stopLocalTracks(room)
     this.#clearMedia()
     this.#stopAuthenticationChecks()
-    this.#setState("failed", "The huddle ended because the connection was lost. Try joining again.", true)
+    this.#setState("failed", this.#disconnectMessage(reason), true, "Huddle ended")
   }
 
   async #disconnectCurrentRoom() {
@@ -471,12 +474,12 @@ export default class extends Controller {
     this.resumeAudioTarget.hidden = !this.room || this.room.canPlaybackAudio
   }
 
-  #setState(state, message, isError = false) {
+  #setState(state, message, isError = false, errorStatus = "Couldn’t join huddle") {
     this.state = state
     this.element.dataset.state = state
     this.element.hidden = state === "idle"
     this.roomNameTarget.textContent = this.roomName || "Huddle"
-    this.statusTarget.textContent = isError ? "Couldn’t join huddle" : message
+    this.statusTarget.textContent = isError ? errorStatus : message
     this.noticeTarget.textContent = isError ? message : ""
     this.noticeTarget.hidden = !isError
 
@@ -593,7 +596,7 @@ export default class extends Controller {
     const message = status === 403 || status === 404
       ? "Your access to this room ended."
       : "Your sign-in expired. Sign in again to join a huddle."
-    this.#setState("failed", message, true)
+    this.#setState("failed", message, true, "Huddle ended")
   }
 
   #endForAuthenticationChange() {
@@ -622,6 +625,22 @@ export default class extends Controller {
     if (error?.message === "missing-csrf-token") return "The page session is incomplete. Refresh the page and try again."
 
     return "The huddle could not connect. Check your connection and try again."
+  }
+
+  #disconnectMessage(reason) {
+    const { DisconnectReason } = this.liveKit
+
+    if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+      return "Your access to this huddle ended. Join again if you still have access to the room."
+    }
+    if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) {
+      return "This huddle has ended."
+    }
+    if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
+      return "This huddle connection was replaced by another connection."
+    }
+
+    return "The huddle ended because the connection was lost. Try joining again."
   }
 
   #permissionWasDenied(error) {

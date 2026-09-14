@@ -17,9 +17,8 @@ class User < ApplicationRecord
 
   enum :status, %i[ active deactivated banned ], default: :active
 
-  before_update :capture_huddle_access_for_status_change, if: :will_save_change_to_status?
-  before_destroy :capture_huddle_access_revocations, prepend: true
-  after_commit :revoke_huddle_access, on: %i[ update destroy ]
+  before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
+  before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
 
   has_secure_password validations: false
 
@@ -38,7 +37,6 @@ class User < ApplicationRecord
 
   def deactivate
     transaction do
-      capture_huddle_access_revocations
       close_remote_connections
 
       memberships.without_direct_rooms.delete_all
@@ -55,19 +53,6 @@ class User < ApplicationRecord
   end
 
   private
-    def capture_huddle_access_for_status_change
-      capture_huddle_access_revocations unless active?
-    end
-
-    def capture_huddle_access_revocations
-      @huddle_revocations ||= Huddle.participant_revocations(room_ids: room_ids, session_ids: session_ids)
-    end
-
-    def revoke_huddle_access
-      Huddle.enqueue_participant_revocations(@huddle_revocations)
-      @huddle_revocations = nil
-    end
-
     def grant_membership_to_open_rooms
       Membership.insert_all(Rooms::Open.pluck(:id).collect { |room_id| { room_id: room_id, user_id: id } })
     end

@@ -1,6 +1,11 @@
 Rails.application.routes.draw do
   root "welcome#show"
 
+  namespace :internal do
+    post "huddle/authorize", to: "huddle#authorize"
+    get "huddle/grants/:id", to: "huddle#show"
+  end
+
   resource :first_run
 
   resource :session do

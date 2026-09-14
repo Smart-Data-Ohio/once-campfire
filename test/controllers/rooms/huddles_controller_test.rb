@@ -2,14 +2,17 @@ require "test_helper"
 
 class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
   setup do
-    @original_livekit_environment = ENV.values_at("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
-    ENV["LIVEKIT_URL"] = "wss://livekit.example.test"
+    @environment_names = Huddle::REQUIRED_ENVIRONMENT
+    @original_livekit_environment = ENV.values_at(*@environment_names)
+    ENV["LIVEKIT_URL"] = "wss://huddle.example.test"
+    ENV["LIVEKIT_INTERNAL_URL"] = "ws://livekit.example.test:7880"
     ENV["LIVEKIT_API_KEY"] = "test-api-key"
     ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
+    ENV["LIVEKIT_GATEWAY_SECRET"] = "test-gateway-secret"
   end
 
   teardown do
-    %w[ LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET ].zip(@original_livekit_environment).each do |name, value|
+    @environment_names.zip(@original_livekit_environment).each do |name, value|
       ENV[name] = value
     end
   end
@@ -25,7 +28,7 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     body = response.parsed_body
     claims, headers = JWT.decode(body.fetch("token"), "test-api-secret", true, algorithm: "HS256")
 
-    assert_equal "wss://livekit.example.test", body.fetch("url")
+    assert_equal "wss://huddle.example.test", body.fetch("url")
     assert_equal({ "id" => rooms(:watercooler).id, "name" => rooms(:watercooler).name }, body.fetch("room"))
     assert_equal claims.fetch("sub"), body.fetch("identity")
     assert_match(/\Acampfire-participant-[0-9a-f]{64}\z/, body.fetch("identity"))
@@ -48,14 +51,23 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, grant.fetch("roomRecord")
     assert_not_equal "client-room", grant.fetch("room")
     assert_not_equal "client-identity", claims.fetch("sub")
+
+    persisted_grant = HuddleGrant.find(body.fetch("grant_id"))
+    current_session = Session.find_by!(token: parsed_cookies.signed[:session_token])
+    assert_equal current_session.id, persisted_grant.session_id
+    assert_equal users(:david).id, persisted_grant.user_id
+    assert_equal memberships(:david_watercooler).id, persisted_grant.membership_id
+    assert_equal rooms(:watercooler).id, persisted_grant.room_id
   end
 
-  test "room and participant identifiers are stable and scoped by record type" do
-    first = Huddle.new(room: rooms(:watercooler), user: users(:david), session: sessions(:david_safari))
-    second = Huddle.new(room: rooms(:watercooler), user: users(:david), session: sessions(:david_safari))
+  test "the active grant is reused while its random participant identity remains opaque" do
+    membership = memberships(:david_watercooler)
+    first = Huddle.new(room: membership.room, user: membership.user, session: sessions(:david_safari), membership: membership)
+    second = Huddle.new(room: membership.room, user: membership.user, session: sessions(:david_safari), membership: membership)
 
     assert_equal first.room_name, second.room_name
     assert_equal first.identity, second.identity
+    assert_equal first.grant_id, second.grant_id
     assert_not_equal first.room_name.delete_prefix("campfire-room-"), first.identity.delete_prefix("campfire-participant-")
   end
 
@@ -95,21 +107,17 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
   test "GET denies access after sign out" do
     sign_in :david
     current_session = Session.find_by!(token: parsed_cookies.signed[:session_token])
-    other_session = sessions(:david_safari)
-    expected_room_names = users(:david).room_ids.map { |room_id| Huddle.room_name(room_id) }
-    get room_huddle_url(rooms(:watercooler))
+    membership = memberships(:david_watercooler)
+    grant = HuddleGrant.issue!(session: current_session, membership: membership)
+    post room_huddle_url(rooms(:watercooler))
     assert_response :success
 
-    assert_enqueued_jobs expected_room_names.size, only: Huddle::RevokeParticipantJob do
-      delete session_url
-    end
+    delete session_url
     get room_huddle_url(rooms(:watercooler))
 
     assert_json_error :unauthorized, "Authentication required"
-    args = enqueued_jobs.filter_map { |job| job[:args] if job[:job] == Huddle::RevokeParticipantJob }
-    assert_equal expected_room_names.sort, args.map(&:first).sort
-    assert args.all? { |_, identity| identity == Huddle.identity(current_session.id) }
-    assert_not_includes args.flatten, Huddle.identity(other_session.id)
+    assert grant.reload.revoked?
+    assert HuddleCleanup.exists?(operation: :remove_participant, huddle_grant_id: grant.id)
   end
 
   test "a nonmember cannot join a closed room" do
@@ -168,6 +176,25 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
 
     assert_json_error :service_unavailable, "Huddles are not configured"
     assert_not response.parsed_body.key?("token")
+  end
+
+  test "a concurrent membership revocation receives a controlled denial" do
+    sign_in :david
+    HuddleGrant.stubs(:issue!).raises(HuddleGrant::Ineligible)
+
+    post room_huddle_url(rooms(:watercooler))
+
+    assert_json_error :not_found, "Room not found or inaccessible"
+  end
+
+  test "a public URL pointing directly at the internal LiveKit address is rejected" do
+    sign_in :david
+    ENV["LIVEKIT_URL"] = "wss://livekit.example.test:7880/client/path"
+
+    post room_huddle_url(rooms(:watercooler))
+
+    assert_json_error :service_unavailable, "Huddles are not configured"
+    assert_empty HuddleGrant.all
   end
 
   private

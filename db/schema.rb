@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_14_160000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -77,6 +77,42 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.datetime "updated_at", null: false
     t.index ["booster_id"], name: "index_boosts_on_booster_id"
     t.index ["message_id"], name: "index_boosts_on_message_id"
+  end
+
+  create_table "huddle_cleanups", force: :cascade do |t|
+    t.integer "attempts", default: 0, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "enqueued_at"
+    t.integer "huddle_grant_id"
+    t.string "identity"
+    t.datetime "last_attempted_at"
+    t.datetime "next_attempt_at"
+    t.string "operation", null: false
+    t.string "room_name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["completed_at", "next_attempt_at"], name: "index_huddle_cleanups_on_completed_at_and_next_attempt_at"
+    t.index ["huddle_grant_id"], name: "index_huddle_cleanups_on_huddle_grant_id"
+    t.index ["operation", "huddle_grant_id"], name: "index_huddle_cleanups_on_unique_participant_removal", unique: true, where: "operation = 'remove_participant'"
+    t.index ["operation", "room_name"], name: "index_huddle_cleanups_on_unique_room_deletion", unique: true, where: "operation = 'delete_room'"
+  end
+
+  create_table "huddle_grants", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "identity", null: false
+    t.integer "membership_id", null: false
+    t.datetime "revoked_at"
+    t.integer "room_id", null: false
+    t.string "room_name", null: false
+    t.integer "session_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
+    t.index ["membership_id"], name: "index_huddle_grants_on_membership_id"
+    t.index ["room_id"], name: "index_huddle_grants_on_room_id"
+    t.index ["session_id", "membership_id"], name: "index_active_huddle_grants_on_session_and_membership", unique: true, where: "revoked_at IS NULL"
+    t.index ["session_id"], name: "index_huddle_grants_on_session_id"
+    t.index ["user_id"], name: "index_huddle_grants_on_user_id"
   end
 
   create_table "memberships", force: :cascade do |t|

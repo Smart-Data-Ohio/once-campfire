@@ -3,7 +3,6 @@ module User::Bannable
 
   def ban
     transaction do
-      capture_huddle_access_revocations
       create_bans_from_sessions
       apply_ban
       banned!
