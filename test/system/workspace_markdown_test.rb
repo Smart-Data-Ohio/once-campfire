@@ -227,6 +227,7 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_no_horizontal_overflow
     assert_compact_composer
     assert_profile_bar_within_navigation
+    assert_selector "#channel-members [data-member-id='#{users(:jz).id}'][data-online='true']", wait: 5
     light_background = main_background
     settle_visual_transitions
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-light.png")
@@ -244,6 +245,9 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     opener = find_button("Open workspace navigation")
     opener.click
     assert_button "Close workspace navigation"
+    assert_selector "button[aria-label='Close workspace navigation']:focus"
+    find_button("Close workspace navigation").send_keys [ :shift, :tab ]
+    assert page.evaluate_script("document.querySelector('#sidebar').contains(document.activeElement)"), "focus should stay in the open navigation drawer"
     settle_visual_transitions
     assert_profile_bar_within_navigation
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-mobile-navigation.png")

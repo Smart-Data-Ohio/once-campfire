@@ -1,0 +1,2 @@
+# Clear durable cleanup work between browser and application test runs.
+{}

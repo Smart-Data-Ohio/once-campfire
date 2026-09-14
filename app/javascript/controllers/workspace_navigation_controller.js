@@ -29,6 +29,7 @@ export default class extends Controller {
   open() {
     if (!this.mobileQuery.matches || !this.hasSidebarTarget) return
 
+    window.dispatchEvent(new CustomEvent("workspace-navigation:opening"))
     this.previouslyFocusedElement = document.activeElement
     this.sidebarTarget.classList.add("open")
     this.element.classList.add("workspace-navigation-open")
@@ -70,6 +71,7 @@ export default class extends Controller {
   }
 
   trapFocus(event) {
+    if (event.key !== "Tab") return
     if (!this.mobileQuery.matches || !this.sidebarTarget.classList.contains("open")) return
 
     const focusable = this.#focusableElements()
@@ -158,7 +160,7 @@ export default class extends Controller {
 
   #focusableElements() {
     return Array.from(this.sidebarTarget.querySelectorAll(FOCUSABLE_SELECTOR)).filter((element) => {
-      return !element.hidden && element.getClientRects().length > 0
+      return !element.hidden && element.tabIndex >= 0 && element.getClientRects().length > 0
     })
   }
 }

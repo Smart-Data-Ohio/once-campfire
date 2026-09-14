@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_14_170000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -203,6 +203,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_170000) do
     t.index ["user_id"], name: "index_webhooks_on_user_id"
   end
 
+  create_table "workspace_presence_leases", force: :cascade do |t|
+    t.string "connection_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.integer "session_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["connection_id"], name: "index_workspace_presence_leases_on_connection_id", unique: true
+    t.index ["expires_at"], name: "index_workspace_presence_leases_on_expires_at"
+    t.index ["session_id"], name: "index_workspace_presence_leases_on_session_id"
+    t.index ["user_id"], name: "index_workspace_presence_leases_on_user_id"
+  end
+
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "bans", "users"
@@ -213,6 +226,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_170000) do
   add_foreign_key "searches", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "webhooks", "users"
+  add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
+  add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade
 
   # Virtual tables defined in this database.
   # Note that virtual tables may not work with other database engines. Be careful if changing database.

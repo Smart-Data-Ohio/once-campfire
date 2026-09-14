@@ -1,0 +1,37 @@
+<aside id="channel-members"
+       class="member-panel"
+       aria-label="Channel members"
+       aria-hidden="true"
+       inert
+       data-member-panel-target="panel"
+       data-members-url="<%= room_members_path(room, format: :json) %>"
+       data-default-avatar-url="<%= asset_path("default-avatar.svg") %>">
+  <button type="button"
+          class="member-panel__backdrop"
+          aria-hidden="true"
+          tabindex="-1"
+          data-member-panel-target="backdrop"
+          data-action="member-panel#close"
+          hidden></button>
+
+  <section class="member-panel__surface" aria-labelledby="channel-members-title">
+    <header class="member-panel__header">
+      <div class="min-width">
+        <h2 id="channel-members-title">Members</h2>
+        <p data-member-panel-target="summary">Loading…</p>
+      </div>
+
+      <button type="button"
+              class="btn member-panel__close"
+              aria-label="Close members"
+              title="Close members"
+              data-member-panel-target="close"
+              data-action="member-panel#close">
+        <%= image_tag "remove.svg", size: 16, aria: { hidden: "true" } %>
+      </button>
+    </header>
+
+    <p class="member-panel__status" role="status" data-member-panel-target="status">Open the member list to load members.</p>
+    <div class="member-panel__content" data-member-panel-target="content"></div>
+  </section>
+</aside>

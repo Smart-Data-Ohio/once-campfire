@@ -13,6 +13,7 @@ class User < ApplicationRecord
   has_many :searches, dependent: :delete_all
 
   has_many :sessions, dependent: :destroy
+  has_many :workspace_presence_leases, dependent: :delete_all
   has_many :bans, dependent: :destroy
 
   enum :status, %i[ active deactivated banned ], default: :active

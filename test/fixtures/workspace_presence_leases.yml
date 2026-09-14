@@ -1,0 +1,1 @@
+# Presence leases are connection-scoped and are created by tests as needed.

@@ -13,6 +13,18 @@
   </div>
 
   <div class="room-header__actions">
+    <button type="button"
+            class="btn room-header__action member-panel-toggle"
+            aria-controls="channel-members"
+            aria-expanded="false"
+            aria-label="Show members"
+            title="Show members"
+            data-member-panel-target="toggle"
+            data-action="member-panel#toggle">
+      <%= image_tag "everyone.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="member-panel-toggle__count" data-member-panel-target="toggleCount" aria-hidden="true"></span>
+    </button>
+
     <%= link_to searches_path, class: "btn room-header__action", aria: { label: "Search messages" }, title: "Search messages" do %>
       <%= image_tag "search.svg", size: 20, aria: { hidden: "true" } %>
       <span class="room-header__action-label">Search</span>

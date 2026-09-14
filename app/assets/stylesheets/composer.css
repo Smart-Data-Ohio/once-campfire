@@ -51,6 +51,7 @@
 
   block-size: var(--composer-editor-min-size);
   color: var(--workspace-text, var(--color-text));
+  display: block;
   font-family: var(--font-family);
   line-height: 1.5;
   max-block-size: var(--composer-editor-max-size);
@@ -77,6 +78,7 @@
 .composer__send {
   --btn-size: 2.15rem;
   align-self: flex-end;
+  margin-block-end: max(0px, calc((var(--composer-editor-min-size) - var(--btn-size)) / 2));
 }
 
 .composer__attachment-btn {
