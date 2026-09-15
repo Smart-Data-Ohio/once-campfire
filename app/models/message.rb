@@ -39,6 +39,13 @@ class Message < ApplicationRecord
   }
   scope :with_boosts, -> { includes(boosts: :booster) }
 
+  # Sorting in Ruby rather than with the `ordered` scope, because applying a
+  # scope to an association builds a fresh relation and so ignores the rows
+  # `with_boosts` already preloaded — one extra query per message rendered.
+  def ordered_boosts
+    boosts.sort_by { |boost| [ boost.created_at, boost.id || 0 ] }
+  end
+
   def plain_text_body
     text = markdown? ? Markdown.plain_text(body.body) : body.to_plain_text
     text = text.presence || attachment&.filename&.to_s || ""

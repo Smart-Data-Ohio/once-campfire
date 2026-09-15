@@ -1,4 +1,4 @@
-<% boosts = message.boosts.ordered.to_a %>
+<% boosts = message.ordered_boosts %>
 <% reaction_boosts = boosts.group_by(&:content) %>
 <% legacy_boosts = boosts.reject { |boost| EmojiHelper::REACTIONS.key?(boost.content) } %>
 
