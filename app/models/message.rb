@@ -34,7 +34,7 @@ class Message < ApplicationRecord
   scope :with_creator, -> { preload(creator: :avatar_attachment) }
   scope :with_attachment_details, -> {
     with_rich_text_body_and_embeds
-    with_attached_attachment
+      .with_attached_attachment
       .includes(attachment_blob: :variant_records)
   }
   scope :with_boosts, -> { includes(boosts: :booster) }
