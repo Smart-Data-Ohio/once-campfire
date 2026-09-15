@@ -169,6 +169,215 @@ class HuddlesTest < ApplicationSystemTestCase
     using_session("Jason") { assert_selector ".huddle__participant", count: 1 }
   end
 
+  test "a viewer enlarges a shared screen into theater mode and leaves it with escape" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Share screen"
+    assert_button "Stop sharing"
+
+    using_session("Kevin") do
+      assert_selector ".huddle__screen video"
+      assert_selector ".huddle-share-indicator", text: /is sharing/
+      assert_selector "[data-huddle-target='sharing']", text: /is sharing a screen/
+      panel_width = screen_video_width
+      assert_operator panel_width, :>, 0
+
+      find("[data-huddle-screen-expand]").click
+
+      assert_selector "#channel-huddle.huddle--theater"
+      assert_selector ".huddle__screen--expanded video"
+      assert_selector "[data-huddle-screen-expand][aria-expanded='true']", text: "Collapse"
+      wait_for_condition("the expanded screen did not grow") { screen_video_width > panel_width * 1.5 }
+      wait_for_condition("the expanded screen stopped decoding video") do
+        page.evaluate_script("(() => { const video = document.querySelector('.huddle__screen--expanded video'); return Boolean(video && video.videoWidth > 0 && video.readyState >= 2) })()")
+      end
+      assert_media_received "video"
+
+      find("body").send_keys :escape
+
+      assert_no_selector "#channel-huddle.huddle--theater"
+      assert_selector "[data-huddle-screen-expand][aria-expanded='false']", text: "Expand"
+      assert_equal "Expand", page.evaluate_script("document.activeElement.textContent")
+    end
+  end
+
+  test "the room header shares-screen button opens the shared screen" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    using_session("Kevin") { assert_no_selector ".huddle-share-indicator" }
+
+    click_button "Share screen"
+    assert_button "Stop sharing"
+
+    using_session("Kevin") do
+      assert_selector ".huddle-share-indicator", text: "JZ is sharing"
+      find(".huddle-share-indicator").click
+      assert_selector "#channel-huddle.huddle--theater"
+      assert_selector ".huddle__screen--expanded video"
+    end
+
+    click_button "Stop sharing"
+    using_session("Kevin") do
+      assert_no_selector ".huddle-share-indicator"
+      assert_no_selector "#channel-huddle.huddle--theater"
+    end
+  end
+
+  test "the full screen control asks for the figure and falls back to the video element" do
+    open_huddle_as "jz@37signals.com"
+    stub_fullscreen_requests
+    click_button "Share screen"
+    assert_button "Stop sharing"
+    assert_selector ".huddle__screen video"
+
+    find("[data-huddle-screen-fullscreen]").click
+
+    wait_for_condition("no element was asked for full screen") { fullscreen_requests.any? }
+    assert_equal [ "FIGURE", "VIDEO" ], fullscreen_requests,
+      "the figure keeps the caption, so it is tried before the bare video element"
+    # A browser that refuses full screen still has to enlarge the share.
+    assert_selector "#channel-huddle.huddle--theater"
+    assert_selector "[data-huddle-target='status']", text: /Full screen isn’t available/
+  end
+
+  test "noise suppression runs on the microphone, can be switched off, and is remembered" do
+    open_huddle_as "jz@37signals.com"
+
+    assert_selector "[data-huddle-target='noise'][aria-pressed='true']", text: "Noise suppression on"
+    wait_for_condition("the RNNoise processor never attached to the microphone") do
+      microphone_processor_name == "campfire-rnnoise"
+    end
+
+    click_button "Noise suppression on"
+
+    assert_selector "[data-huddle-target='noise'][aria-pressed='false']", text: "Noise suppression off"
+    wait_for_condition("the RNNoise processor was not removed") { microphone_processor_name.nil? }
+    assert_equal "off", page.evaluate_script("window.localStorage.getItem('campfire.huddle.noiseSuppression')")
+
+    click_button "Leave", exact: true
+    click_button "Join huddle"
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+
+    assert_selector "[data-huddle-target='noise'][aria-pressed='false']", text: "Noise suppression off"
+    assert_nil microphone_processor_name
+  end
+
+  test "noise suppression can be switched back on without leaving the huddle" do
+    open_huddle_as "jz@37signals.com"
+
+    wait_for_condition("the RNNoise processor never attached to the microphone") do
+      microphone_processor_name == "campfire-rnnoise"
+    end
+
+    click_button "Noise suppression on"
+    assert_selector "[data-huddle-target='noise'][aria-pressed='false']", text: "Noise suppression off"
+    wait_for_condition("the RNNoise processor was not removed") { microphone_processor_name.nil? }
+
+    click_button "Noise suppression off"
+
+    assert_selector "[data-huddle-target='noise'][aria-pressed='true']", text: "Noise suppression on"
+    wait_for_condition("the RNNoise processor did not come back") do
+      microphone_processor_name == "campfire-rnnoise"
+    end
+    assert_equal "on", page.evaluate_script("window.localStorage.getItem('campfire.huddle.noiseSuppression')")
+  end
+
+  test "muting and unmuting keeps the noise suppressor on the microphone" do
+    open_huddle_as "jz@37signals.com"
+
+    wait_for_condition("the RNNoise processor never attached to the microphone") do
+      microphone_processor_name == "campfire-rnnoise"
+    end
+
+    click_button "Mute"
+    assert_button "Unmute"
+    assert_selector "#channel-huddle.huddle--muted"
+
+    click_button "Unmute"
+    assert_button "Mute"
+
+    # Muting disables the published track rather than replacing it, so the
+    # processor has to survive the round trip.
+    wait_for_condition("the RNNoise processor was lost across mute and unmute") do
+      microphone_processor_name == "campfire-rnnoise"
+    end
+    assert_selector "[data-huddle-target='noise'][aria-pressed='true']", text: "Noise suppression on"
+  end
+
+  test "a second shared screen stays reachable while the first one is expanded" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Share screen"
+    assert_button "Stop sharing"
+
+    using_session("Kevin") do
+      assert_selector ".huddle__screen video"
+      click_button "Share screen"
+      assert_button "Stop sharing"
+
+      assert_selector ".huddle__screen", count: 2
+      assert_selector "[data-huddle-target='sharing']", text: "2 people are sharing a screen"
+
+      click_button "View"
+      assert_selector "#channel-huddle.huddle--theater"
+      first_expanded = expanded_screen_label
+      assert first_expanded.present?
+
+      # The screen that is not expanded stays on as a thumbnail, so its own
+      # control is still there to be used.
+      assert_selector "[data-huddle-screen-expand][aria-expanded='false']", count: 1
+
+      click_button "Next screen"
+
+      wait_for_condition("the banner did not move to the other shared screen") do
+        expanded_screen_label.present? && expanded_screen_label != first_expanded
+      end
+      assert_selector "#channel-huddle.huddle--theater"
+      assert_selector "[data-huddle-screen-expand][aria-expanded='true']", count: 1
+    end
+  end
+
+  test "a noise suppressor that fails to load still connects the huddle and stays retryable" do
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    prepare_browser
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+    break_noise_suppression
+
+    click_button "Join huddle"
+
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+    assert_selector "[data-huddle-target='status']", text: /Noise suppression couldn’t start/
+    assert_nil microphone_processor_name
+    using_session("Kevin") { assert_media_received "audio" }
+
+    # A download that failed once may well succeed next time, so the control has
+    # to stay usable and the preference must not record the failure.
+    assert_selector "[data-huddle-target='noise']:not([disabled])", text: "Noise suppression off"
+    # Nothing is stored, so the default of "on" is what a rejoin reads back.
+    assert_nil page.evaluate_script("window.localStorage.getItem('campfire.huddle.noiseSuppression')")
+  end
+
+  test "a browser that cannot run the noise suppressor turns the control off for good" do
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    prepare_browser
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+    break_noise_suppression error: "NotSupportedError"
+
+    click_button "Join huddle"
+
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_media_received "audio"
+    assert_selector "[data-huddle-target='noise'][disabled]", text: "Noise suppression unavailable"
+    assert_nil microphone_processor_name
+  end
+
   test "denied microphone leaves no ghost participant and can be retried" do
     using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
     prepare_browser
@@ -419,6 +628,58 @@ class HuddlesTest < ApplicationSystemTestCase
       JS
       source = source.sub("__HUDDLE_TEST_FORCE_RELAY__", force_relay?.to_s)
       page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source:)
+    end
+
+    def screen_video_width
+      page.evaluate_script("document.querySelector('.huddle__screen video')?.clientWidth || 0")
+    end
+
+    # Headless Chrome refuses real full screen, and a browser prompt would stall
+    # the suite, so the request itself is what gets recorded here.
+    def stub_fullscreen_requests
+      page.execute_script <<~JS
+        window.huddleTestFullscreenRequests = [];
+        Element.prototype.requestFullscreen = function () {
+          window.huddleTestFullscreenRequests.push(this.tagName);
+          return Promise.reject(new DOMException('Test full screen refusal', 'NotAllowedError'));
+        };
+      JS
+    end
+
+    def fullscreen_requests
+      page.evaluate_script("window.huddleTestFullscreenRequests || []")
+    end
+
+    def expanded_screen_label
+      page.evaluate_script(<<~JS)
+        document.querySelector("[data-huddle-screen-expand][aria-expanded='true']")?.getAttribute("aria-label") ?? null
+      JS
+    end
+
+    def microphone_processor_name
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.localParticipant?.getTrackPublication('microphone')?.audioTrack?.getProcessor()?.name ?? null
+      JS
+    end
+
+    # A plain Error stands in for a download that failed and may succeed later.
+    # A NotSupportedError stands in for a browser that simply cannot do this.
+    def break_noise_suppression(error: nil)
+      page.execute_script(<<~JS, error)
+        const name = arguments[0];
+        const addModule = AudioWorklet.prototype.addModule;
+        AudioWorklet.prototype.addModule = function (url, ...rest) {
+          if (String(url).includes('noise-suppressor-worklet')) {
+            const failure = name
+              ? new DOMException('Test noise suppressor refusal', name)
+              : new Error('Test noise suppressor failure');
+            return Promise.reject(failure);
+          }
+          return addModule.call(this, url, ...rest);
+        };
+      JS
     end
 
     def captured_credentials(index = 0)

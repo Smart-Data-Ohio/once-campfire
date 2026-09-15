@@ -40,6 +40,17 @@
     <% end %>
 
     <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
+      <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
+            aria: { label: "View shared screen" }, title: "View shared screen",
+            data: {
+              controller: "huddle-share-indicator",
+              action: "huddle-share-indicator#view",
+              huddle_share_indicator_room_id_value: room.id
+            } do %>
+        <%= image_tag "laptop.svg", size: 20, aria: { hidden: "true" } %>
+        <span data-huddle-share-indicator-target="label">Screen shared</span>
+      <% end %>
+
       <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: "Join huddle" },
             data: {
               controller: "huddle-launcher",

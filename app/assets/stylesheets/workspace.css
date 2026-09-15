@@ -177,6 +177,23 @@ body.sidebar {
   filter: brightness(0) invert(1);
 }
 
+.room-header__actions .huddle-share-indicator {
+  --btn-background: var(--color-positive);
+  --btn-border-color: transparent;
+  --btn-color: white;
+  --hover-filter: brightness(0.93);
+
+  color: white;
+  max-inline-size: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-header__actions .huddle-share-indicator img {
+  filter: brightness(0) invert(1);
+}
+
 .member-panel-toggle {
   position: relative;
 }
@@ -1113,7 +1130,8 @@ summary.member-panel__group-heading {
     aspect-ratio: 1;
   }
 
-  .room-header__actions .huddle-launcher span {
+  .room-header__actions .huddle-launcher span,
+  .room-header__actions .huddle-share-indicator span {
     display: none;
   }
 

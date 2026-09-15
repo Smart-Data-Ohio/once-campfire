@@ -3,6 +3,9 @@
          data-turbo-permanent
          data-controller="huddle"
          data-huddle-current-user-id-value="<%= Current.user.id %>"
+         data-huddle-noise-worklet-url-value="<%= asset_path("noise-suppressor-worklet.js") %>"
+         data-huddle-noise-wasm-url-value="<%= asset_path("rnnoise.wasm") %>"
+         data-huddle-noise-simd-wasm-url-value="<%= asset_path("rnnoise-simd.wasm") %>"
          data-state="idle"
          aria-labelledby="huddle-room-name"
          hidden>
@@ -19,6 +22,14 @@
 
   <p class="huddle__notice" data-huddle-target="notice" role="alert" hidden></p>
 
+  <div class="huddle__sharing" data-huddle-target="sharing" hidden>
+    <span class="huddle__sharing-name overflow-ellipsis" data-huddle-target="sharingName">Someone is sharing a screen</span>
+    <button type="button"
+            class="btn btn--reversed huddle__sharing-view"
+            data-huddle-target="sharingExpand"
+            data-action="huddle#viewSharedScreen">View</button>
+  </div>
+
   <button type="button" class="btn huddle__resume-audio" data-huddle-target="resumeAudio" data-action="huddle#resumeAudio" hidden>
     Play huddle audio
   </button>
@@ -34,11 +45,21 @@
   </div>
 
   <div class="huddle__controls" data-huddle-target="activeControls" hidden>
-    <button type="button" class="btn" data-huddle-target="mute" data-action="huddle#toggleMute" aria-pressed="false">
+    <button type="button" class="btn huddle__mute" data-huddle-target="mute" data-action="huddle#toggleMute" aria-pressed="false">
       <span data-huddle-target="muteLabel">Mute</span>
     </button>
     <button type="button" class="btn" data-huddle-target="share" data-action="huddle#toggleScreenShare" aria-pressed="false">
       <span data-huddle-target="shareLabel">Share screen</span>
+    </button>
+  </div>
+
+  <div class="huddle__settings" data-huddle-target="settings" hidden>
+    <button type="button"
+            class="btn btn--plain huddle__noise"
+            data-huddle-target="noise"
+            data-action="huddle#toggleNoiseSuppression"
+            aria-pressed="true">
+      <span data-huddle-target="noiseLabel">Noise suppression on</span>
     </button>
   </div>
 

@@ -1,7 +1,9 @@
 import { Controller } from "@hotwired/stimulus"
+import HuddleNoiseSuppressor, { noiseSuppressionSupported } from "lib/huddle_noise_suppressor"
 
 const AUTH_CHECK_INTERVAL = 45_000
 const ACTIVE_STATES = [ "connecting", "connected", "reconnecting" ]
+const NOISE_SUPPRESSION_STORAGE_KEY = "campfire.huddle.noiseSuppression"
 let liveKitPromise
 
 const loadLiveKit = () => liveKitPromise ||= import("livekit-client").catch(error => {
@@ -11,10 +13,16 @@ const loadLiveKit = () => liveKitPromise ||= import("livekit-client").catch(erro
 
 export default class extends Controller {
   static targets = [
-    "activeControls", "leaveLabel", "mute", "muteLabel", "notice", "participantCount",
-    "participantList", "people", "resumeAudio", "retry", "roomName", "screens", "share", "shareLabel", "status"
+    "activeControls", "leaveLabel", "mute", "muteLabel", "noise", "noiseLabel", "notice",
+    "participantCount", "participantList", "people", "resumeAudio", "retry", "roomName", "screens",
+    "settings", "share", "shareLabel", "sharing", "sharingExpand", "sharingName", "status"
   ]
-  static values = { currentUserId: Number }
+  static values = {
+    currentUserId: Number,
+    noiseWorkletUrl: String,
+    noiseWasmUrl: String,
+    noiseSimdWasmUrl: String
+  }
 
   initialize() {
     this.room = null
@@ -25,6 +33,10 @@ export default class extends Controller {
     this.state = "idle"
     this.roomListeners = new Map()
     this.attachments = new Map()
+    this.expandedTrack = null
+    this.fullscreenTrack = null
+    this.noiseSuppressionAvailable = noiseSuppressionSupported()
+    this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
   }
 
   connect() {
@@ -35,11 +47,22 @@ export default class extends Controller {
 
     window.addEventListener("huddle:join", this.join, options)
     window.addEventListener("huddle:query", this.broadcastState, options)
+    window.addEventListener("huddle:expand-screen", this.viewSharedScreen, options)
     window.addEventListener("pagehide", this.pageHiding, options)
+    document.addEventListener("fullscreenchange", this.fullscreenChanged, options)
+    document.addEventListener("webkitfullscreenchange", this.fullscreenChanged, options)
     document.addEventListener("turbo:before-render", this.beforeRender, options)
     document.addEventListener("visibilitychange", this.visibilityChanged, options)
 
+    // A Turbo navigation carries the panel over with its expanded screen intact,
+    // but the scroll lock and the Escape handler live outside it.
+    if (this.expandedTrack) {
+      this.#lockTheaterScroll(true)
+      window.addEventListener("keydown", this.keyPressed, options)
+    }
+
     this.#startAuthenticationChecks()
+    this.#updateNoiseSuppressionControl()
     this.#renderState()
   }
 
@@ -75,6 +98,9 @@ export default class extends Controller {
     this.roomId = requestedRoomId
     this.roomName = requestedRoomName
     this.identity = null
+    // Storage is the preference; a transient processor failure only turned it off
+    // in memory, so a fresh join gets a fresh attempt.
+    this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
     this.#setState("connecting", `Connecting to ${requestedRoomName}…`)
 
     let room
@@ -91,7 +117,7 @@ export default class extends Controller {
       this.identity = credentials.identity
       this.roomNameTarget.textContent = this.roomName
 
-      room = new liveKit.Room({ adaptiveStream: true, dynacast: true })
+      room = new liveKit.Room(this.#roomOptions(liveKit))
       this.room = room
       this.#bindRoom(room)
 
@@ -102,7 +128,7 @@ export default class extends Controller {
       }
 
       await room.startAudio().catch(() => {})
-      await room.localParticipant.setMicrophoneEnabled(true)
+      await room.localParticipant.setMicrophoneEnabled(true, this.#audioCaptureOptions())
       if (operation !== this.operation || room !== this.room) {
         await this.#disconnectRoom(room)
         return
@@ -114,6 +140,10 @@ export default class extends Controller {
       this.#updateMediaControls()
       this.#updateAudioPlaybackControl()
       this.#startAuthenticationChecks()
+
+      // Noise suppression is applied after the huddle is usable. A processor
+      // that cannot start must never keep somebody out of the conversation.
+      this.#applyNoiseSuppression(room)
     } catch (error) {
       if (operation !== this.operation) {
         if (room) await this.#disconnectRoom(room)
@@ -146,15 +176,39 @@ export default class extends Controller {
 
     this.muteTarget.disabled = true
     try {
-      await room.localParticipant.setMicrophoneEnabled(!room.localParticipant.isMicrophoneEnabled)
+      await room.localParticipant.setMicrophoneEnabled(
+        !room.localParticipant.isMicrophoneEnabled,
+        this.#audioCaptureOptions()
+      )
       if (room === this.room) {
         this.#updateMediaControls()
         this.#renderRoster()
+        this.#applyNoiseSuppression(room)
       }
     } catch (error) {
       if (room === this.room) this.#showTemporaryStatus("The microphone could not be changed.")
     } finally {
       if (room === this.room) this.muteTarget.disabled = false
+    }
+  }
+
+  toggleNoiseSuppression = async () => {
+    if (!this.noiseSuppressionAvailable || this.noiseSuppressionBusy) return
+
+    const requested = !this.noiseSuppressionEnabled
+    this.noiseSuppressionEnabled = requested
+    this.#storeNoiseSuppression(requested)
+    this.#updateNoiseSuppressionControl()
+
+    if (this.state === "connected") {
+      await this.#applyNoiseSuppression(this.room)
+
+      // A failure has already explained itself; do not talk over it.
+      if (this.noiseSuppressionAvailable && this.noiseSuppressionEnabled === requested) {
+        this.#showTemporaryStatus(requested
+          ? "Noise suppression on"
+          : "Noise suppression off. Your browser's basic filtering stays on.")
+      }
     }
   }
 
@@ -166,7 +220,11 @@ export default class extends Controller {
     const enabling = !room.localParticipant.isScreenShareEnabled
 
     try {
-      await room.localParticipant.setScreenShareEnabled(enabling)
+      if (enabling) {
+        await this.#startScreenShare(room)
+      } else {
+        await room.localParticipant.setScreenShareEnabled(false)
+      }
 
       if (room !== this.room) {
         await room.localParticipant.setScreenShareEnabled(false).catch(() => {})
@@ -199,9 +257,52 @@ export default class extends Controller {
     }
   }
 
+  // Opening from the banner or the room header goes to the most recent share,
+  // which is the one somebody just started and wants to be seen. Pressing it
+  // again steps through the rest rather than going dead.
+  viewSharedScreen = () => {
+    const tracks = this.#screenTracks()
+    if (!tracks.length) return
+
+    const expanded = tracks.indexOf(this.expandedTrack)
+    this.#expandScreen(expanded === -1 ? tracks.at(-1) : tracks[(expanded + 1) % tracks.length])
+  }
+
+  keyPressed = (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return
+    // The browser owns Escape while an element is in real full screen.
+    if (this.#fullscreenElement()) return
+    if (!this.expandedTrack) return
+
+    event.preventDefault()
+    this.#collapseScreen()
+  }
+
+  fullscreenChanged = () => {
+    const element = this.#fullscreenElement()
+
+    if (!element || !this.element.contains(element)) {
+      const track = this.fullscreenTrack
+      this.fullscreenTrack = null
+      if (track) {
+        this.#updateScreenControls()
+        this.#applyScreenQuality(track)
+        this.attachments.get(track)?.fullscreenButton?.focus()
+      }
+      return
+    }
+
+    this.#updateScreenControls()
+  }
+
   broadcastState = () => {
     window.dispatchEvent(new CustomEvent("huddle:changed", {
-      detail: { roomId: this.roomId, state: this.state }
+      detail: {
+        roomId: this.roomId,
+        state: this.state,
+        sharing: this.#sharingDescriptions(),
+        expanded: Boolean(this.expandedTrack)
+      }
     }))
   }
 
@@ -220,6 +321,79 @@ export default class extends Controller {
 
   pageHiding = () => {
     this.#endForAuthenticationChange()
+  }
+
+  #roomOptions(liveKit) {
+    const { AudioPresets, ScreenSharePresets } = liveKit
+
+    return {
+      adaptiveStream: true,
+      dynacast: true,
+      // Spelled out rather than inherited so a future SDK upgrade cannot quietly
+      // change what Campfire asks the browser to do with a microphone.
+      audioCaptureDefaults: this.#audioCaptureOptions(),
+      publishDefaults: {
+        audioPreset: AudioPresets.music,
+        dtx: true,
+        red: true,
+        // Shared code and slides have to stay readable, so keep resolution and
+        // drop frames instead when bandwidth runs short. 1080p/15 is the SDK's
+        // own default; 1080p/30 waits on the bandwidth measurements in
+        // docs/huddle-quality.md.
+        screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+        degradationPreference: "maintain-resolution"
+      }
+    }
+  }
+
+  #audioCaptureOptions() {
+    return {
+      autoGainControl: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+      // Chrome's stronger speech isolation where it exists; ignored elsewhere
+      // because it is an "ideal" constraint rather than a required one.
+      voiceIsolation: true
+    }
+  }
+
+  async #startScreenShare(room) {
+    const options = {
+      contentHint: "detail",
+      // No `resolution`. A preset's resolution carries its frame rate too, so
+      // naming the 15 fps preset here would also cap *capture* at 15 fps. The SDK
+      // fills in 1080p/30 itself, and skips it on Safari 17, which cannot be
+      // constrained — a hard-coded value would lose that exemption. Encoding is
+      // capped separately by `screenShareEncoding` in `#roomOptions`.
+      surfaceSwitching: "include",
+      // Tab audio only. Capturing system audio while sharing a whole screen
+      // feeds the speakers back into the huddle on Windows.
+      systemAudio: "exclude"
+    }
+
+    // Shared audio is usually music or a video rather than speech, and discontinuous
+    // transmission chops it, so it publishes without DTX. The option reaches both
+    // screen tracks; DTX has no meaning for the video one.
+    const publishOptions = { dtx: false }
+
+    try {
+      await room.localParticipant.setScreenShareEnabled(true, { ...options, audio: true }, publishOptions)
+    } catch (error) {
+      if (!this.#displayMediaRejectedConstraints(error)) throw error
+
+      // Only a browser that refused to *capture* with these constraints is
+      // retried; a publishing failure would just show a second picker.
+      await room.localParticipant.setScreenShareEnabled(true, options, publishOptions)
+    }
+  }
+
+  // getDisplayMedia reports unusable constraints as NotSupportedError or TypeError.
+  // Permission denials, publishing failures and transport errors arrive as other
+  // names and must not trigger a second capture attempt.
+  #displayMediaRejectedConstraints(error) {
+    if (this.#permissionWasDenied(error)) return false
+
+    return error?.name === "NotSupportedError" || error?.name === "TypeError"
   }
 
   #bindRoom(room) {
@@ -367,25 +541,84 @@ export default class extends Controller {
     const isScreenShare = publication.source === Track.Source.ScreenShare || track.source === Track.Source.ScreenShare
     if (track.kind !== Track.Kind.Video || !isScreenShare) return
 
+    const isLocal = participant === this.room?.localParticipant
+    const name = `${this.#participantName(participant)}${isLocal ? " (you)" : ""}`
+
     const figure = document.createElement("figure")
     figure.className = "huddle__screen"
 
     const video = track.attach()
     video.autoplay = true
     video.playsInline = true
-    video.muted = participant === this.room?.localParticipant
+    video.muted = isLocal
 
     const caption = document.createElement("figcaption")
-    caption.textContent = `${this.#participantName(participant)}${participant === this.room?.localParticipant ? " (you)" : ""} is sharing`
+    caption.textContent = `${name} is sharing`
 
-    figure.append(video, caption)
+    const actions = document.createElement("div")
+    actions.className = "huddle__screen-actions"
+
+    const expandButton = this.#screenButton("Expand", `Expand ${name}’s shared screen`)
+    expandButton.dataset.huddleScreenExpand = ""
+    expandButton.setAttribute("aria-expanded", "false")
+    expandButton.addEventListener("click", () => this.#toggleScreen(track))
+
+    const fullscreenButton = this.#screenButton("Full screen", `Show ${name}’s shared screen full screen`)
+    fullscreenButton.dataset.huddleScreenFullscreen = ""
+    fullscreenButton.setAttribute("aria-pressed", "false")
+    fullscreenButton.addEventListener("click", () => this.#toggleFullscreen(track))
+
+    // The video itself is the most obvious thing to reach for, so clicking it
+    // enlarges the share and double-clicking goes to real full screen.
+    video.addEventListener("click", () => this.#expandScreen(track))
+    video.addEventListener("dblclick", () => this.#toggleFullscreen(track))
+
+    // Mobile Safari's native player does not fire `fullscreenchange`.
+    video.addEventListener("webkitendfullscreen", () => {
+      if (this.fullscreenTrack !== track) return
+
+      this.fullscreenTrack = null
+      this.#updateScreenControls()
+      this.#applyScreenQuality(track)
+      fullscreenButton.focus()
+    })
+
+    actions.append(expandButton, fullscreenButton)
+    figure.append(video, actions, caption)
     this.screensTarget.appendChild(figure)
     this.screensTarget.hidden = false
-    this.attachments.set(track, { elements: [ video ], wrapper: figure })
+    this.attachments.set(track, {
+      elements: [ video ],
+      wrapper: figure,
+      publication,
+      name,
+      isLocal,
+      expandButton,
+      fullscreenButton
+    })
+
+    this.#updateScreenControls()
+    this.#renderSharingNotice()
   }
 
-  #detachTrack(track) {
+  #screenButton(label, description) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "btn huddle__screen-action"
+    button.textContent = label
+    button.setAttribute("aria-label", description)
+    return button
+  }
+
+  #detachTrack(track, { restoreFocus = true } = {}) {
     const attachment = this.attachments.get(track)
+    const heldFocus = restoreFocus && Boolean(attachment?.wrapper?.contains(document.activeElement))
+
+    if (this.expandedTrack === track) this.#collapseScreen({ restoreFocus: false })
+    if (this.fullscreenTrack === track) {
+      this.fullscreenTrack = null
+      this.#exitFullscreen()
+    }
 
     try {
       for (const element of track.detach()) element.remove()
@@ -397,12 +630,317 @@ export default class extends Controller {
     attachment?.wrapper?.remove()
     this.attachments.delete(track)
     this.screensTarget.hidden = !this.screensTarget.children.length
+    this.#renderSharingNotice()
+
+    if (heldFocus) this.#restoreFocusAfterDetach()
   }
 
   #clearMedia() {
-    for (const track of [ ...this.attachments.keys() ]) this.#detachTrack(track)
+    this.#collapseScreen({ restoreFocus: false })
+    this.fullscreenTrack = null
+    this.#exitFullscreen()
+
+    // The whole panel is going away, so there is nowhere sensible to put focus.
+    for (const track of [ ...this.attachments.keys() ]) this.#detachTrack(track, { restoreFocus: false })
     this.screensTarget.replaceChildren()
     this.screensTarget.hidden = true
+    this.#renderSharingNotice()
+  }
+
+  #screenTracks() {
+    return [ ...this.attachments.keys() ].filter(track => this.attachments.get(track).wrapper)
+  }
+
+  #sharingDescriptions() {
+    return this.#screenTracks().map(track => {
+      const { name, isLocal } = this.attachments.get(track)
+      return { name, isLocal }
+    })
+  }
+
+  #toggleScreen(track) {
+    if (this.expandedTrack === track) {
+      this.#collapseScreen()
+    } else {
+      this.#expandScreen(track)
+    }
+  }
+
+  #expandScreen(track) {
+    const attachment = this.attachments.get(track)
+    if (!attachment?.wrapper || this.expandedTrack === track) return
+
+    const previous = this.expandedTrack
+    this.expandedTrack = track
+    this.element.classList.add("huddle--theater")
+    this.#lockTheaterScroll(true)
+    // Escape belongs to the browser at every other moment, so the handler is
+    // only bound while there is something to collapse. Cycling between shares
+    // re-adds it; addEventListener dedupes on (type, callback, capture), so the
+    // repeated add is a deliberate no-op rather than a second handler.
+    window.addEventListener("keydown", this.keyPressed, { signal: this.abortController?.signal })
+    this.#updateScreenControls()
+    this.#applyScreenQuality(track)
+    if (previous) this.#applyScreenQuality(previous)
+    attachment.expandButton.focus()
+    this.#renderSharingNotice()
+  }
+
+  #collapseScreen({ restoreFocus = true } = {}) {
+    const track = this.expandedTrack
+    if (!track) return
+
+    this.expandedTrack = null
+    this.element.classList.remove("huddle--theater")
+    this.#lockTheaterScroll(false)
+    window.removeEventListener("keydown", this.keyPressed)
+    this.#updateScreenControls()
+    this.#applyScreenQuality(track)
+
+    const button = this.attachments.get(track)?.expandButton
+    if (restoreFocus && button?.isConnected) button.focus()
+    this.#renderSharingNotice()
+  }
+
+  // Turbo replaces <body> between pages, so the lock lives on <html>.
+  #lockTheaterScroll(locked) {
+    document.documentElement.classList.toggle("huddle-theater-open", locked)
+  }
+
+  // The share whose figure was removed cannot take the focus with it.
+  #restoreFocusAfterDetach() {
+    if (this.hasShareTarget && this.shareTarget.isConnected && !this.shareTarget.disabled) {
+      this.shareTarget.focus()
+      return
+    }
+
+    this.roomNameTarget.tabIndex = -1
+    this.roomNameTarget.focus()
+  }
+
+  #updateScreenControls() {
+    for (const [ track, attachment ] of this.attachments) {
+      if (!attachment.wrapper) continue
+
+      const expanded = this.expandedTrack === track
+      const fullscreen = this.fullscreenTrack === track
+
+      attachment.wrapper.classList.toggle("huddle__screen--expanded", expanded)
+      attachment.expandButton.setAttribute("aria-expanded", String(expanded))
+      attachment.expandButton.textContent = expanded ? "Collapse" : "Expand"
+      attachment.expandButton.setAttribute(
+        "aria-label",
+        `${expanded ? "Collapse" : "Expand"} ${attachment.name}’s shared screen`
+      )
+      attachment.fullscreenButton.setAttribute("aria-pressed", String(fullscreen))
+      attachment.fullscreenButton.textContent = fullscreen ? "Exit full screen" : "Full screen"
+    }
+  }
+
+  #renderSharingNotice() {
+    const sharing = this.#sharingDescriptions()
+    const active = ACTIVE_STATES.includes(this.state)
+
+    this.sharingTarget.hidden = !active || sharing.length === 0
+    if (sharing.length) {
+      const names = sharing.map(({ name }) => name)
+      this.sharingNameTarget.textContent = names.length === 1
+        ? `${names[0]} is sharing a screen`
+        : `${names.length} people are sharing a screen`
+      const others = sharing.length > 1
+      this.sharingExpandTarget.textContent = !this.expandedTrack ? "View" : others ? "Next screen" : "Viewing"
+      this.sharingExpandTarget.disabled = Boolean(this.expandedTrack) && !others
+    }
+
+    this.broadcastState()
+  }
+
+  // Adaptive streaming sizes a subscription from the rendered element and
+  // `emitTrackUpdate` takes the *smaller* of that size and any manual request, so
+  // this cannot out-argue the observer: while the element is still small the
+  // adaptive size wins. It matters once the element has actually been resized,
+  // where it asks for the full layer immediately instead of waiting for the next
+  // observer callback.
+  #applyScreenQuality(track) {
+    const attachment = this.attachments.get(track)
+    const publication = attachment?.publication
+    if (typeof publication?.setVideoQuality !== "function") return
+
+    const { VideoQuality } = this.liveKit
+    const expanded = this.expandedTrack === track || this.fullscreenTrack === track
+
+    try {
+      publication.setVideoQuality(VideoQuality.HIGH)
+    } catch (error) {
+      // Quality is a hint. A rejected hint must not break the view.
+    }
+
+    if (!expanded || typeof publication.setVideoDimensions !== "function") return
+
+    requestAnimationFrame(() => {
+      if (this.expandedTrack !== track && this.fullscreenTrack !== track) return
+
+      const video = attachment.elements[0]
+      const ratio = window.devicePixelRatio || 1
+      const width = Math.round((video.clientWidth || 1280) * ratio)
+      const height = Math.round((video.clientHeight || 720) * ratio)
+
+      try {
+        publication.setVideoDimensions({ width, height })
+      } catch (error) {
+        // Same as above: a rejected hint leaves the current layer in place.
+      }
+    })
+  }
+
+  #fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null
+  }
+
+  #exitFullscreen() {
+    if (!this.#fullscreenElement()) return
+
+    try {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)
+    } catch (error) {
+      // Leaving full screen can be refused while a change is already running.
+    }
+  }
+
+  async #toggleFullscreen(track) {
+    const attachment = this.attachments.get(track)
+    if (!attachment?.wrapper) return
+
+    if (this.fullscreenTrack === track) {
+      this.#exitFullscreen()
+      return
+    }
+
+    const figure = attachment.wrapper
+    const video = attachment.elements[0]
+    this.fullscreenTrack = track
+
+    // The figure is tried first because it carries the caption and the controls.
+    // Mobile Safari only allows full screen on a video element, so the bare
+    // video and then its prefixed player are the fallbacks.
+    const attempts = [
+      figure.requestFullscreen && (() => figure.requestFullscreen({ navigationUI: "hide" })),
+      video.requestFullscreen && (() => video.requestFullscreen()),
+      video.webkitEnterFullscreen && (() => video.webkitEnterFullscreen())
+    ].filter(Boolean)
+
+    let entered = false
+    for (const attempt of attempts) {
+      try {
+        await attempt()
+        entered = true
+        break
+      } catch (error) {
+        // Try the next, narrower way of filling the screen.
+      }
+    }
+
+    if (!entered) {
+      this.fullscreenTrack = null
+      this.#expandScreen(track)
+      this.#showTemporaryStatus("Full screen isn’t available here. The shared screen is expanded instead.")
+    }
+
+    this.#updateScreenControls()
+    this.#applyScreenQuality(track)
+  }
+
+  // Every caller goes through one queue. Two overlapping runs could otherwise
+  // leave the processor attached while the button and localStorage say "off".
+  #applyNoiseSuppression(room) {
+    this.noiseOperation = Promise.resolve(this.noiseOperation)
+      .catch(() => {})
+      .then(() => this.#syncNoiseSuppression(room))
+
+    return this.noiseOperation
+  }
+
+  async #syncNoiseSuppression(room) {
+    if (!room || room !== this.room) return
+
+    const { Track } = this.liveKit
+    const track = room.localParticipant.getTrackPublication?.(Track.Source.Microphone)?.audioTrack
+    if (!track || typeof track.setProcessor !== "function") return
+
+    const wanted = this.noiseSuppressionAvailable && this.noiseSuppressionEnabled
+    const current = track.getProcessor?.()
+    if (wanted === Boolean(current)) return
+
+    this.noiseSuppressionBusy = true
+    this.#updateNoiseSuppressionControl()
+
+    try {
+      if (wanted) {
+        await track.setProcessor(new HuddleNoiseSuppressor({
+          workletUrl: this.noiseWorkletUrlValue,
+          wasmUrl: this.noiseWasmUrlValue,
+          simdWasmUrl: this.noiseSimdWasmUrlValue
+        }))
+      } else {
+        await track.stopProcessor()
+      }
+    } catch (error) {
+      if (!wanted) return
+
+      // Falling back to the browser's own suppression is always better than
+      // dropping the microphone out of the call.
+      await track.stopProcessor().catch(() => {})
+
+      if (this.#noiseSuppressionUnsupported(error)) {
+        this.noiseSuppressionAvailable = false
+        this.#showTemporaryStatus("Extra noise suppression isn’t available in this browser. Basic filtering is still on.")
+      } else {
+        // A worklet or model that failed to load may well load next time, so the
+        // control stays usable and nothing about the failure is written to storage.
+        this.noiseSuppressionEnabled = false
+        this.#showTemporaryStatus("Noise suppression couldn’t start. Basic filtering is still on — try again.")
+      }
+    } finally {
+      this.noiseSuppressionBusy = false
+      this.#updateNoiseSuppressionControl()
+    }
+  }
+
+  // Only a browser that genuinely cannot run the filter latches it off for the
+  // rest of the page. A failed fetch or a refused AudioContext is transient.
+  #noiseSuppressionUnsupported(error) {
+    return !noiseSuppressionSupported() ||
+      error?.name === "NotSupportedError" ||
+      error?.message === "noise-suppression-unsupported"
+  }
+
+  #storedNoiseSuppression() {
+    try {
+      return window.localStorage.getItem(NOISE_SUPPRESSION_STORAGE_KEY) !== "off"
+    } catch (error) {
+      // Private browsing modes can refuse storage; the default stays on.
+      return true
+    }
+  }
+
+  #storeNoiseSuppression(enabled) {
+    try {
+      window.localStorage.setItem(NOISE_SUPPRESSION_STORAGE_KEY, enabled ? "on" : "off")
+    } catch (error) {
+      // The preference simply does not survive this session.
+    }
+  }
+
+  #updateNoiseSuppressionControl() {
+    if (!this.hasNoiseTarget) return
+
+    const enabled = this.noiseSuppressionAvailable && this.noiseSuppressionEnabled
+
+    this.noiseTarget.disabled = !this.noiseSuppressionAvailable || Boolean(this.noiseSuppressionBusy)
+    this.noiseTarget.setAttribute("aria-pressed", String(enabled))
+    this.noiseLabelTarget.textContent = this.noiseSuppressionAvailable
+      ? enabled ? "Noise suppression on" : "Noise suppression off"
+      : "Noise suppression unavailable"
   }
 
   #renderRoster() {
@@ -466,6 +1004,8 @@ export default class extends Controller {
 
     this.muteLabelTarget.textContent = microphoneEnabled ? "Mute" : "Unmute"
     this.muteTarget.setAttribute("aria-pressed", String(!microphoneEnabled))
+    this.muteTarget.classList.toggle("huddle__mute--muted", !microphoneEnabled)
+    this.element.classList.toggle("huddle--muted", !microphoneEnabled)
     this.shareLabelTarget.textContent = screenShareEnabled ? "Stop sharing" : "Share screen"
     this.shareTarget.setAttribute("aria-pressed", String(screenShareEnabled))
   }
@@ -489,6 +1029,7 @@ export default class extends Controller {
     const connecting = state === "connecting"
 
     this.activeControlsTarget.hidden = !(connected || reconnecting)
+    this.settingsTarget.hidden = !(connected || reconnecting)
     this.peopleTarget.hidden = !(connected || reconnecting)
     this.muteTarget.disabled = !connected
     this.shareTarget.disabled = !connected
@@ -497,7 +1038,8 @@ export default class extends Controller {
     this.resumeAudioTarget.hidden = true
 
     if (!connected && !reconnecting) this.#renderRoster()
-    this.broadcastState()
+    this.#updateNoiseSuppressionControl()
+    this.#renderSharingNotice()
   }
 
   #renderState() {

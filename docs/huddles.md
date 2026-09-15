@@ -59,7 +59,7 @@ Campfire serves a checked-in LiveKit browser bundle. See the [browser SDK rebuil
 
 ## Behavior and access control
 
-Channel members and the two participants in a direct-message room can join voice huddles, mute, see participants and speaking state, and share a screen. The panel stays connected when following Campfire links. Leaving stops local media and removes remote media elements. Denied microphone access leaves no connected participant and can be retried.
+Channel members and the two participants in a direct-message room can join voice huddles, mute, see participants and speaking state, and share a screen. A shared screen can be expanded to fill the page or opened with the browser's full screen, and the room header points at it for anybody who has scrolled away. The microphone runs browser echo cancellation and gain control plus a bundled RNNoise filter that can be switched off; see the [audio and video quality assessment](huddle-quality.md) for what is applied and how to check it. The panel stays connected when following Campfire links. Leaving stops local media and removes remote media elements. Denied microphone access leaves no connected participant and can be retried.
 
 Campfire issues room-scoped tokens only to active, signed-in human members. Tokens allow microphone and screen publishing, with no camera, data, or administration grants. Join tokens expire after two minutes; participant identities are scoped to individual sign-in sessions and room names are opaque. The API response is not cacheable and the browser bundle is served locally.
 
