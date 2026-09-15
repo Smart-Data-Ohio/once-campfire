@@ -232,6 +232,29 @@ jobs:
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         timeout-minutes: 10
 
+      - name: Verify the deployer identity
+        timeout-minutes: 2
+        shell: bash
+        env:
+          GCP_DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+        run: |
+          set -euo pipefail
+          # `google-github-actions/auth` without `token_format` only writes a
+          # credential file; it never contacts Google. This is therefore the
+          # first proof that the Workload Identity binding for this environment
+          # really can impersonate the deployer, and a cheap one. Without it the
+          # failure surfaces later, wearing whatever mask the next gcloud call
+          # happens to put on it.
+          err="$(mktemp)"
+          trap 'rm -f "$err"' EXIT
+          # Only stderr is kept; the token goes to /dev/null and is never printed.
+          if ! gcloud auth print-access-token >/dev/null 2>"$err"; then
+            cat "$err"
+            echo "::error::could not obtain an access token as ${GCP_DEPLOYER_SA}; check the Workload Identity binding for this environment"
+            exit 1
+          fi
+          echo "Obtained an access token as ${GCP_DEPLOYER_SA}."
+
       - name: Resolve the image digest
         id: image
         timeout-minutes: 5
@@ -242,8 +265,25 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GCP_IMAGE" || { echo "::error::GCP_IMAGE is not set"; exit 1; }
-          if ! digest="$(gcloud artifacts docker images describe "${GCP_IMAGE}:${TAG}" \
-                           --format='value(image_summary.digest)' 2>/dev/null)" || [ -z "$digest" ]; then
+          err="$(mktemp)"
+          trap 'rm -f "$err"' EXIT
+          status=0
+          digest="$(gcloud artifacts docker images describe "${GCP_IMAGE}:${TAG}" \
+                      --format='value(image_summary.digest)' 2>"$err")" || status=$?
+          if [ "$status" -ne 0 ]; then
+            # Only a genuine "not found" means nothing was published. An auth,
+            # permission or network failure has to say so in its own words: a
+            # missing image sends the operator off to publish one that is
+            # already there, which is exactly the wrong half of the system.
+            if grep -Eqi 'not found|does not exist|NOT_FOUND|404' "$err"; then
+              echo "::error::no image published for tag ${TAG}; run the Publish image to Artifact Registry workflow first"
+            else
+              echo "::error::could not resolve ${GCP_IMAGE}:${TAG} (registry or auth error)"
+              cat "$err"
+            fi
+            exit 1
+          fi
+          if [ -z "$digest" ]; then
             echo "::error::no image published for tag ${TAG}; run the Publish image to Artifact Registry workflow first"
             exit 1
           fi
