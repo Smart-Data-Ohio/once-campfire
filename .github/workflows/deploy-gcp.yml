@@ -316,6 +316,46 @@ jobs:
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/campfire-release.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
 
+      - name: Prepare the host (swap)
+        id: prepare_host
+        timeout-minutes: 15
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          DRY_RUN: ${{ steps.plan.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Host configuration is part of the release path, not a thing somebody
+          # remembers to do: a 2 GB VM with no swap meets a memory spike with the
+          # OOM killer. This runs BEFORE preflight so that preflight's capacity
+          # arithmetic is the last word — a swap file created afterwards would
+          # eat a gigabyte of the budget preflight had just approved.
+          #
+          # HOST_PREP_STRICT=false: during a release, a swap file somebody else
+          # sized or a disk too full is reported and stepped around, never a
+          # reason to refuse to deploy. The phase is idempotent, so on a prepared
+          # host it is a no-op. A dry run changes nothing but its result file.
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' HOST_PREP_STRICT=false /opt/campfire-deploy/campfire-release.sh prepare-host"
+          # Reporting must never be the thing that fails a release: a dropped
+          # tunnel here degrades every field to "unknown".
+          json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')" || true
+          # `//` in jq treats `false` as absent, and `false` is exactly the
+          # interesting answer here, so ask whether the key is there instead.
+          field() {
+            jq -e 'type == "object"' >/dev/null 2>&1 <<<"$json" || { echo unknown; return 0; }
+            jq -r --arg k "$1" 'if has($k) and .[$k] != null then (.[$k] | tostring) else "unknown" end' <<<"$json"
+          }
+          {
+            echo "swap_path=$(field swap_path)"
+            echo "swap_size_mb=$(field swap_size_mb)"
+            echo "swap_active=$(field swap_active)"
+            echo "swap_created=$(field swap_created)"
+            echo "swappiness=$(field swappiness)"
+            echo "skipped_reason=$(field skipped_reason)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Preflight on the VM
         id: preflight
         timeout-minutes: 20
@@ -337,34 +377,6 @@ jobs:
             | gcloud compute ssh "$GCP_INSTANCE" \
                 --zone "$GCP_ZONE" --tunnel-through-iap --quiet --command "$remote"
 
-      - name: Prepare the host (swap)
-        id: prepare_host
-        timeout-minutes: 10
-        shell: bash
-        env:
-          LABEL: ${{ steps.plan.outputs.label }}
-          DRY_RUN: ${{ steps.plan.outputs.dry_run }}
-        run: |
-          set -euo pipefail
-          # Host configuration is part of the release path, not a thing somebody
-          # remembers to do: a 2 GB VM with no swap meets a memory spike with the
-          # OOM killer. The phase is idempotent, so on a prepared host this is a
-          # no-op that reports what is already there. A dry run changes nothing.
-          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' /opt/campfire-deploy/campfire-release.sh prepare-host"
-          json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')"
-          jq -e . <<<"$json" >/dev/null 2>&1 || json='{}'
-          # `//` in jq treats `false` as absent, and `false` is exactly the
-          # interesting answer here, so ask whether the key is there instead.
-          field() { jq -r --arg k "$1" 'if has($k) then (.[$k] | tostring) else "unknown" end' <<<"$json"; }
-          {
-            echo "swap_size_mb=$(field swap_size_mb)"
-            echo "swap_active=$(field swap_active)"
-            echo "swap_created=$(field swap_created)"
-            echo "swappiness=$(field swappiness)"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Dry run summary
         if: steps.plan.outputs.dry_run == 'true'
         timeout-minutes: 10
@@ -376,10 +388,12 @@ jobs:
           REFERENCE: ${{ steps.image.outputs.reference }}
           SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
           ENVIRONMENT: ${{ inputs.environment }}
+          SWAP_PATH: ${{ steps.prepare_host.outputs.swap_path }}
           SWAP_SIZE_MB: ${{ steps.prepare_host.outputs.swap_size_mb }}
           SWAP_CREATED: ${{ steps.prepare_host.outputs.swap_created }}
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
+          SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
         run: |
           set -euo pipefail
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
@@ -400,8 +414,11 @@ jobs:
             echo "| Image | \`${REFERENCE}\` |"
             echo "| Release label | \`${LABEL}\` |"
             echo "| Would snapshot | \`${SNAPSHOT}\` |"
-            echo "| Swap file | \`${SWAP_SIZE_MB} MB\`, active \`${SWAP_ACTIVE}\`, created this run \`${SWAP_CREATED}\` |"
+            echo "| Swap file | \`${SWAP_PATH}\`, \`${SWAP_SIZE_MB} MB\`, active \`${SWAP_ACTIVE}\`, created this run \`${SWAP_CREATED}\` |"
             echo "| vm.swappiness | \`${SWAPPINESS}\` |"
+            if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
+              echo "| Host preparation skipped | \`${SWAP_SKIPPED}\` |"
+            fi
             echo
             echo "Re-run with \`dry_run=false\` to perform the release."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -730,10 +747,12 @@ jobs:
           REFERENCE: ${{ steps.image.outputs.reference }}
           ENVIRONMENT: ${{ inputs.environment }}
           CI_RUN_URL: ${{ steps.ci.outputs.run_url }}
+          SWAP_PATH: ${{ steps.prepare_host.outputs.swap_path }}
           SWAP_SIZE_MB: ${{ steps.prepare_host.outputs.swap_size_mb }}
           SWAP_CREATED: ${{ steps.prepare_host.outputs.swap_created }}
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
+          SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -794,7 +813,11 @@ jobs:
             echo "- Before the cutover, the candidate image migrated a copy of the frozen database in a network-isolated throwaway container: ${preserved}; additive ${additive}."
             echo "- Writes were frozen at \`${frozen_at}\` and reopened at \`${reopened}\`."
             echo "- After the cutover, health \`GET https://${app_host}/up\` returned \`${health_status}\`, the running digest, storage volume and environment key names matched, and all ${file_count} pre-existing uploaded files were unchanged (\`${files_ok}\`)."
-            echo "- Host preparation: \`${SWAP_SIZE_MB} MB\` swap at \`/swapfile\` (active \`${SWAP_ACTIVE}\`, created by this release \`${SWAP_CREATED}\`), \`vm.swappiness=${SWAPPINESS}\`."
+            host_line="- Host preparation: \`${SWAP_SIZE_MB} MB\` swap at \`${SWAP_PATH}\` (active \`${SWAP_ACTIVE}\`, created by this release \`${SWAP_CREATED}\`), \`vm.swappiness=${SWAPPINESS}\`."
+            if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
+              host_line="${host_line} Host preparation was skipped: ${SWAP_SKIPPED}."
+            fi
+            echo "$host_line"
             echo "- Open Roles timer restored to \`${timer_state}\`; temporary registry credentials removed: \`${logged_out}\`."
             echo "- [Deployment run](${RUN_URL})."
             echo

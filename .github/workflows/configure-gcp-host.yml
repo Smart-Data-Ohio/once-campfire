@@ -5,14 +5,16 @@ name: Configure GCP host
 # the same `prepare-host` phase on every run, so this workflow exists for
 # applying it now, or after an operator has had to undo it.
 #
-# It shares `deploy-gcp.yml`'s production concurrency group, so a host change
-# and a release can never be in flight on the same VM at once.
+# It shares the concurrency group `deploy-gcp.yml` uses for the production
+# environment, so a host change and a production release can never be in flight
+# on the same VM at once. A validation release uses a different group and is
+# unaffected, which is correct: it is a different VM.
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Report what would change without changing anything
+        description: Report what would change; the only thing written is the result file
         type: boolean
         required: false
         default: true
@@ -89,17 +91,27 @@ jobs:
         shell: bash
         env:
           DRY_RUN: ${{ inputs.dry_run }}
-          LABEL: host-${{ github.run_id }}
+          # A fixed label, not one per run: this phase keeps no checkpoint worth
+          # retaining, and a directory per run would pile up under /var/backups.
+          # Each run overwrites the previous result file.
+          LABEL: host-prep
         run: |
           set -euo pipefail
+          # HOST_PREP_STRICT=true: here, unlike during a release, fixing the host
+          # is the whole point, so a swap file of the wrong size or a disk too
+          # full is a failure rather than something to step around.
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' /opt/campfire-deploy/campfire-release.sh prepare-host"
+            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' HOST_PREP_STRICT=true /opt/campfire-deploy/campfire-release.sh prepare-host"
+          # Reporting must not be able to fail the run that already succeeded: a
+          # dropped tunnel here degrades every field to "unknown".
           json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')"
-          jq -e . <<<"$json" >/dev/null 2>&1 || json='{}'
+            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')" || true
           # `//` in jq treats `false` as absent, and `false` is exactly the
           # interesting answer here, so ask whether the key is there instead.
-          field() { jq -r --arg k "$1" 'if has($k) then (.[$k] | tostring) else "unknown" end' <<<"$json"; }
+          field() {
+            jq -e 'type == "object"' >/dev/null 2>&1 <<<"$json" || { echo unknown; return 0; }
+            jq -r --arg k "$1" 'if has($k) and .[$k] != null then (.[$k] | tostring) else "unknown" end' <<<"$json"
+          }
           {
             echo "## Host preparation"
             echo
@@ -113,13 +125,20 @@ jobs:
             echo "| Created by this run | \`$(field swap_created)\` |"
             echo "| Persisted in /etc/fstab | \`$(field fstab_entry)\` |"
             echo "| vm.swappiness | \`$(field swappiness)\` |"
+            skipped="$(field skipped_reason)"
+            if [ "$skipped" != "unknown" ]; then
+              echo "| Skipped | \`${skipped}\` |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Remove the copied script from the VM
+      - name: Remove the copied script from the home directory
         if: always() && steps.copy.conclusion == 'success'
         timeout-minutes: 10
         shell: bash
         run: |
           set -euo pipefail
+          # Only the copy in the deployer's home directory. The installed
+          # /opt/campfire-deploy/campfire-release.sh stays, exactly as a release
+          # leaves it.
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "rm -f \"\$HOME/${REMOTE_DIR}.sh\"" || true

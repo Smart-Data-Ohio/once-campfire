@@ -60,7 +60,11 @@ set -euo pipefail
 # RELEASE_KEEP    number of release directories to keep when pruning.
 # ALLOW_BACKUP_WINDOW  1 to override the nightly ONCE backup window guard.
 # DRY_RUN         true to have `prepare-host` report what it would change and
-#                 change nothing. It still writes its result file.
+#                 change nothing else. It still writes its result file.
+# HOST_PREP_STRICT  true (the default) makes host drift a hard failure in
+#                 `prepare-host`. false downgrades a wrong-sized swap file and a
+#                 disk-floor violation to a warning recorded as skipped_reason,
+#                 so a release is never blocked by the state of the host.
 # SWAP_PATH       swap file `prepare-host` manages. No other swap device is
 #                 ever touched.
 # SWAP_SIZE_MB    size of that swap file. An existing file of a different size
@@ -87,7 +91,10 @@ MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-3072}"
 RELEASE_KEEP="${RELEASE_KEEP:-3}"
 ALLOW_BACKUP_WINDOW="${ALLOW_BACKUP_WINDOW:-0}"
 CAMPFIRE_RELEASE_SIMULATE_FAILURE="${CAMPFIRE_RELEASE_SIMULATE_FAILURE:-0}"
-DRY_RUN="${DRY_RUN:-false}"
+# `-` and not `:-`: an empty DRY_RUN is a caller that meant to say something
+# and failed, not a caller that said "false". It must not pass for false.
+DRY_RUN="${DRY_RUN-false}"
+HOST_PREP_STRICT="${HOST_PREP_STRICT-true}"
 SWAP_PATH="${SWAP_PATH:-/swapfile}"
 SWAP_SIZE_MB="${SWAP_SIZE_MB:-1024}"
 SWAPPINESS="${SWAPPINESS:-10}"
@@ -448,57 +455,131 @@ assert_app_stopped() {
 #
 # It is deliberately conservative: it creates the swap file it is asked for, or
 # leaves the existing one exactly as it is. It never resizes a swap file that is
-# already there, and it never touches any swap device other than SWAP_PATH.
-# It needs no state from an earlier phase, so it can be run on its own.
+# already there, never runs mkswap over something that is not swap, and never
+# touches any swap device other than SWAP_PATH. It needs no state from an
+# earlier phase, so it can be run on its own.
+#
+# HOST_PREP_STRICT decides what host drift means. On demand (`true`) a swap file
+# of the wrong size or a disk too full is a hard failure, because fixing the
+# host is the whole point of the run. During a release (`false`) the same
+# conditions are a warning recorded as `skipped_reason`: a release must not be
+# blocked by a swap file somebody else sized.
+
+SWAP_NEW=""
+FSTAB_TMP=""
+
+prepare_host_cleanup() {
+  # An interrupted run must leave no half-written file behind. Anything partial
+  # lives at $SWAP_PATH.new, never at $SWAP_PATH, exactly so that this is safe.
+  if [ -n "$SWAP_NEW" ] && [ -e "$SWAP_NEW" ]; then
+    rm -f "$SWAP_NEW" && warn "prepare-host: removed the partial swap file $SWAP_NEW"
+  fi
+  if [ -n "$FSTAB_TMP" ] && [ -e "$FSTAB_TMP" ]; then
+    rm -f "$FSTAB_TMP"
+  fi
+}
 
 swap_file_is_active() {
   swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$SWAP_PATH"
 }
 
-swap_file_has_signature() {
-  [ "$(blkid -p -s TYPE -o value "$SWAP_PATH" 2>/dev/null || true)" = "swap" ]
+# The signature already on the file, if any. Empty means "nothing recognisable",
+# which is the only state other than `swap` that may be overwritten.
+swap_file_type() {
+  blkid -p -s TYPE -o value "$SWAP_PATH" 2>/dev/null || true
 }
 
 # A swap file is a copy of memory on disk. It must never exist readable by
 # anyone but root, not even for the seconds it takes to fill it.
 ensure_swap_file_mode() {
-  local mode owner
-  mode="$(stat -c %a "$SWAP_PATH")"
-  owner="$(stat -c %U:%G "$SWAP_PATH")"
+  local path="$1" mode owner
+  mode="$(stat -c %a "$path")"
+  owner="$(stat -c %U:%G "$path")"
   if [ "$mode" != "600" ]; then
-    log "prepare-host: tightening $SWAP_PATH from mode $mode to 600"
-    chmod 0600 "$SWAP_PATH"
+    log "prepare-host: tightening $path from mode $mode to 600"
+    chmod 0600 "$path"
   fi
   if [ "$owner" != "root:root" ]; then
-    log "prepare-host: $SWAP_PATH is owned by $owner; making it root:root"
-    chown root:root "$SWAP_PATH"
+    log "prepare-host: $path is owned by $owner; making it root:root"
+    chown root:root "$path"
   fi
 }
 
-create_swap_file() {
-  local want_bytes=$(( SWAP_SIZE_MB * 1048576 )) got
-  ( umask 077; : > "$SWAP_PATH" )
-  ensure_swap_file_mode
-  if fallocate -l "${SWAP_SIZE_MB}M" "$SWAP_PATH" 2>/dev/null; then
-    log "prepare-host: allocated $SWAP_PATH with fallocate"
+# build_swap_file fallocate|dd
+#
+# Builds a whole, mkswap'd swap file at $SWAP_PATH.new and moves it into place
+# only once it is complete. A run killed by a step timeout, a cancelled job or a
+# dropped SSH connection therefore leaves a .new file that the next run deletes
+# — never a short $SWAP_PATH that every later release would refuse as wrong-sized.
+# Returns 1 (without dying) when fallocate declines, so the caller can fall back.
+build_swap_file() {
+  local method="$1" want_bytes=$(( SWAP_SIZE_MB * 1048576 )) got
+  SWAP_NEW="${SWAP_PATH}.new"
+  rm -f "$SWAP_NEW"
+  ( umask 077; : > "$SWAP_NEW" )
+  ensure_swap_file_mode "$SWAP_NEW"
+  if [ "$method" = fallocate ]; then
+    if ! fallocate -l "${SWAP_SIZE_MB}M" "$SWAP_NEW" 2>/dev/null; then
+      rm -f "$SWAP_NEW"; SWAP_NEW=""
+      return 1
+    fi
+    log "prepare-host: allocated ${SWAP_SIZE_MB} MB with fallocate"
   else
-    log "prepare-host: fallocate did not work here; writing zeros with dd instead"
-    dd if=/dev/zero of="$SWAP_PATH" bs=1M count="$SWAP_SIZE_MB" status=none \
-      || { rm -f "$SWAP_PATH"; die "prepare-host: could not allocate $SWAP_PATH"; }
+    dd if=/dev/zero of="$SWAP_NEW" bs=1M count="$SWAP_SIZE_MB" status=none \
+      || { rm -f "$SWAP_NEW"; SWAP_NEW=""; die "prepare-host: could not write ${SWAP_SIZE_MB} MB to ${SWAP_PATH}.new"; }
+    log "prepare-host: wrote ${SWAP_SIZE_MB} MB of zeros with dd"
   fi
-  got="$(stat -c %s "$SWAP_PATH")"
+  got="$(stat -c %s "$SWAP_NEW")"
   if [ "$got" -ne "$want_bytes" ]; then
-    rm -f "$SWAP_PATH"
-    die "prepare-host: $SWAP_PATH came out $got bytes, expected $want_bytes; removed it"
+    rm -f "$SWAP_NEW"; SWAP_NEW=""
+    die "prepare-host: the new swap file came out $got bytes, expected $want_bytes; removed it"
   fi
+  mkswap "$SWAP_NEW" >/dev/null
+  mv -f "$SWAP_NEW" "$SWAP_PATH"
+  SWAP_NEW=""
+  ensure_swap_file_mode "$SWAP_PATH"
+}
+
+# add_fstab_entry <line>
+#
+# /etc/fstab is the one file here that can cost a boot. A last line without a
+# trailing newline would silently fuse with the appended entry and send the next
+# reboot into emergency mode, so the candidate is built beside the original,
+# newline-terminated, verified with `findmnt --verify`, and only then moved into
+# place — with the previous copy kept as /etc/fstab.campfire.bak.
+add_fstab_entry() {
+  local line="$1"
+  FSTAB_TMP="$(mktemp /etc/fstab.campfire.XXXXXX)"
+  cat /etc/fstab > "$FSTAB_TMP"
+  chmod --reference=/etc/fstab "$FSTAB_TMP"
+  chown --reference=/etc/fstab "$FSTAB_TMP"
+  if [ -s "$FSTAB_TMP" ] && [ "$(tail -c1 "$FSTAB_TMP" | wc -l)" -eq 0 ]; then
+    log "prepare-host: /etc/fstab does not end in a newline; terminating it before appending"
+    printf '\n' >> "$FSTAB_TMP"
+  fi
+  printf '%s\n' "$line" >> "$FSTAB_TMP"
+  if ! findmnt --verify --fstab --tab-file "$FSTAB_TMP" >/dev/null 2>&1; then
+    warn "prepare-host: findmnt rejected the proposed /etc/fstab:"
+    findmnt --verify --fstab --tab-file "$FSTAB_TMP" >&2 || true
+    rm -f "$FSTAB_TMP"; FSTAB_TMP=""
+    die "prepare-host: the proposed /etc/fstab does not verify; /etc/fstab was left untouched"
+  fi
+  cp -p /etc/fstab /etc/fstab.campfire.bak
+  mv -f "$FSTAB_TMP" /etc/fstab
+  FSTAB_TMP=""
 }
 
 phase_prepare_host() {
-  local dry_run=false
+  local dry_run strict
   case "$DRY_RUN" in
-    true|1|yes)    dry_run=true ;;
-    false|0|no|'') dry_run=false ;;
-    *) die "DRY_RUN must be true or false, got '$DRY_RUN'" ;;
+    true)  dry_run=true ;;
+    false) dry_run=false ;;
+    *) die "DRY_RUN must be exactly 'true' or 'false', got '$DRY_RUN'" ;;
+  esac
+  case "$HOST_PREP_STRICT" in
+    true)  strict=true ;;
+    false) strict=false ;;
+    *) die "HOST_PREP_STRICT must be exactly 'true' or 'false', got '$HOST_PREP_STRICT'" ;;
   esac
 
   case "$SWAP_PATH" in
@@ -510,37 +591,64 @@ phase_prepare_host() {
   [[ "$SWAPPINESS" =~ ^[0-9]+$ ]] && [ "$SWAPPINESS" -le 100 ] \
     || die "SWAPPINESS must be an integer between 0 and 100, got '$SWAPPINESS'"
 
+  trap prepare_host_cleanup EXIT
+
   local want_bytes=$(( SWAP_SIZE_MB * 1048576 ))
-  local created=false active=false fstab=false
+  local created=false active=false fstab=false skipped_reason=""
+  local size_mb="$SWAP_SIZE_MB"
 
   if [ "$dry_run" = true ]; then
-    log "prepare-host: DRY RUN — reporting what would change, changing nothing"
+    log "prepare-host: DRY RUN — reporting what would change; only the result file is written"
   fi
-  log "prepare-host: want $SWAP_PATH at ${SWAP_SIZE_MB} MB with vm.swappiness=${SWAPPINESS}"
+  log "prepare-host: want $SWAP_PATH at ${SWAP_SIZE_MB} MB ($want_bytes bytes) with vm.swappiness=${SWAPPINESS} (strict=${strict})"
+
+  # A leftover .new is the residue of an interrupted run, and nothing else.
+  if [ -e "${SWAP_PATH}.new" ]; then
+    if [ "$dry_run" = true ]; then
+      log "prepare-host: would remove ${SWAP_PATH}.new, left behind by an interrupted run"
+    else
+      rm -f "${SWAP_PATH}.new"
+      log "prepare-host: removed ${SWAP_PATH}.new, left behind by an interrupted run"
+    fi
+  fi
 
   if [ -e "$SWAP_PATH" ]; then
     [ -f "$SWAP_PATH" ] || die "prepare-host: $SWAP_PATH exists and is not a regular file; an operator must look at it"
-    local have_bytes have_mb
+    local have_bytes fs_type
     have_bytes="$(stat -c %s "$SWAP_PATH")"
-    have_mb=$(( have_bytes / 1048576 ))
-    # Resizing swap means swapoff on a host that may be leaning on it. That is a
-    # decision with an outage in it, so it belongs to a person, not to a release.
-    if [ "$have_bytes" -ne "$want_bytes" ]; then
-      die "prepare-host: $SWAP_PATH is ${have_mb} MB (${have_bytes} bytes) but SWAP_SIZE_MB asks for ${SWAP_SIZE_MB} MB. Refusing to resize an existing swap file: re-run with SWAP_SIZE_MB=${have_mb} to accept what is there, or have an operator 'swapoff ${SWAP_PATH}', remove it, and run this phase again."
+    size_mb=$(( have_bytes / 1048576 ))
+    fs_type="$(swap_file_type)"
+    # mkswap over a filesystem image or an archive destroys it. Only swap, or
+    # nothing recognisable at all, may be written over.
+    if [ -n "$fs_type" ] && [ "$fs_type" != swap ]; then
+      die "prepare-host: $SWAP_PATH already holds a '$fs_type' signature, not swap. Refusing to run mkswap over data: an operator should move or remove that file and run this phase again."
     fi
-    log "prepare-host: $SWAP_PATH already exists at ${SWAP_SIZE_MB} MB"
-    [ "$dry_run" = true ] || ensure_swap_file_mode
+    if [ "$have_bytes" -ne "$want_bytes" ]; then
+      # Resizing means swapoff on a host that may be leaning on it. That is a
+      # decision with an outage in it, so it belongs to a person.
+      local msg="$SWAP_PATH is $have_bytes bytes but SWAP_SIZE_MB=${SWAP_SIZE_MB} asks for $want_bytes bytes. Resizing it means 'swapoff ${SWAP_PATH}' on a host that may be leaning on it, so an operator has to do it: swapoff, remove the file, and run this phase again."
+      [ "$strict" = false ] || die "prepare-host: $msg"
+      warn "prepare-host: $msg"
+      warn "prepare-host: HOST_PREP_STRICT=false, so the host is left exactly as it is and the release continues"
+      skipped_reason="existing swap file is $have_bytes bytes, wanted $want_bytes bytes; left untouched"
+    else
+      log "prepare-host: $SWAP_PATH already exists at $have_bytes bytes"
+      [ "$dry_run" = true ] || ensure_swap_file_mode "$SWAP_PATH"
+    fi
     if swap_file_is_active; then
       active=true
-      log "prepare-host: $SWAP_PATH is already active"
+      [ -n "$skipped_reason" ] || log "prepare-host: $SWAP_PATH is already active"
+    elif [ -n "$skipped_reason" ]; then
+      : # drift: change nothing at all, not even swapon
     elif [ "$dry_run" = true ]; then
       log "prepare-host: would enable swap on $SWAP_PATH (present but inactive)"
     else
-      if ! swap_file_has_signature; then
-        log "prepare-host: $SWAP_PATH carries no swap signature; running mkswap"
+      if [ -z "$fs_type" ]; then
+        log "prepare-host: $SWAP_PATH carries no signature; running mkswap"
         mkswap "$SWAP_PATH" >/dev/null
       fi
-      swapon "$SWAP_PATH"
+      swapon "$SWAP_PATH" \
+        || die "prepare-host: swapon refused the existing $SWAP_PATH. It was not created by this run, so nothing has been removed; an operator should look at it."
       active=true
       log "prepare-host: enabled swap on $SWAP_PATH"
     fi
@@ -550,32 +658,63 @@ phase_prepare_host() {
     free_mb="$(df -Pm "$swap_dir" | awk 'NR==2 {print $4}')"
     free_after=$(( free_mb - SWAP_SIZE_MB ))
     log "prepare-host: ${free_mb} MB free on the ${swap_dir} filesystem; ${free_after} MB would remain"
-    [ "$free_after" -ge "$MIN_FREE_AFTER_SWAP_MB" ] \
-      || die "prepare-host: a ${SWAP_SIZE_MB} MB swap file would leave ${free_after} MB free on ${swap_dir}, under the ${MIN_FREE_AFTER_SWAP_MB} MB floor"
-    if [ "$dry_run" = true ]; then
+    if [ "$free_after" -lt "$MIN_FREE_AFTER_SWAP_MB" ]; then
+      local msg="a ${SWAP_SIZE_MB} MB swap file would leave ${free_after} MB free on ${swap_dir}, under the ${MIN_FREE_AFTER_SWAP_MB} MB floor"
+      [ "$strict" = false ] || die "prepare-host: $msg"
+      warn "prepare-host: $msg"
+      warn "prepare-host: HOST_PREP_STRICT=false, so no swap file was created and the release continues"
+      skipped_reason="$msg; no swap file created"
+    elif [ "$dry_run" = true ]; then
       log "prepare-host: would create $SWAP_PATH (${SWAP_SIZE_MB} MB), mkswap it and swapon it"
     else
-      create_swap_file
-      mkswap "$SWAP_PATH" >/dev/null
-      swapon "$SWAP_PATH"
+      local method="fallocate"
+      if ! build_swap_file fallocate; then
+        log "prepare-host: fallocate did not work here; writing zeros with dd instead"
+        build_swap_file dd
+        method="dd"
+      fi
       created=true
-      active=true
+      if swapon "$SWAP_PATH"; then
+        active=true
+      elif [ "$method" = fallocate ]; then
+        # A fallocated file can carry holes the kernel refuses to swap to. This
+        # file is ours — created seconds ago in this run — so rebuilding it
+        # destroys nothing.
+        warn "prepare-host: swapon refused the fallocated $SWAP_PATH; rebuilding it with dd"
+        rm -f "$SWAP_PATH"
+        build_swap_file dd
+        swapon "$SWAP_PATH" \
+          || die "prepare-host: swapon still refuses $SWAP_PATH after rebuilding it with dd"
+        active=true
+      else
+        die "prepare-host: swapon refused $SWAP_PATH; it was written with dd and has been left in place for an operator"
+      fi
       log "prepare-host: created and enabled $SWAP_PATH (${SWAP_SIZE_MB} MB)"
     fi
   fi
 
   # Without the fstab entry the swap file survives nothing: the next reboot
-  # comes back with the file on disk and no swap in use.
+  # comes back with the file on disk and no swap in use. An entry for a file
+  # that is not there would be the opposite mistake, so this only runs when the
+  # swap file exists, or would by now.
   local fstab_line="$SWAP_PATH none swap sw 0 0"
+  local may_touch_fstab=false
+  if [ -z "$skipped_reason" ] && { [ -e "$SWAP_PATH" ] || [ "$dry_run" = true ]; }; then
+    may_touch_fstab=true
+  fi
   if [ -f /etc/fstab ] && awk -v p="$SWAP_PATH" '$1 == p { found = 1 } END { exit found ? 0 : 1 }' /etc/fstab; then
     fstab=true
     log "prepare-host: /etc/fstab already has an entry for $SWAP_PATH"
+  elif [ -n "$skipped_reason" ]; then
+    log "prepare-host: leaving /etc/fstab alone; host preparation was skipped"
+  elif [ "$may_touch_fstab" = false ]; then
+    log "prepare-host: not adding an /etc/fstab entry for a swap file that is not there"
   elif [ "$dry_run" = true ]; then
-    log "prepare-host: would append '$fstab_line' to /etc/fstab"
+    log "prepare-host: would append '$fstab_line' to /etc/fstab (verified with findmnt first, previous copy kept as /etc/fstab.campfire.bak)"
   else
-    printf '%s\n' "$fstab_line" >> /etc/fstab
+    add_fstab_entry "$fstab_line"
     fstab=true
-    log "prepare-host: appended '$fstab_line' to /etc/fstab"
+    log "prepare-host: appended '$fstab_line' to /etc/fstab; previous copy kept as /etc/fstab.campfire.bak"
   fi
 
   local sysctl_desired
@@ -596,6 +735,11 @@ phase_prepare_host() {
     sysctl -q -p "$SYSCTL_FILE"
     log "prepare-host: wrote $SYSCTL_FILE and applied vm.swappiness=${SWAPPINESS}"
   fi
+  # systemd applies /etc/sysctl.conf after everything in /etc/sysctl.d, so a
+  # value there wins at every boot no matter what this phase writes.
+  if [ -f /etc/sysctl.conf ] && grep -Eq '^[[:space:]]*vm\.swappiness[[:space:]]*=' /etc/sysctl.conf; then
+    warn "prepare-host: /etc/sysctl.conf also sets vm.swappiness and is applied after ${SYSCTL_FILE} at boot, so it wins. An operator should remove that line."
+  fi
 
   local swappiness_now swappiness_json
   swappiness_now="$(sysctl -n vm.swappiness 2>/dev/null || echo unknown)"
@@ -605,21 +749,24 @@ phase_prepare_host() {
     swappiness_json=null
   fi
 
-  install -d -m 0755 "$STATE_ROOT"
+  [ -d "$STATE_ROOT" ] || install -d -m 0755 "$STATE_ROOT"
   jq -n \
     --arg phase prepare-host \
     --arg at "$(now_utc)" \
     --arg label "$RELEASE_LABEL" \
     --arg swap_path "$SWAP_PATH" \
-    --argjson swap_size_mb "$SWAP_SIZE_MB" \
+    --argjson swap_size_mb "$size_mb" \
     --argjson swap_active "$active" \
     --argjson swap_created "$created" \
     --argjson swappiness "$swappiness_json" \
     --argjson fstab_entry "$fstab" \
     --argjson dry_run "$dry_run" \
+    --argjson strict "$strict" \
+    --arg skipped_reason "$skipped_reason" \
     '{phase:$phase, at:$at, release_label:$label, swap_path:$swap_path,
       swap_size_mb:$swap_size_mb, swap_active:$swap_active, swap_created:$swap_created,
-      swappiness:$swappiness, fstab_entry:$fstab_entry, dry_run:$dry_run}' \
+      swappiness:$swappiness, fstab_entry:$fstab_entry, dry_run:$dry_run, strict:$strict,
+      skipped_reason:(if $skipped_reason == "" then null else $skipped_reason end)}' \
     | write_state prepare-host-result.json
 
   if [ "$active" = true ]; then
@@ -627,13 +774,18 @@ phase_prepare_host() {
   fi
   printf '\n===== host preparation =====\n'
   printf 'dry run      : %s\n' "$dry_run"
-  printf 'swap file    : %s (%s MB)\n' "$SWAP_PATH" "$SWAP_SIZE_MB"
+  printf 'strict       : %s\n' "$strict"
+  printf 'swap file    : %s (%s MB)\n' "$SWAP_PATH" "$size_mb"
   printf 'created now  : %s\n' "$created"
   printf 'swap active  : %s\n' "$active"
   printf 'fstab entry  : %s\n' "$fstab"
   printf 'swappiness   : %s (%s)\n' "$swappiness_now" "$SYSCTL_FILE"
+  printf 'skipped      : %s\n' "${skipped_reason:-none}"
   printf 'result       : %s\n' "$(state_path prepare-host-result.json)"
   printf '============================\n\n'
+
+  trap - EXIT
+  prepare_host_cleanup
 }
 
 # ----------------------------------------------------------------- preflight --
@@ -1460,7 +1612,14 @@ main() {
   # has to work on a host where the application has not been installed yet, so
   # it must not be held to the application's prerequisites.
   case "${1:-}" in
-    prepare-host) : ;;
+    prepare-host)
+      # Checked before anything is created, so a host missing a tool fails
+      # before it has a half-configured swap file to explain.
+      local tool
+      for tool in mkswap swapon fallocate blkid findmnt; do
+        command -v "$tool" >/dev/null || die "$tool is not available"
+      done
+      ;;
     *)
       command -v docker >/dev/null || die "docker is not available"
       command -v once >/dev/null || die "the once CLI is not available"
