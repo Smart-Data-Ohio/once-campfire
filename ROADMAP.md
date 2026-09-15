@@ -10,17 +10,18 @@ Keep the upstream remote and license/attribution. Review upstream security fixes
 
 ## Live foundation
 
-The deployed application source is `56f6ebdf9c5f90a7252f9aec978dcb33e3154151` on `codex/discord-message-ux`. At this update, GitHub `main` still contains upstream code; branch presence and default-branch adoption are separate milestones.
+The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on `codex/discord-message-ux`. At this update, GitHub `main` still contains upstream code; branch presence and default-branch adoption are separate milestones.
 
 - Responsive channel workspace, light/dark themes, member presence, and Markdown composition.
 - Message context menus, quick/grouped reactions, normal-composer editing, replies with notification choice, forwarding, and channel threads.
-- Huddles with audio and screen sharing, membership enforcement, and a separate media host. Persistent voice channels and Stage channels remain future work.
+- Huddles in channels and one-to-one DMs, with audio and screen sharing, membership enforcement, and a separate media host. Persistent voice channels and Stage channels remain future work.
+- Personal activity inbox and human-owned work threads with status, change history, and a workspace-wide work list.
 - Open Roles feed and existing bot API. These do not yet provide the agent identity model described below.
 - Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md).
 
 ## Current implementation
 
-The next change on `codex/discord-message-ux` adds the first activity inbox, human-owned work threads, one-to-one DM Huddles, and a more neutral gray/charcoal palette. These changes are undergoing integration checks and are not part of the live source revision above. See [Activity inbox and work threads](docs/activity-workspace.md) for the initial behavior and boundaries.
+The first activity inbox, human-owned work threads, one-to-one DM Huddles, and neutral gray/charcoal palette are live as of September 15, 2026. See [Activity inbox and work threads](docs/activity-workspace.md) for the initial behavior and boundaries and [the release record](docs/releases/2026-09-15-activity-workspace.md) for validation and rollback details.
 
 The first DM Huddle slice uses a shared join control with audio and screen sharing. Ringing, invitations, and missed-call notifications follow separately. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
 
@@ -37,6 +38,8 @@ Done when a contributor can clone the default branch, run the app and checks, an
 
 ### 2. Channel types and richer real-time spaces
 
+The one-to-one DM audio/screen-sharing slice is live. Invitations, ringing, and missed-call notifications remain planned.
+
 - One-to-one Huddles directly inside a DM, with a discoverable start/join control, a way to notify the other participant, audio and screen sharing, reconnect, and leave/end behavior. Only the two DM participants can access the call or its activity; define invitation, missed-call, and notification behavior in the feature design.
 - Persistent voice channels with visible participants, join/leave controls, and reconnect behavior.
 - Voice-channel text chat with durable history and clear access rules for people who are not currently in the call.
@@ -44,7 +47,7 @@ Done when a contributor can clone the default branch, run the app and checks, an
 - Streaming with explicit presenter/viewer behavior and quality controls, building on existing screen sharing where practical.
 - Agent message boards/channels for ongoing work, readable results, and human participation.
 
-Start with one-to-one DM Huddles, then one persistent voice-channel experience before Stage and streaming expansion. Reuse the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
+Follow the live one-to-one DM Huddles slice with one persistent voice-channel experience before Stage and streaming expansion. Reuse the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
 
 Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, reconnect, and leave, while a third member cannot access the call. The next slice adds a discoverable persistent voice channel and its text chat, with access removal enforced throughout.
 
@@ -91,6 +94,8 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 
 ### 7. Unified activity inbox
 
+The first messaging and human-work slice is live. Agent, GitHub, and Events sources follow their integrations.
+
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.
 - Per-channel and per-integration notification controls; group related updates and avoid duplicate items when one action triggers several events.
@@ -100,6 +105,8 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 Done for the first slice when a member can find a mention or reply, open its exact context, mark it handled, and keep that state across sessions without seeing another member's private activity. Handling an inbox item must not silently resolve the underlying work or approve an external action.
 
 ### 8. Work threads
+
+The first human-owned slice is live, including status/owner history, completion and reopening, the global work list, and activity inbox updates. Agent assignment and external integration links remain planned.
 
 - Extend conversations into trackable work with a title, owner, status, and linked PRs, files, or events; keep the conversation and its history together.
 - Show human and agent progress, blockers, and the next action so ongoing work is easy to resume.
