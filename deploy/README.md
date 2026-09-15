@@ -4,6 +4,17 @@ The existing app remains an ONCE deployment on `campfire` in GCP project `smart-
 
 The separate [Huddles media package](huddles/README.md) runs on `campfire-huddles` in the same zone. It is independent of the app's database. This separates resource usage and maintenance; it does not provide zone redundancy. The anticipated workspace size is about 135 users. Concurrent call participants and screen-share traffic need separate capacity testing; the initial two-CPU/eight-GiB media host is a pilot size, not a demonstrated 135-participant capacity.
 
+## Automated path
+
+The steps below are now automated by two GitHub Actions workflows that authenticate to GCP through Workload Identity Federation, with no long-lived key on either VM:
+
+- **Publish image to Artifact Registry** (`.github/workflows/publish-gcp-image.yml`) builds the committed source for `linux/amd64` on every push to `main` and every `v*` tag, pushes it as `git-<full source sha>`, and attests its provenance.
+- **Deploy to GCP** (`.github/workflows/deploy-gcp.yml`) is run by hand for a chosen source revision and environment. It resolves that tag to a digest and runs [`deploy/gcp/campfire-release.sh`](gcp/README.md) on the app VM over an IAP SSH tunnel, in phases: preflight, write freeze and backup, boot-disk snapshot, cutover with full preservation checks, and finish. A failed cutover rolls back automatically and leaves the feed timer paused. Its job summary contains a paste-ready release record for `docs/releases/`.
+
+Deploying to `production` requires the revision to be an ancestor of `origin/main`, a successful `CI` run for that exact sha, and an environment reviewer's approval. Start with `dry_run=true`, which stops after preflight and prints the plan.
+
+Read [deploy/gcp/README.md](gcp/README.md) for the phase-by-phase contract and the release record layout. **The manual procedure below remains the authority on why each step exists, and is the procedure to follow by hand whenever the pipeline is unavailable.** Keep the two in step: a change to the cutover here is a change to the script.
+
 ## Candidate image
 
 Build the committed source with Docker BuildKit. The app Dockerfile uses `COPY --chmod`, so Docker's legacy builder cannot complete it. Store verified images in the private Artifact Registry repository:
@@ -12,7 +23,7 @@ Build the committed source with Docker BuildKit. The app Dockerfile uses `COPY -
 us-central1-docker.pkg.dev/smart-data-campfire/campfire/app
 ```
 
-Repository tags are immutable. Use a unique tag containing the full source revision, and deploy its resolved `sha256` digest. Record the source revision, image digest, and validation results together. The repository's GitHub image workflow was not registered on its default branch at the initial rollout; the GCP registry is the delivery route.
+Repository tags are immutable. Use a unique tag containing the full source revision, and deploy its resolved `sha256` digest. Record the source revision, image digest, and validation results together. The GCP registry is the delivery route; GHCR is not. Because tags cannot be moved, re-publishing an already-released revision resolves the existing digest instead of rebuilding over it.
 
 The VMs have no runtime GCP service account. An authorized operator supplies a short-lived registry credential for a pull or push through protected standard input. Do not copy a long-lived service-account key onto either VM. Docker can restart an already-pulled container without renewing that credential. Future releases require fresh registry authentication.
 

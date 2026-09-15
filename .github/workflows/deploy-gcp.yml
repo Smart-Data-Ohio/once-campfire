@@ -1,0 +1,464 @@
+name: Deploy to GCP
+
+# Automates the release procedure in deploy/README.md against the ONCE
+# single-VM deployment. The on-VM work lives in deploy/gcp/campfire-release.sh
+# and is driven one phase at a time so the runner can take a boot-disk snapshot
+# while writes are frozen.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target GitHub environment
+        type: choice
+        required: true
+        options:
+          - production
+          - validation
+        default: validation
+      git_sha:
+        description: Source revision to deploy (full or short sha)
+        type: string
+        required: true
+      image_digest:
+        description: Optional sha256:... digest that must match the resolved image
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: Stop after preflight and print the plan
+        type: boolean
+        required: false
+        default: true
+      skip_snapshot:
+        description: Skip the boot-disk snapshot taken while writes are frozen
+        type: boolean
+        required: false
+        default: false
+      release_label:
+        description: Release label (default <YYYYMMDD>-<short sha>)
+        type: string
+        required: false
+        default: ''
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Release ${{ inputs.git_sha }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-gcp-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      checks: read
+      actions: read
+    timeout-minutes: 60
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_ZONE: ${{ vars.GCP_ZONE }}
+      GCP_INSTANCE: ${{ vars.GCP_INSTANCE }}
+      GCP_APP_HOST: ${{ vars.GCP_APP_HOST }}
+      GCP_IMAGE: ${{ vars.GCP_IMAGE }}
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the release plan
+        id: plan
+        shell: bash
+        env:
+          INPUT_SHA: ${{ inputs.git_sha }}
+          INPUT_LABEL: ${{ inputs.release_label }}
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_SKIP_SNAPSHOT: ${{ inputs.skip_snapshot }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          SIMULATE_FAILURE_VAR: ${{ vars.CAMPFIRE_RELEASE_SIMULATE_FAILURE }}
+        run: |
+          set -euo pipefail
+
+          case "$INPUT_SHA" in
+            *[!0-9a-fA-F]*|'') echo "::error::git_sha must be hexadecimal"; exit 1 ;;
+          esac
+          if [ "${#INPUT_SHA}" -lt 7 ]; then
+            echo "::error::git_sha must be at least 7 characters"; exit 1
+          fi
+          git fetch --quiet origin +refs/heads/*:refs/remotes/origin/* || true
+          if ! sha="$(git rev-parse --verify --quiet "${INPUT_SHA}^{commit}")"; then
+            echo "::error::${INPUT_SHA} is not a commit in this repository"; exit 1
+          fi
+          short="${sha::7}"
+
+          label="$INPUT_LABEL"
+          if [ -z "$label" ]; then
+            label="$(date -u +%Y%m%d)-${short}"
+          fi
+          case "$label" in
+            *[!A-Za-z0-9._-]*) echo "::error::release_label may only contain A-Z a-z 0-9 . _ -"; exit 1 ;;
+          esac
+          if [ "${#label}" -gt 40 ]; then
+            echo "::error::release_label must be 40 characters or fewer"; exit 1
+          fi
+
+          # Snapshot names are RFC1035: lowercase alphanumerics and hyphens.
+          snapshot="campfire-before-$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
+          snapshot="${snapshot:0:63}"
+          snapshot="${snapshot%%-}"
+
+          if [ -n "$INPUT_DIGEST" ]; then
+            case "$INPUT_DIGEST" in
+              sha256:*) : ;;
+              *) echo "::error::image_digest must look like sha256:<hex>"; exit 1 ;;
+            esac
+          fi
+
+          dry_run=false
+          [ "$INPUT_DRY_RUN" = "true" ] && dry_run=true
+          skip_snapshot=false
+          [ "$INPUT_SKIP_SNAPSHOT" = "true" ] && skip_snapshot=true
+
+          simulate_failure=0
+          if [ "${SIMULATE_FAILURE_VAR:-0}" = "1" ]; then
+            if [ "$INPUT_ENVIRONMENT" != "validation" ]; then
+              echo "::error::CAMPFIRE_RELEASE_SIMULATE_FAILURE is only allowed in the validation environment"
+              exit 1
+            fi
+            simulate_failure=1
+          fi
+
+          {
+            echo "sha=${sha}"
+            echo "short_sha=${short}"
+            echo "tag=git-${sha}"
+            echo "label=${label}"
+            echo "snapshot=${snapshot}"
+            echo "dry_run=${dry_run}"
+            echo "skip_snapshot=${skip_snapshot}"
+            echo "simulate_failure=${simulate_failure}"
+            echo "remote_dir=campfire-deploy-${label}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Deploying ${sha} to ${INPUT_ENVIRONMENT} as release ${label} (dry_run=${dry_run})"
+
+      - name: Require the revision to be on main (production only)
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::${SHA} is not an ancestor of origin/main; production only deploys reviewed main history"
+            exit 1
+          fi
+          echo "${SHA} is an ancestor of origin/main."
+
+      - name: Require a successful CI run for the revision (production only)
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api --method GET \
+            "repos/${REPO}/actions/workflows/ci.yml/runs" \
+            -f head_sha="$SHA" -f status=completed \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+          if [ "${runs:-0}" -lt 1 ]; then
+            echo "::error::no successful CI workflow run found for ${SHA}"
+            gh api --method GET "repos/${REPO}/actions/workflows/ci.yml/runs" \
+              -f head_sha="$SHA" --jq '.workflow_runs[] | "\(.status) \(.conclusion) \(.html_url)"' || true
+            exit 1
+          fi
+          echo "Found ${runs} successful CI run(s) for ${SHA}."
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Resolve the image digest
+        id: image
+        shell: bash
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          EXPECTED_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          test -n "$GCP_IMAGE" || { echo "::error::GCP_IMAGE is not set"; exit 1; }
+          if ! digest="$(gcloud artifacts docker images describe "${GCP_IMAGE}:${TAG}" \
+                           --format='value(image_summary.digest)' 2>/dev/null)" || [ -z "$digest" ]; then
+            echo "::error::no image published for tag ${TAG}; run the Publish image to Artifact Registry workflow first"
+            exit 1
+          fi
+          if [ -n "$EXPECTED_DIGEST" ] && [ "$EXPECTED_DIGEST" != "$digest" ]; then
+            echo "::error::image_digest ${EXPECTED_DIGEST} does not match ${TAG} (${digest})"
+            exit 1
+          fi
+          {
+            echo "digest=${digest}"
+            echo "reference=${GCP_IMAGE}@${digest}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved ${GCP_IMAGE}:${TAG} -> ${digest}"
+
+      - name: Copy the release scripts to the VM
+        id: copy
+        shell: bash
+        env:
+          REMOTE_DIR: ${{ steps.plan.outputs.remote_dir }}
+        run: |
+          set -euo pipefail
+          gcloud compute scp --recurse --quiet \
+            --zone "$GCP_ZONE" --tunnel-through-iap \
+            deploy/gcp "${GCP_INSTANCE}:${REMOTE_DIR}"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/campfire-release.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight on the VM
+        id: preflight
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          remote="sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' EXPECTED_APP_HOST='${GCP_APP_HOST}' /opt/campfire-deploy/campfire-release.sh preflight"
+          gcloud auth print-access-token | gcloud compute ssh "$GCP_INSTANCE" \
+            --zone "$GCP_ZONE" --tunnel-through-iap --quiet --command "$remote"
+
+      - name: Dry run summary
+        if: steps.plan.outputs.dry_run == 'true'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh logout"
+          {
+            echo "## Dry run — no changes were made"
+            echo
+            echo "Preflight discovered the application, verified capacity, authenticated to Artifact Registry,"
+            echo "pulled the target digest and then dropped the registry credentials."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Environment | \`${ENVIRONMENT}\` |"
+            echo "| Instance | \`${GCP_INSTANCE}\` (\`${GCP_ZONE}\`) |"
+            echo "| App host | \`${GCP_APP_HOST}\` |"
+            echo "| Source sha | \`${SHA}\` |"
+            echo "| Image tag | \`${TAG}\` |"
+            echo "| Image | \`${REFERENCE}\` |"
+            echo "| Release label | \`${LABEL}\` |"
+            echo "| Would snapshot | \`${SNAPSHOT}\` |"
+            echo
+            echo "Re-run with \`dry_run=false\` to perform the release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Freeze writes and back up
+        id: freeze
+        if: steps.plan.outputs.dry_run != 'true'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' /opt/campfire-deploy/campfire-release.sh freeze"
+
+      - name: Snapshot the boot disk while writes are frozen
+        id: snapshot
+        if: steps.plan.outputs.dry_run != 'true' && steps.plan.outputs.skip_snapshot != 'true'
+        shell: bash
+        env:
+          SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          disk_source="$(gcloud compute instances describe "$GCP_INSTANCE" --zone "$GCP_ZONE" \
+            --format=json | jq -r '.disks[] | select(.boot == true) | .source')"
+          disk_name="${disk_source##*/}"
+          test -n "$disk_name" || { echo "::error::could not determine the boot disk"; exit 1; }
+          echo "Snapshotting boot disk ${disk_name} as ${SNAPSHOT}"
+          gcloud compute disks snapshot "$disk_name" --zone "$GCP_ZONE" \
+            --snapshot-names "$SNAPSHOT" --labels "campfire-release=${LABEL}" --quiet
+          for _attempt in $(seq 1 60); do
+            status="$(gcloud compute snapshots describe "$SNAPSHOT" --format='value(status)')"
+            echo "snapshot status: ${status}"
+            [ "$status" = "READY" ] && break
+            [ "$status" = "FAILED" ] && { echo "::error::snapshot ${SNAPSHOT} failed"; exit 1; }
+            sleep 10
+          done
+          status="$(gcloud compute snapshots describe "$SNAPSHOT" --format='value(status)')"
+          [ "$status" = "READY" ] || { echo "::error::snapshot ${SNAPSHOT} is ${status}, not READY"; exit 1; }
+          echo "name=${SNAPSHOT}" >> "$GITHUB_OUTPUT"
+
+      - name: Cut over to the new image and verify
+        id: cutover
+        if: steps.plan.outputs.dry_run != 'true'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+          SIMULATE_FAILURE: ${{ steps.plan.outputs.simulate_failure }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' CAMPFIRE_RELEASE_SIMULATE_FAILURE='${SIMULATE_FAILURE}' /opt/campfire-deploy/campfire-release.sh cutover"
+
+      - name: Roll back after a failed cutover
+        id: rollback
+        if: failure() && steps.cutover.conclusion == 'failure'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          echo "::error::cutover failed; rolling back to the previous image and restoring the frozen database"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh rollback"
+
+      - name: Finish the release
+        id: finish
+        if: success() && steps.plan.outputs.dry_run != 'true'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh finish"
+
+      - name: Drop registry credentials after a failure
+        if: failure() && steps.preflight.conclusion == 'success'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh logout" || true
+
+      - name: Remove the copied scripts from the VM
+        if: always() && steps.copy.conclusion == 'success'
+        shell: bash
+        env:
+          REMOTE_DIR: ${{ steps.plan.outputs.remote_dir }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "rm -rf \"\$HOME/${REMOTE_DIR}\"" || true
+
+      - name: Release record
+        if: always() && steps.freeze.conclusion == 'success'
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
+          SKIP_SNAPSHOT: ${{ steps.plan.outputs.skip_snapshot }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          CUTOVER: ${{ steps.cutover.conclusion }}
+          ROLLBACK: ${{ steps.rollback.conclusion }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          state_dir="/var/backups/campfire-${LABEL}"
+          fetch() {
+            gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+              --command "sudo cat '${state_dir}/$1' 2>/dev/null || echo '{}'" 2>/dev/null | tr -d '\r'
+          }
+          fetch freeze-result.json > freeze.json || echo '{}' > freeze.json
+          fetch deploy-result.json > deploy.json || echo '{}' > deploy.json
+          fetch finish-result.json > finish.json || echo '{}' > finish.json
+          jq -e . freeze.json >/dev/null 2>&1 || echo '{}' > freeze.json
+          jq -e . deploy.json >/dev/null 2>&1 || echo '{}' > deploy.json
+          jq -e . finish.json >/dev/null 2>&1 || echo '{}' > finish.json
+
+          previous_image="$(jq -r '.previous_image // "unknown"' freeze.json)"
+          rollback_tag="$(jq -r '.rollback_tag // "unknown"' freeze.json)"
+          app_sha="$(jq -r '.app_archive_sha256 // "unknown"' freeze.json)"
+          host_sha="$(jq -r '.host_archive_sha256 // "unknown"' freeze.json)"
+          app_host="$(jq -r '.app_host // "unknown"' freeze.json)"
+          migration_ok="$(jq -r '.migration_verified // false' deploy.json)"
+          files_ok="$(jq -r '.uploaded_files_identical // false' deploy.json)"
+          env_keys="$(jq -r '(.env_keys // []) | join(", ")' deploy.json)"
+          reopened="$(jq -r '.writes_reopened_at // "not reopened"' finish.json)"
+          timer_state="$(jq -r '"enabled=" + (.feed_timer_enabled // "unknown") + " active=" + (.feed_timer_active // "unknown")' finish.json)"
+          logged_out="$(jq -r '.registry_logged_out // false' finish.json)"
+          snapshot_line="$SNAPSHOT"
+          [ "$SKIP_SNAPSHOT" = "true" ] && snapshot_line="skipped (skip_snapshot=true)"
+
+          if [ "$ROLLBACK" = "success" ] || [ "$ROLLBACK" = "failure" ]; then
+            {
+              echo "# :rotating_light: RELEASE FAILED AND WAS ROLLED BACK :rotating_light:"
+              echo
+              echo "The cutover never reached a healthy \`/up\` on \`${app_host}\`."
+              echo "\`${app_host}\` was returned to \`${previous_image}\` and the frozen database was restored."
+              echo "**The Open Roles feed timer was deliberately left paused. Review the host before resuming it.**"
+              echo
+              echo "- Rollback step outcome: \`${ROLLBACK}\`"
+              echo "- Frozen checkpoint: \`${state_dir}\`"
+              echo "- Boot-disk snapshot: \`${snapshot_line}\`"
+              echo "- Retained image tag: \`${rollback_tag}\`"
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo "## Paste-ready release record"
+            echo
+            echo '```markdown'
+            echo "# Campfire release — ${LABEL}"
+            echo
+            echo "## Release identity"
+            echo
+            echo "- Application source: \`${SHA}\`."
+            echo "- Image: \`${REFERENCE}\`."
+            echo "- Previous image: \`${previous_image}\`."
+            echo "- Environment: \`${ENVIRONMENT}\` (\`${GCP_INSTANCE}\`, \`${GCP_ZONE}\`, host \`${app_host}\`)."
+            echo "- The existing ONCE application and storage volume were upgraded in place with \`once update --image ... --auto-update=false\`. Automatic upstream updates remain disabled. The image-only update preserved the full existing environment (\`${env_keys}\`), session-signing and web-push keys."
+            echo
+            echo "## Validation"
+            echo
+            echo "- Cutover step outcome: \`${CUTOVER}\`."
+            echo "- Additive-migration verification passed: \`${migration_ok}\`."
+            echo "- Uploaded files identical across the cutover: \`${files_ok}\`."
+            echo "- Health \`GET https://${app_host}/up\` returned 200 before writes reopened."
+            echo "- Open Roles timer restored to \`${timer_state}\`; temporary registry credentials removed: \`${logged_out}\`."
+            echo "- [Deployment run](${RUN_URL})."
+            echo
+            echo "## Recovery checkpoints"
+            echo
+            echo "- Protected coherent app and feed checkpoint on the app VM: \`${state_dir}\`."
+            echo "- Boot-disk snapshot: \`${snapshot_line}\`."
+            echo "- Retained old image tag: \`${rollback_tag}\`."
+            echo "- Coherent app archive SHA-256: \`${app_sha}\`."
+            echo "- Coherent host/feed archive SHA-256: \`${host_sha}\`."
+            echo "- Writes reopened at: \`${reopened}\`."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

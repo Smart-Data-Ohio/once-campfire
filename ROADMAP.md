@@ -17,7 +17,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 - Huddles in channels and one-to-one DMs, with audio and screen sharing, membership enforcement, and a separate media host. Persistent voice channels and Stage channels remain future work.
 - Personal activity inbox and human-owned work threads with status, change history, and a workspace-wide work list.
 - Open Roles feed and existing bot API. These do not yet provide the agent identity model described below.
-- Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md).
+- Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md), now automated end to end by the image-publish and deploy workflows in [deploy/gcp/README.md](deploy/gcp/README.md).
 
 ## Current implementation
 
@@ -30,7 +30,8 @@ The first DM Huddle slice uses a shared join control with audio and screen shari
 ### 1. Make the fork the durable home
 
 - Bring the deployed branch onto the fork's default branch through review; preserve the source-to-image release record.
-- Establish branch checks, release notes, and a repeatable release workflow with explicit deployment and rollback steps.
+- Branch checks and the repeatable release workflow exist. `CI` runs the server and browser suites, lint, security scan, and the workflow audit on every pull request to `main`. [Publish image to Artifact Registry](.github/workflows/publish-gcp-image.yml) builds and pins a `git-<source sha>` image on every push to `main`, and [Deploy to GCP](.github/workflows/deploy-gcp.yml) performs the write freeze, backup, boot-disk snapshot, cutover, preservation checks, and automatic rollback described in [deploy/gcp/README.md](deploy/gcp/README.md). Production deployments require a reviewed `main` ancestor, a green `CI` run for that exact revision, and an environment reviewer.
+- Remaining: require those checks as branch protection rules on `main`, and settle a release-notes convention on top of the release record the deploy workflow already emits.
 - Keep this roadmap in the repository and turn selected milestones into scoped issues with acceptance criteria.
 - Decide product name and branding when useful; a rename is not a prerequisite for feature work.
 
