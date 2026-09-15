@@ -17,6 +17,9 @@ See the [workspace and Markdown guide](docs/workspace-markdown.md) and
 [self-hosted huddle guide](docs/huddles.md). Build the Docker image from this
 repository to include these additions.
 
+See the [Smart Data roadmap](ROADMAP.md) for the maintained fork's direction,
+live foundation, and planned channels, agent identities, and integrations.
+
 ## Running your own Campfire instance
 
 Campfire's Docker image contains everything needed for a fully-functional,
