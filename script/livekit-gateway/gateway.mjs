@@ -248,7 +248,12 @@ export function createGateway(options) {
   }
 
   function livekitRequestTarget(parsed) {
-    return livekitEndpoint(`${parsed.pathname}${parsed.search}`);
+    // Client input may select an allowed signaling path and query, never the
+    // upstream authority. Assign them separately on the configured origin.
+    const target = new URL(config.internalUrl.origin);
+    target.pathname = parsed.pathname;
+    target.search = parsed.search;
+    return target;
   }
 
   async function authorize(token, signal) {

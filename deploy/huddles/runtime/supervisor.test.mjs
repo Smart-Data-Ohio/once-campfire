@@ -16,7 +16,7 @@ test("a child exit stops its peer, forces a bounded kill, and fails the runtime"
     {
       name: "stubborn peer",
       command: process.execPath,
-      args: ["-e", `process.on('SIGTERM',()=>require('fs').writeFileSync(${JSON.stringify(marker)},'yes'));setInterval(()=>{},1000)`],
+      args: ["-e", "process.on('SIGTERM',()=>require('fs').writeFileSync(process.argv[1],'yes'));setInterval(()=>{},1000)", marker],
     },
   ], { graceMs: 100, signalSource: new EventEmitter(), logger: quietLogger });
 
