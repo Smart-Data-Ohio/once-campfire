@@ -59,7 +59,7 @@ class Messages::BoostsController < ApplicationController
 
     def broadcast_reactions
       @message.broadcast_replace_to @message.conversation, :messages,
-        target: ActionView::RecordIdentifier.dom_id(@message, :boosting),
-        partial: "messages/boosts/boosts", attributes: { maintain_scroll: true }
+        target: ActionView::RecordIdentifier.dom_id(@message, :boosts),
+        partial: "messages/boosts/reactions", attributes: { maintain_scroll: true }
     end
 end

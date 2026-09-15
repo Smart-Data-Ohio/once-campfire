@@ -1,6 +1,5 @@
 <%= turbo_frame_tag message, :boosting do %>
-  <div class="boosts flex flex-wrap align-center gap full-width" style="--column-gap: 0.4ch; --row-gap: 0"
-      data-controller="turbo-streaming" data-action="turbo:submit-start->turbo-streaming#unsubscribe">
+  <div class="boosts flex flex-wrap align-center gap full-width" style="--column-gap: 0.4ch; --row-gap: 0">
     <%= render "messages/boosts/reactions", message: %>
 
     <%= turbo_frame_tag message, :new_boost do %>

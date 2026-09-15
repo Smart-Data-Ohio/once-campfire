@@ -44,8 +44,8 @@ class Messages::Boosts::ByBotsControllerTest < ActionDispatch::IntegrationTest
     Turbo::StreamsChannel.expects(:broadcast_replace_to).once.with do |*arguments|
       rendering = arguments.extract_options!
       assert_equal [ @message.room, :messages ], arguments
-      assert_equal ActionView::RecordIdentifier.dom_id(@message, :boosting), rendering[:target]
-      assert_equal "messages/boosts/boosts", rendering[:partial]
+      assert_equal ActionView::RecordIdentifier.dom_id(@message, :boosts), rendering[:target]
+      assert_equal "messages/boosts/reactions", rendering[:partial]
       assert_equal({ maintain_scroll: true }, rendering[:attributes])
       true
     end

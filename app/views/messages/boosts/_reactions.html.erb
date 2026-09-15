@@ -2,7 +2,7 @@
 <% reaction_boosts = boosts.group_by(&:content) %>
 <% legacy_boosts = boosts.reject { |boost| EmojiHelper::REACTIONS.key?(boost.content) } %>
 
-<div id="<%= dom_id(message, :boosts) %>" class="flex-inline flex-wrap gap" data-turbo-streaming-target="container">
+<div id="<%= dom_id(message, :boosts) %>" class="flex-inline flex-wrap gap">
   <% if reaction_boosts.any? { |character, _| EmojiHelper::REACTIONS.key?(character) } %>
     <div class="boosts__reactions flex-inline flex-wrap gap" role="group" aria-label="Message reactions">
       <% EmojiHelper::REACTIONS.each do |character, title| %>
