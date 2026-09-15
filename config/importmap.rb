@@ -9,6 +9,7 @@ pin "trix", to: "trix.esm.min.js" # @2.1.19
 pin "@rails/actiontext", to: "actiontext.js"
 pin "highlight.js", to: "highlight.js/core.js"
 pin "livekit-client", to: "livekit-client.js", preload: false
+pin "noise-suppressor", to: "noise-suppressor.js", preload: false
 
 pin_all_from "app/javascript/initializers", under: "initializers"
 pin_all_from "app/javascript/lib", under: "lib"

@@ -87,9 +87,30 @@
 .huddle__screen video {
   aspect-ratio: 16 / 9;
   background: oklch(var(--lch-always-black));
+  cursor: zoom-in;
   display: block;
   inline-size: 100%;
   object-fit: contain;
+}
+
+.huddle__screen-actions {
+  display: flex;
+  gap: 0.25em;
+  inset-block-start: 0.35em;
+  inset-inline-end: 0.35em;
+  position: absolute;
+  z-index: 1;
+}
+
+.huddle__screen-action {
+  --btn-background: oklch(var(--lch-always-black) / 0.72);
+  --btn-border-color: transparent;
+  --btn-color: white;
+  --btn-padding: 0.3em 0.6em;
+  --hover-filter: brightness(1.4);
+
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .huddle__screen figcaption {
@@ -160,6 +181,71 @@
   --btn-color: var(--color-text-reversed);
 }
 
+/* A muted microphone has to read at a glance, not just from the button label. */
+.huddle__mute--muted {
+  --btn-background: var(--color-negative);
+  --btn-border-color: transparent;
+  --btn-color: white;
+}
+
+.huddle__settings {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.huddle__noise {
+  --btn-padding: 0.25em 0;
+
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
+  font-size: 0.78rem;
+}
+
+.huddle__noise[aria-pressed="true"] {
+  color: var(--color-positive);
+}
+
+.huddle__noise::before {
+  content: "●";
+  font-size: 0.7em;
+  margin-inline-end: 0.45em;
+  opacity: 0.55;
+}
+
+.huddle__noise[aria-pressed="true"]::before {
+  opacity: 1;
+}
+
+.huddle__noise:disabled {
+  opacity: 0.6;
+}
+
+.huddle__sharing {
+  align-items: center;
+  background: color-mix(in oklch, var(--color-positive) 12%, var(--color-bg));
+  border: 1px solid color-mix(in oklch, var(--color-positive) 35%, var(--color-bg));
+  border-radius: 0.5em;
+  display: flex;
+  font-size: 0.8rem;
+  gap: var(--inline-space-half);
+  justify-content: space-between;
+  padding: var(--block-space-half) var(--inline-space);
+}
+
+.huddle__sharing[hidden] {
+  display: none;
+}
+
+.huddle__sharing-view {
+  --btn-padding: 0.25em 0.7em;
+
+  flex: none;
+  font-size: 0.75rem;
+}
+
+.huddle-share-indicator[hidden] {
+  display: none;
+}
+
 .huddle-launcher[aria-pressed="true"] {
   --btn-background: var(--color-positive);
   --btn-border-color: transparent;
@@ -175,4 +261,93 @@
     max-block-size: min(70dvh, 36rem);
     right: 0;
   }
+}
+
+/* Theater mode: the panel takes over the viewport so a shared screen is large
+   without leaving the page. These rules come last so they also win over the
+   narrow-viewport panel sizing above. */
+.huddle--theater {
+  border-end-end-radius: 0;
+  border-end-start-radius: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  inline-size: 100dvw;
+  inset: 0;
+  max-block-size: 100dvh;
+  overflow: hidden;
+  z-index: 30;
+}
+
+.huddle--theater .huddle__screens {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+.huddle--theater .huddle__screen:not(.huddle__screen--expanded) {
+  display: none;
+}
+
+.huddle--theater .huddle__screen--expanded {
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.huddle--theater .huddle__screen--expanded video {
+  aspect-ratio: auto;
+  block-size: 100%;
+  cursor: default;
+  inline-size: 100%;
+}
+
+.huddle--theater .huddle__participants {
+  max-block-size: 4.5rem;
+}
+
+body.huddle-theater-open {
+  overflow: hidden;
+}
+
+/* Real full screen keeps the caption and the controls with the picture. The
+   prefixed selectors stay in their own rules because one unknown selector
+   invalidates a whole selector list. */
+.huddle__screen:fullscreen {
+  background: oklch(var(--lch-always-black));
+  block-size: 100%;
+  border-radius: 0;
+  inline-size: 100%;
+}
+
+.huddle__screen:fullscreen video {
+  aspect-ratio: auto;
+  block-size: 100%;
+  cursor: default;
+  inline-size: 100%;
+  object-fit: contain;
+}
+
+.huddle__screen:fullscreen figcaption {
+  font-size: 1rem;
+  padding: 0.6em 1em;
+}
+
+.huddle__screen:-webkit-full-screen {
+  background: oklch(var(--lch-always-black));
+  block-size: 100%;
+  border-radius: 0;
+  inline-size: 100%;
+}
+
+.huddle__screen:-webkit-full-screen video {
+  aspect-ratio: auto;
+  block-size: 100%;
+  cursor: default;
+  inline-size: 100%;
+  object-fit: contain;
+}
+
+.huddle__screen:-webkit-full-screen figcaption {
+  font-size: 1rem;
+  padding: 0.6em 1em;
 }
