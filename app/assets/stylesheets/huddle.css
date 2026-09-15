@@ -1,7 +1,8 @@
 .huddle {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border-darker);
+  background: var(--workspace-surface, var(--color-bg));
+  border: 1px solid var(--workspace-border, var(--color-border-darker));
   border-radius: 0.8em;
+  color: var(--workspace-text, var(--color-text));
   bottom: var(--block-space);
   display: grid;
   gap: var(--block-space-half);
@@ -45,7 +46,7 @@
 
 .huddle__status,
 .huddle__people-heading .txt-subtle {
-  color: color-mix(in oklch, var(--color-text) 75%, var(--color-bg));
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
 }
 
 .huddle__notice {
@@ -76,7 +77,7 @@
 }
 
 .huddle__screen {
-  background: var(--color-message-bg);
+  background: var(--workspace-sidebar-hover, var(--color-message-bg));
   border-radius: 0.5em;
   margin: 0;
   overflow: hidden;
@@ -137,7 +138,7 @@
 }
 
 .huddle__participant-activity {
-  color: color-mix(in oklch, var(--color-text) 75%, var(--color-bg));
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
   font-size: 0.75rem;
 }
 

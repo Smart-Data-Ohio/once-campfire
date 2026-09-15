@@ -145,4 +145,125 @@ class ChannelThreadsControllerTest < ActionDispatch::IntegrationTest
       get content_room_thread_url(@room, @thread, message_id: other_message.id)
     end
   end
+
+  test "converts a thread to work, assigns an eligible owner, and keeps an audit trail" do
+    message = @thread.post_message!(creator: @creator, attributes: { markdown_source: "Keep this history", client_message_id: "work-history" })
+    sign_in :jz
+
+    assert_difference -> { WorkThreadEvent.count }, 1 do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "planned" } }
+    end
+    assert_response :success
+    assert_equal true, response.parsed_body.dig("thread", "work")
+    assert_equal "planned", response.parsed_body.dig("thread", "work_status")
+
+    assert_difference -> { WorkThreadEvent.count }, 1 do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: users(:kevin).id } }
+    end
+    assert_response :success
+    assert_equal users(:kevin).id, response.parsed_body.dig("thread", "work_owner", "id")
+
+    event = @thread.work_thread_events.ordered.first
+    assert_equal "work_assignment", event.event_type
+    assert_nil event.from_owner_id
+    assert_equal users(:kevin).id, event.to_owner_id
+    assert_equal "planned", event.from_status
+    assert_equal "planned", event.to_status
+    assert_equal users(:jz).id, event.actor_id
+    assert_equal message.id, @thread.messages.find_by!(client_message_id: "work-history").id
+  end
+
+  test "work owner must be an active human parent-room member and a revoked owner stays visible as unavailable" do
+    sign_in :jz
+    patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "planned", work_owner_id: users(:kevin).id } }
+    assert_response :success
+
+    assert_no_difference -> { WorkThreadEvent.count } do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: users(:bender).id } }
+    end
+    assert_response :unprocessable_content
+    assert_includes response.parsed_body.fetch("error"), "active human member"
+    assert_equal users(:kevin).id, @thread.reload.work_owner_id
+
+    users(:kevin).deactivate
+    assert_not @thread.reload.work_owner_active?
+
+    get room_thread_url(@room, @thread, format: :json)
+    assert_response :success
+    assert_equal false, response.parsed_body.dig("thread", "work_owner", "active")
+    assert_equal "Kevin", response.parsed_body.dig("thread", "work_owner", "name")
+
+    patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: "" } }
+    assert_response :success
+    assert_nil @thread.reload.work_owner_id
+  end
+
+  test "assigned owner can change work status but cannot reassign it" do
+    @thread.update!(work_status: "planned", work_owner_id: users(:kevin).id)
+    sign_in :kevin
+
+    assert_difference -> { WorkThreadEvent.count }, 1 do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "in_progress" } }
+    end
+    assert_response :success
+    assert_equal "in_progress", @thread.reload.work_status
+
+    patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: users(:jz).id } }
+    assert_response :forbidden
+    assert_equal users(:kevin).id, @thread.reload.work_owner_id
+
+    patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "" } }
+    assert_response :forbidden
+    assert_equal "in_progress", @thread.reload.work_status
+  end
+
+  test "only a thread manager can remove work tracking" do
+    @thread.update!(work_status: "planned", work_owner_id: users(:kevin).id)
+    sign_in :jz
+
+    assert_difference -> { WorkThreadEvent.count }, 1 do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "", work_owner_id: "" } }
+    end
+    assert_response :success
+    assert_nil @thread.reload.work_status
+    assert_nil @thread.work_owner_id
+  end
+
+  test "the work model also protects conversion when the owner field is omitted" do
+    @thread.update!(work_status: "planned", work_owner_id: users(:kevin).id)
+
+    assert_raises ChannelThread::WorkUpdateForbidden do
+      @thread.update_work!(actor: users(:kevin), work_status: nil)
+    end
+
+    assert_equal "planned", @thread.reload.work_status
+    assert_equal users(:kevin).id, @thread.work_owner_id
+  end
+
+  test "work status updates from separate stale instances produce one event per real change" do
+    @thread.update!(work_status: "planned")
+    first = ChannelThread.find(@thread.id)
+    second = ChannelThread.find(@thread.id)
+    actor = users(:jz)
+
+    assert_difference -> { WorkThreadEvent.count }, 2 do
+      first.update_work!(actor:, work_status: "in_progress")
+      second.update_work!(actor:, work_status: "blocked")
+    end
+
+    assert_equal "blocked", @thread.reload.work_status
+    assert_equal [ "blocked", "in_progress" ], @thread.work_thread_events.ordered.limit(2).pluck(:to_status)
+  end
+
+  test "ordinary thread fields remain separate from work tracking" do
+    sign_in :jz
+    get room_thread_url(@room, @thread, format: :json)
+
+    assert_response :success
+    payload = response.parsed_body.fetch("thread")
+    assert_equal false, payload.fetch("work")
+    assert_nil payload.fetch("work_status")
+    assert_nil payload.fetch("work_owner")
+    assert_empty @thread.work_thread_events
+  end
 end

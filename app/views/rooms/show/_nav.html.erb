@@ -39,7 +39,7 @@
       <% end %>
     <% end %>
 
-    <% if !room.direct? && Huddle.configured? %>
+    <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
       <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: "Join huddle" },
             data: {
               controller: "huddle-launcher",

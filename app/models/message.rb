@@ -8,6 +8,7 @@ class Message < ApplicationRecord
   belongs_to :forwarded_from_message, class_name: "Message", optional: true
 
   has_many :boosts, dependent: :destroy
+  has_many :activity_items, as: :source, dependent: :destroy, inverse_of: :source
   # This callback must run before Active Record's dependent:nullify callback. It
   # leaves a small tombstone on each reply so the UI can still explain why its
   # linked message disappeared.
@@ -25,6 +26,7 @@ class Message < ApplicationRecord
   before_create -> { self.client_message_id ||= Random.uuid } # Bots don't care
   before_destroy :preserve_reply_tombstones, prepend: true
   after_create_commit :receive_in_conversation
+  after_create_commit :record_activity_items
 
   scope :ordered, -> { order(:created_at) }
   scope :root_messages, -> { where(thread_id: nil) }
@@ -108,6 +110,10 @@ class Message < ApplicationRecord
 
 
   private
+    def record_activity_items
+      ActivityItems::Recorder.record_message!(self)
+    end
+
     def receive_in_conversation
       if thread
         thread.receive(self)

@@ -203,7 +203,7 @@
 
 .composer__send {
   --btn-background: var(--workspace-accent, var(--color-text));
-  --btn-color: #ffffff;
+  --btn-color: var(--workspace-accent-contrast, #ffffff);
   --hover-filter: brightness(0.88);
 
   img {

@@ -26,7 +26,7 @@ module MessagePayloadHelper
     }.compact
   end
 
-  def thread_payload(thread)
+  def thread_payload(thread, include_work_history: false, include_work_owner_options: false)
     return if thread.blank?
 
     membership = Current.user && thread.membership_for(Current.user)
@@ -41,6 +41,13 @@ module MessagePayloadHelper
       closed_at: thread.closed_at&.utc,
       locked_at: thread.locked_at&.utc,
       auto_archive_after_minutes: thread.auto_archive_after_minutes,
+      work: thread.work?,
+      work_status: thread.work_status,
+      work_owner_id: thread.work_owner_id,
+      work_owner: work_owner_payload(thread.work_owner),
+      work_owner_active: thread.work_owner_active?,
+      work_history: include_work_history ? work_thread_event_payloads(thread) : nil,
+      work_owner_options: include_work_owner_options ? work_owner_options(thread) : nil,
       joined: membership.present?,
       unread: membership&.unread?,
       involvement: membership&.involvement,
@@ -109,6 +116,37 @@ module MessagePayloadHelper
       }
     end
 
+    def work_owner_payload(owner)
+      return if owner.blank?
+
+      user_payload(owner).merge(active: owner.active?, human: !owner.bot?)
+    end
+
+    def work_owner_options(thread)
+      thread.room.memberships
+        .includes(:user)
+        .filter_map do |membership|
+          user = membership.user
+          next unless user&.active? && !user.bot?
+
+          work_owner_payload(user)
+        end
+        .sort_by { |owner| owner[:name].to_s.downcase }
+    end
+
+    def work_thread_event_payloads(thread)
+      thread.work_thread_events.ordered.includes(:actor).map do |event|
+        {
+          id: event.id,
+          event_type: event.event_type,
+          created_at: event.created_at&.utc,
+          actor: user_payload(event.actor),
+          before: event.before_state,
+          after: event.after_state
+        }.compact
+      end
+    end
+
     def compact_message_payload(message)
       return if message.blank?
 
@@ -152,6 +190,8 @@ module MessagePayloadHelper
       membership = Current.user && thread.membership_for(Current.user)
       settings = thread.settings_manageable_by?(Current.user)
       lifecycle = thread.lifecycle_manageable_by?(Current.user)
+      work_manageable = thread.work_manageable_by?(Current.user)
+      work_assignment = thread.work_assignment_manageable_by?(Current.user)
 
       {
         can_rename: settings,
@@ -159,7 +199,12 @@ module MessagePayloadHelper
         can_reopen: thread.locked? ? lifecycle : membership.present?,
         can_lock: lifecycle,
         can_unlock: lifecycle,
-        can_delete: lifecycle
+        can_delete: lifecycle,
+        can_convert_work: !thread.work? && thread.work_conversion_manageable_by?(Current.user),
+        can_manage_work: thread.work? && work_manageable,
+        can_update_work_status: thread.work? && thread.work_status_manageable_by?(Current.user),
+        can_assign_work: thread.work? && work_assignment,
+        can_remove_work: thread.work? && work_assignment
       }
     end
 

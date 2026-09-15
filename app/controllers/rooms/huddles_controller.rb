@@ -4,6 +4,7 @@ class Rooms::HuddlesController < ApplicationController
   before_action :ensure_human_user
   before_action :ensure_active_user
   before_action :set_room
+  before_action :ensure_one_to_one_direct_room
 
   def show
     render json: { room: room_json }
@@ -48,6 +49,12 @@ class Rooms::HuddlesController < ApplicationController
       @membership = Current.user.memberships.find_by(room_id: params[:room_id])
       @room = @membership&.room
       render_error "Room not found or inaccessible", :not_found unless @membership && @room
+    end
+
+    def ensure_one_to_one_direct_room
+      return unless @room.direct? && @room.users.count != 2
+
+      render_error "Huddles are only available in one-to-one direct messages", :unprocessable_entity
     end
 
     def room_json

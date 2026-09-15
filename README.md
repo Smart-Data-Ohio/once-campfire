@@ -19,6 +19,8 @@ repository to include these additions.
 
 See the [Smart Data roadmap](ROADMAP.md) for the maintained fork's direction,
 live foundation, and planned channels, agent identities, and integrations.
+The [activity and work guide](docs/activity-workspace.md) covers the personal
+inbox, work threads, and one-to-one DM Huddles.
 
 ## Running your own Campfire instance
 

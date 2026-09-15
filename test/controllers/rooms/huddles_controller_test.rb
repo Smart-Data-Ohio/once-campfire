@@ -80,6 +80,16 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Jason", response.parsed_body.dig("room", "name")
   end
 
+  test "group direct rooms cannot start a huddle" do
+    room = Rooms::Direct.create_for({ creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
+    sign_in :david
+
+    post room_huddle_url(room)
+
+    assert_json_error :unprocessable_entity, "Huddles are only available in one-to-one direct messages"
+    assert_not HuddleGrant.exists?(room_id: room.id)
+  end
+
   test "GET confirms ongoing access without returning credentials" do
     sign_in :david
 

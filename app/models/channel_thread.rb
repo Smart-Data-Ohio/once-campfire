@@ -2,19 +2,33 @@ class ChannelThread < ApplicationRecord
   AUTO_ARCHIVE_OPTIONS = [ 60, 1_440, 4_320, 10_080 ].freeze
   DEFAULT_AUTO_ARCHIVE_AFTER_MINUTES = 4_320
   NAME_LIMIT = 100
+  WORK_STATUSES = %w[ planned in_progress blocked done ].freeze
+  WORK_STATUS_LABELS = {
+    "planned" => "Planned",
+    "in_progress" => "In progress",
+    "blocked" => "Blocked",
+    "done" => "Done"
+  }.freeze
+  UNSET_WORK_VALUE = Object.new.freeze
 
   belongs_to :room
   belongs_to :creator, class_name: "User"
   belongs_to :parent_message, class_name: "Message", optional: true
+  belongs_to :work_owner, class_name: "User", optional: true
 
   has_many :messages, -> { ordered }, foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
   has_many :memberships, class_name: "ThreadMembership", foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
   has_many :users, through: :memberships
+  has_many :work_thread_events, foreign_key: :channel_thread_id, inverse_of: :thread, dependent: :destroy
 
   class LockedError < StandardError; end
+  class WorkUpdateForbidden < StandardError; end
 
   validates :name, presence: true, length: { maximum: NAME_LIMIT }
   validates :auto_archive_after_minutes, inclusion: { in: AUTO_ARCHIVE_OPTIONS }
+  validates :work_status, inclusion: { in: WORK_STATUSES, allow_nil: true }
+  validate :work_owner_requires_work
+  validate :work_owner_must_be_eligible, if: :work_owner_assignment_changed?
   validate :room_cannot_be_direct
   validate :parent_message_belongs_to_room
 
@@ -28,6 +42,15 @@ class ChannelThread < ApplicationRecord
   scope :closed, -> { where.not(closed_at: nil) }
   scope :locked, -> { where.not(locked_at: nil) }
   scope :not_deleted, -> { all }
+  scope :work, -> { where.not(work_status: nil) }
+  scope :unfinished_work, -> { where(work_status: WORK_STATUSES - [ "done" ]) }
+  scope :for_room_member, ->(user) {
+    if user&.active? && !user.bot?
+      joins(room: :memberships).where(memberships: { user_id: user.id }).distinct
+    else
+      none
+    end
+  }
 
   class << self
     # There is no scheduled-job facility in this Campfire deployment. Expire
@@ -56,6 +79,18 @@ class ChannelThread < ApplicationRecord
 
   def locked?
     status == "locked"
+  end
+
+  def work?
+    work_status.present?
+  end
+
+  def work_status_label
+    WORK_STATUS_LABELS.fetch(work_status, work_status.to_s.humanize)
+  end
+
+  def work_owner_active?
+    work_owner.present? && work_owner.active? && !work_owner.bot? && room.memberships.exists?(user_id: work_owner_id)
   end
 
   def auto_archive_at
@@ -146,6 +181,75 @@ class ChannelThread < ApplicationRecord
     manageable_by?(user)
   end
 
+  # Work metadata follows room access, while the existing thread lifecycle
+  # continues to use its own moderator rules. A current owner may move work
+  # through statuses; assignment and conversion remain manager operations.
+  def work_viewable_by?(user)
+    user&.active? && !user.bot? && room.memberships.exists?(user_id: user.id)
+  end
+
+  def work_manageable_by?(user)
+    work_viewable_by?(user) && (settings_manageable_by?(user) || work_owner_id == user.id)
+  end
+
+  def work_status_manageable_by?(user)
+    work_manageable_by?(user)
+  end
+
+  def work_assignment_manageable_by?(user)
+    work_viewable_by?(user) && settings_manageable_by?(user)
+  end
+
+  def work_conversion_manageable_by?(user)
+    work_assignment_manageable_by?(user)
+  end
+
+  # Update work fields in one row-locked transaction and append one durable
+  # event for the complete before/after state. The sentinel distinguishes an
+  # omitted field from an explicit nil used to clear an assignment or remove
+  # work tracking.
+  def update_work!(actor:, work_status: UNSET_WORK_VALUE, work_owner_id: UNSET_WORK_VALUE)
+    requested_status = work_status
+    requested_owner_id = work_owner_id
+
+    self.class.transaction(requires_new: true) do
+      with_lock do
+        reload
+        raise WorkUpdateForbidden, "You cannot manage work in this thread" unless work_manageable_by?(actor)
+
+        before_status = self.work_status
+        before_owner = self.work_owner
+        after_status = requested_status.equal?(UNSET_WORK_VALUE) ? before_status : normalize_work_status(requested_status)
+        after_owner_id = requested_owner_id.equal?(UNSET_WORK_VALUE) ? self.work_owner_id : normalize_work_owner_id(requested_owner_id)
+
+        if requested_owner_id != UNSET_WORK_VALUE && !work_assignment_manageable_by?(actor)
+          raise WorkUpdateForbidden, "Only a thread manager can assign work"
+        end
+
+        if before_status.present? != after_status.present? && !work_conversion_manageable_by?(actor)
+          raise WorkUpdateForbidden, "Only a thread manager can start or stop work tracking"
+        end
+
+        validate_work_update!(status: after_status, owner_id: after_owner_id)
+        changed = before_status != after_status || self.work_owner_id != after_owner_id
+        if changed
+          update!(work_status: after_status, work_owner_id: after_owner_id)
+          association(:work_owner).reset
+          WorkThreadEvent.create_for_change!(
+            thread: self,
+            actor: actor,
+            from_status: before_status,
+            to_status: after_status,
+            from_owner: before_owner,
+            to_owner: work_owner
+          )
+        end
+      end
+    end
+
+    self
+  end
+
   def creator_or_manager?(user)
     settings_manageable_by?(user)
   end
@@ -188,6 +292,52 @@ class ChannelThread < ApplicationRecord
       return if parent_message.blank? || (parent_message.room_id == room_id && parent_message.thread_id.nil?)
 
       errors.add :parent_message, "must be a root message in the parent room"
+    end
+
+    def work_owner_requires_work
+      return if work_owner_id.blank? || work_status.present?
+
+      errors.add :work_owner, "requires work tracking"
+    end
+
+    def work_owner_assignment_changed?
+      will_save_change_to_work_owner_id? && work_owner_id.present?
+    end
+
+    def work_owner_must_be_eligible
+      owner = User.find_by(id: work_owner_id)
+      return if owner&.active? && !owner.bot? && room&.memberships&.exists?(user_id: owner.id)
+
+      errors.add :work_owner, "must be an active human member of the parent room"
+    end
+
+    def normalize_work_status(value)
+      normalized = value.to_s.presence
+      return normalized if normalized.nil? || WORK_STATUSES.include?(normalized)
+
+      errors.add(:work_status, "is invalid")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    def normalize_work_owner_id(value)
+      return value.id if value.is_a?(User)
+      return if value.blank?
+
+      Integer(value, exception: false).tap do |normalized|
+        if normalized.nil?
+          errors.add(:work_owner, "is invalid")
+          raise ActiveRecord::RecordInvalid.new(self)
+        end
+      end
+    end
+
+    def validate_work_update!(status:, owner_id:)
+      if owner_id.present? && status.blank?
+        errors.add(:work_owner, "requires work tracking")
+      end
+      return unless errors.any?
+
+      raise ActiveRecord::RecordInvalid.new(self)
     end
 
     def mark_memberships_unread(message)

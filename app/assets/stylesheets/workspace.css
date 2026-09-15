@@ -1,14 +1,19 @@
 :root {
-  --workspace-accent: #5865f2;
-  --workspace-accent-strong: #4752c4;
-  --workspace-bg: #ffffff;
-  --workspace-surface: #f8f9fc;
-  --workspace-sidebar: #f2f4f8;
-  --workspace-sidebar-hover: #e7eaf1;
-  --workspace-sidebar-active: #dfe4f5;
-  --workspace-text: #1f2430;
-  --workspace-text-muted: #687084;
-  --workspace-border: #dfe3ea;
+  /* Neutral workspace chrome; blue is reserved for links and focus cues. */
+  --workspace-accent: #5d6870;
+  --workspace-accent-strong: #3e484e;
+  --workspace-accent-fill-strong: #3e484e;
+  --workspace-accent-contrast: #ffffff;
+  --workspace-accent-soft: color-mix(in srgb, var(--workspace-accent) 14%, transparent);
+  --workspace-accent-highlight: color-mix(in srgb, var(--workspace-accent) 9%, var(--workspace-bg));
+  --workspace-bg: #f7f8f7;
+  --workspace-surface: #ffffff;
+  --workspace-sidebar: #eef1f0;
+  --workspace-sidebar-hover: #e3e7e6;
+  --workspace-sidebar-active: #d9dedd;
+  --workspace-text: #1f2427;
+  --workspace-text-muted: #5f696e;
+  --workspace-border: #d5dbdc;
   --workspace-header-height: 4.25rem;
   --workspace-member-panel-width: clamp(14.5rem, 17vw, 16rem);
   --workspace-sidebar-width: clamp(16.5rem, 21vw, 19.5rem);
@@ -17,16 +22,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --workspace-accent: #8b98ff;
-    --workspace-accent-strong: #a7b0ff;
-    --workspace-bg: #15171c;
-    --workspace-surface: #1b1e25;
-    --workspace-sidebar: #111318;
-    --workspace-sidebar-hover: #232730;
-    --workspace-sidebar-active: #293044;
-    --workspace-text: #f0f2f5;
-    --workspace-text-muted: #a0a7b6;
-    --workspace-border: #2d313a;
+    --workspace-accent: #67747b;
+    --workspace-accent-strong: #d1d8db;
+    --workspace-accent-fill-strong: #4e5a60;
+    --workspace-accent-contrast: #ffffff;
+    --workspace-bg: #15191b;
+    --workspace-surface: #1d2224;
+    --workspace-sidebar: #101416;
+    --workspace-sidebar-hover: #252b2e;
+    --workspace-sidebar-active: #30373b;
+    --workspace-text: #edf1f2;
+    --workspace-text-muted: #a4adb0;
+    --workspace-border: #363e41;
   }
 }
 
@@ -159,10 +166,10 @@ body.sidebar {
 .room-header__actions .huddle-launcher {
   --btn-background: var(--workspace-accent);
   --btn-border-color: transparent;
-  --btn-color: #ffffff;
+  --btn-color: var(--workspace-accent-contrast);
   --hover-filter: brightness(0.93);
 
-  color: #ffffff;
+  color: var(--workspace-accent-contrast);
 }
 
 .room-header__actions .huddle-launcher img,
@@ -179,7 +186,7 @@ body.sidebar {
   background: var(--workspace-accent);
   border: 2px solid var(--workspace-bg);
   border-radius: 999px;
-  color: #ffffff;
+  color: var(--workspace-accent-contrast);
   display: flex;
   font-size: 0.58rem;
   font-weight: 800;
@@ -239,9 +246,9 @@ body.sidebar {
 
 .workspace-identity__mark {
   align-items: center;
-  background: linear-gradient(145deg, var(--workspace-accent), var(--workspace-accent-strong));
+  background: linear-gradient(145deg, var(--workspace-accent), var(--workspace-accent-fill-strong));
   border-radius: 0.65rem;
-  color: #ffffff;
+  color: var(--workspace-accent-contrast);
   display: flex;
   font-size: 1rem;
   font-weight: 800;
@@ -446,7 +453,7 @@ body.sidebar {
 }
 
 .sidebar-item__status {
-  background: color-mix(in srgb, var(--workspace-accent) 14%, transparent);
+  background: var(--workspace-accent-soft);
   border-radius: 999px;
   color: var(--workspace-accent-strong);
   font-size: 0.62rem;
@@ -677,7 +684,7 @@ body.sidebar {
 }
 
 .sidebar .message--mentioned {
-  background: color-mix(in srgb, var(--workspace-accent) 9%, var(--workspace-bg));
+  background: var(--workspace-accent-highlight);
   box-shadow: inset 0.2rem 0 var(--workspace-accent);
 }
 
@@ -714,7 +721,7 @@ body.sidebar {
 .sidebar .message-area__return-to-latest {
   --btn-background: var(--workspace-accent);
   --btn-border-color: transparent;
-  --btn-color: #ffffff;
+  --btn-color: var(--workspace-accent-contrast);
 
   inset-block-end: 1rem;
   z-index: 4;

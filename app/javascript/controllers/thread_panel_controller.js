@@ -20,8 +20,8 @@ export default class extends Controller {
     "browserStatus", "browserList", "create", "createParent", "createParentId", "createName", "createMessage",
     "createStatus", "createSubmit", "conversation", "conversationTitle", "conversationMeta",
     "threadStatus", "parent", "content", "messages", "empty", "retry", "composerMount", "composerStatus", "join", "leave",
-    "preferences", "involvementControl", "involvement", "rename", "closeThread", "reopen", "lock", "unlock", "delete", "manage",
-    "autoArchiveControl", "autoArchive"
+    "preferences", "involvementControl", "involvement", "rename", "convertToWork", "removeWork", "closeThread", "reopen", "lock", "unlock", "delete", "manage",
+    "autoArchiveControl", "autoArchive", "work", "workStatusLabel", "workOwnerLabel", "workManage", "workStatus", "workOwner", "workComplete", "workReopen", "workHistory", "workHistoryList"
   ]
 
   #desktopQuery
@@ -295,6 +295,65 @@ export default class extends Controller {
     await this.#mutateThread("PATCH", "", "Saving thread name…", params)
   }
 
+  async convertToWork(event) {
+    event?.preventDefault()
+    this.#closeActionMenus()
+    const params = new URLSearchParams()
+    params.set("thread[work_status]", "planned")
+    await this.#mutateThread("PATCH", "", "Starting work tracking…", params)
+  }
+
+  async removeWork(event) {
+    event?.preventDefault()
+    this.#closeActionMenus()
+    if (!window.confirm("Stop tracking work for this thread? Its messages and work history will remain.")) return
+
+    const params = new URLSearchParams()
+    params.set("thread[work_status]", "")
+    params.set("thread[work_owner_id]", "")
+    await this.#mutateThread("PATCH", "", "Removing work tracking…", params)
+  }
+
+  async changeWorkStatus(event) {
+    event?.preventDefault()
+    if (!this.#currentThread || !this.workStatusTarget.value) return
+
+    const params = new URLSearchParams()
+    params.set("thread[work_status]", this.workStatusTarget.value)
+    await this.#mutateThread("PATCH", "", "Saving work status…", params)
+    if (this.hasWorkManageTarget) this.workManageTarget.open = false
+  }
+
+  async changeWorkOwner(event) {
+    event?.preventDefault()
+    if (!this.#currentThread) return
+
+    const params = new URLSearchParams()
+    params.set("thread[work_owner_id]", this.workOwnerTarget.value)
+    await this.#mutateThread("PATCH", "", "Saving work owner…", params)
+    if (this.hasWorkManageTarget) this.workManageTarget.open = false
+  }
+
+  async completeWork(event) {
+    event?.preventDefault()
+    if (!this.#currentThread) return
+
+    const params = new URLSearchParams()
+    params.set("thread[work_status]", "done")
+    await this.#mutateThread("PATCH", "", "Completing work…", params)
+    if (this.hasWorkManageTarget) this.workManageTarget.open = false
+  }
+
+  async reopenWork(event) {
+    event?.preventDefault()
+    if (!this.#currentThread) return
+
+    const params = new URLSearchParams()
+    params.set("thread[work_status]", "planned")
+    await this.#mutateThread("PATCH", "", "Reopening work…", params)
+    if (this.hasWorkManageTarget) this.workManageTarget.open = false
+  }
+
   async closeThread(event) {
     event?.preventDefault()
     this.#closeActionMenus()
@@ -429,6 +488,9 @@ export default class extends Controller {
     this.conversationTitleTarget.textContent = thread.name || "Thread"
     this.conversationMetaTarget.textContent = this.#channelLabel()
     this.threadStatusTarget.textContent = "Loading thread…"
+    this.workTarget.hidden = true
+    this.workManageTarget.hidden = true
+    this.workHistoryTarget.hidden = true
     if (this.hasRetryTarget) this.retryTarget.hidden = true
     this.parentTarget.hidden = true
     this.emptyTarget.hidden = true
@@ -453,6 +515,7 @@ export default class extends Controller {
       this.parentTarget.hidden = true
     }
 
+    this.#renderWorkMetadata(thread)
     this.#updateThreadActions(thread)
     this.#updateThreadListItem(thread)
     this.#updateUnreadToggle()
@@ -516,6 +579,8 @@ export default class extends Controller {
     this.preferencesTarget.hidden = !joined
     if (!preferencesOpen) this.involvementTarget.value = currentUser.involvement || "mentions"
     this.renameTarget.hidden = !can("can_rename")
+    this.convertToWorkTarget.hidden = !can("can_convert_work")
+    this.removeWorkTarget.hidden = !can("can_remove_work")
     this.closeThreadTarget.hidden = thread.status !== "active" || !can("can_close")
     this.reopenTarget.hidden = thread.status !== "closed" || !can("can_reopen")
     this.lockTarget.hidden = thread.status === "locked" || !can("can_lock")
@@ -525,6 +590,8 @@ export default class extends Controller {
     if (!manageOpen) this.autoArchiveTarget.value = String(thread.auto_archive_after_minutes || 4_320)
     this.manageTarget.hidden = [
       this.renameTarget,
+      this.convertToWorkTarget,
+      this.removeWorkTarget,
       this.closeThreadTarget,
       this.reopenTarget,
       this.lockTarget,
@@ -536,9 +603,82 @@ export default class extends Controller {
     if (this.preferencesTarget.hidden) this.preferencesTarget.open = false
   }
 
+  #renderWorkMetadata(thread) {
+    const isWork = Boolean(thread.work || thread.work_status)
+    this.workTarget.hidden = !isWork
+    if (!isWork) {
+      this.workManageTarget.hidden = true
+      this.workHistoryTarget.hidden = true
+      this.workHistoryListTarget.replaceChildren()
+      return
+    }
+
+    const permissions = thread.permissions || {}
+    const canStatus = Boolean(permissions.can_update_work_status || permissions.can_manage_work)
+    const canAssign = Boolean(permissions.can_assign_work)
+    this.workStatusLabelTarget.textContent = this.#workStatusLabel(thread.work_status)
+    this.workOwnerLabelTarget.textContent = this.#workOwnerLabel(thread)
+    this.workStatusTarget.value = thread.work_status || "planned"
+    this.workStatusTarget.disabled = !canStatus
+    this.#renderWorkOwnerOptions(thread, canAssign)
+    this.workManageTarget.hidden = !(canStatus || canAssign)
+    this.workCompleteTarget.hidden = !canStatus || thread.work_status === "done"
+    this.workReopenTarget.hidden = !canStatus || thread.work_status !== "done"
+    this.#renderWorkHistory(thread)
+  }
+
+  #renderWorkOwnerOptions(thread, canAssign) {
+    const owner = thread.work_owner
+    const owners = Array.isArray(thread.work_owner_options) ? thread.work_owner_options.slice() : []
+    if (owner && !owners.some(option => String(option.id) === String(owner.id))) owners.push(owner)
+    owners.sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+
+    this.workOwnerTarget.replaceChildren()
+    const unassigned = document.createElement("option")
+    unassigned.value = ""
+    unassigned.textContent = "Unassigned"
+    this.workOwnerTarget.append(unassigned)
+
+    owners.forEach(option => {
+      const element = document.createElement("option")
+      element.value = String(option.id)
+      const isCurrentOwnerRemoved = owner && String(option.id) === String(owner.id) && thread.work_owner_active === false
+      const unavailable = option.active === false || option.human === false || isCurrentOwnerRemoved
+      element.textContent = unavailable ? `${option.name} (unavailable)` : option.name
+      element.disabled = unavailable
+      this.workOwnerTarget.append(element)
+    })
+    this.workOwnerTarget.value = owner?.id ? String(owner.id) : ""
+    this.workOwnerTarget.disabled = !canAssign
+  }
+
+  #renderWorkHistory(thread) {
+    const events = Array.isArray(thread.work_history) ? thread.work_history : []
+    this.workHistoryListTarget.replaceChildren()
+    this.workHistoryTarget.hidden = events.length === 0
+    events.forEach(event => {
+      const item = document.createElement("li")
+      const actor = event.actor?.name || "Former member"
+      const before = event.before || {}
+      const after = event.after || {}
+      const changes = []
+      if (before.status !== after.status) {
+        changes.push(`${this.#workStatusLabel(before.status || "ordinary")} → ${this.#workStatusLabel(after.status || "ordinary")}`)
+      }
+      const beforeOwner = before.owner?.name || "Unassigned"
+      const afterOwner = after.owner?.name || "Unassigned"
+      if (beforeOwner !== afterOwner) changes.push(`Owner: ${beforeOwner} → ${afterOwner}`)
+      const timestamp = this.#dateText(event.created_at || event.createdAt)
+      item.textContent = `${actor} · ${changes.join(" · ") || "Work updated"}${timestamp ? ` · ${timestamp}` : ""}`
+      this.workHistoryListTarget.append(item)
+    })
+  }
+
   #closeActionMenus() {
     if (this.hasManageTarget) this.manageTarget.open = false
     if (this.hasPreferencesTarget) this.preferencesTarget.open = false
+    if (this.hasWorkManageTarget) this.workManageTarget.open = false
+    if (this.hasWorkHistoryTarget) this.workHistoryTarget.open = false
   }
 
   #updateComposer(thread) {
@@ -680,6 +820,24 @@ export default class extends Controller {
     if (thread.status === "locked") return "Locked thread · only a moderator can reopen it."
     if (thread.status === "closed") return "Closed thread · posting reopens it."
     return ""
+  }
+
+  #workStatusLabel(status) {
+    return {
+      planned: "Planned",
+      in_progress: "In progress",
+      blocked: "Blocked",
+      done: "Done",
+      ordinary: "Ordinary thread",
+    }[status] || String(status || "Planned").replaceAll("_", " ")
+  }
+
+  #workOwnerLabel(thread) {
+    const owner = thread.work_owner
+    if (!owner) return "Owner: Unassigned"
+    return thread.work_owner_active === false || owner.active === false
+      ? `Owner unavailable: ${owner.name}`
+      : `Owner: ${owner.name}`
   }
 
   #statusLabel(thread) {

@@ -24,9 +24,13 @@ class HuddlesTest < ApplicationSystemTestCase
     ENV["LIVEKIT_URL"] = gateway_url || "ws://127.0.0.1:#{GATEWAY_PORT}"
     @forgery_protection = ActionController::Base.allow_forgery_protection
     assert Huddle.configured?, "Source the LiveKit environment before running huddle tests"
+    @huddle_sessions = [ "default" ]
+    @huddle_rooms = [ rooms(:designers), rooms(:david_and_jason) ]
     HuddleCleanup.delete_all
     HuddleGrant.delete_all
-    Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
+    @huddle_rooms.each do |room|
+      Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(room.id))
+    end
     ActionController::Base.allow_forgery_protection = true
     start_gateway unless gateway_url
   end
@@ -34,7 +38,7 @@ class HuddlesTest < ApplicationSystemTestCase
   teardown do
     if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
       begin
-        [ :default, "Kevin" ].each do |name|
+        @huddle_sessions.each do |name|
           using_session(name) do
             if page.has_css?("#channel-huddle:not([hidden])", wait: 0)
               find("[data-action='huddle#leave']").click
@@ -48,7 +52,9 @@ class HuddlesTest < ApplicationSystemTestCase
           stop_gateway
         ensure
           begin
-            Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(rooms(:designers).id))
+            @huddle_rooms.each do |room|
+              Huddle::RoomService.new.delete_room(room_name: Huddle.room_name(room.id))
+            end
           ensure
             begin
               HuddleCleanup.delete_all
@@ -108,6 +114,59 @@ class HuddlesTest < ApplicationSystemTestCase
       page.evaluate_script("window.huddleTestLocalTracks.every(track => track.readyState === 'ended')")
     end
     using_session("Kevin") { assert_selector ".huddle__participant", count: 1 }
+  end
+
+  test "two direct message participants exchange audio and screen while navigating and reconnecting" do
+    direct_room = rooms(:david_and_jason)
+    open_huddle_as "david@37signals.com", room: direct_room
+    using_session("Jason") { open_huddle_as "jason@37signals.com", room: direct_room, session_name: "Jason" }
+
+    assert_selector ".room-header__kind", text: /Direct message/i
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+    original_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+
+    click_button "Share screen"
+    assert_button "Stop sharing"
+    using_session("Jason") do
+      assert_selector ".huddle__participant", count: 2
+      assert_media_received "audio"
+      assert_selector ".huddle__screen video"
+      wait_for_condition("the direct-message screen did not decode video") do
+        page.evaluate_script("Array.from(document.querySelectorAll('.huddle__screen video')).some(video => video.videoWidth > 0 && video.readyState >= 2)")
+      end
+      assert_media_received "video"
+    end
+
+    within("#sidebar") { click_link "HQ", exact: true }
+    assert_selector ".room--current", text: "HQ"
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_equal original_connection_count, page.evaluate_script("window.huddleTestPeerConnections.length")
+
+    within("#sidebar") { find("##{dom_id(direct_room, :list)}").click }
+    assert_selector ".room-header__kind", text: /Direct message/i
+    assert_selector ".room-header__name", text: "Jason"
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_media_received "audio"
+
+    socket_count = signal_socket_urls.length
+    peer_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+    force_full_reconnect
+    wait_for_condition("the direct-message huddle did not reconnect") do
+      signal_socket_urls.length > socket_count
+    end
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_new_active_media_received "audio", after: peer_connection_count
+    using_session("Jason") do
+      assert_selector "#channel-huddle[data-state='connected']"
+      assert_selector ".huddle__participant", count: 2
+      assert_media_received "audio"
+    end
+
+    click_button "Leave", exact: true
+    assert_no_selector "#channel-huddle:not([hidden])"
+    assert_no_selector "#channel-huddle audio", visible: :all
+    using_session("Jason") { assert_selector ".huddle__participant", count: 1 }
   end
 
   test "denied microphone leaves no ghost participant and can be retried" do
@@ -266,10 +325,11 @@ class HuddlesTest < ApplicationSystemTestCase
   end
 
   private
-    def open_huddle_as(email)
+    def open_huddle_as(email, room: rooms(:designers), session_name: nil)
+      @huddle_sessions << session_name if session_name && !@huddle_sessions.include?(session_name)
       prepare_browser
       sign_in email
-      join_room rooms(:designers)
+      join_room room
       click_button "Join huddle"
       assert_selector "#channel-huddle[data-state='connected']", wait: 20
       assert_button "Mute", exact: true

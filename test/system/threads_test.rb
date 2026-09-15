@@ -105,6 +105,84 @@ class ThreadsTest < ApplicationSystemTestCase
     assert_no_selector "#thread-panel [data-thread-panel-target='leave']", visible: true
   end
 
+  test "tracks work, assigns an owner, completes and reopens it without losing the conversation" do
+    thread_name = "Work handoff thread"
+    message = "The work conversation must survive completion."
+    create_thread_from_panel(thread_name, message)
+    thread = ChannelThread.find_by!(name: thread_name)
+
+    find("#thread-panel [data-thread-panel-target='manage'] summary").click
+    click_button "Track as work"
+    assert_selector "#thread-panel [data-thread-panel-target='work']", visible: true, wait: 10
+    assert_selector "#thread-panel [data-thread-panel-target='workStatusLabel']", text: "Planned"
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    find("#thread-panel [data-thread-panel-target='workOwner'] option", text: "Kevin", exact_text: true).select_option
+    wait_for_condition { thread.reload.work_owner_id == users(:kevin).id }
+    assert_selector "#thread-panel [data-thread-panel-target='workOwnerLabel']", text: "Kevin", wait: 10
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    find("#thread-panel [data-thread-panel-target='workStatus'] option[value='in_progress']").select_option
+    assert_selector "#thread-panel [data-thread-panel-target='workStatusLabel']", text: "In progress", wait: 10
+    find("#thread-panel [data-thread-panel-target='workHistory'] summary").click
+    assert_selector "#thread-panel [data-thread-panel-target='workHistory']", text: /Owner: Unassigned.*Kevin/, wait: 10
+    save_thread_screenshot "work-panel.png"
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    click_button "Complete work"
+    assert_selector "#thread-panel [data-thread-panel-target='workStatusLabel']", text: "Done", wait: 10
+    assert_thread_message message
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    click_button "Reopen work"
+    assert_selector "#thread-panel [data-thread-panel-target='workStatusLabel']", text: "Planned", wait: 10
+    assert_thread_message message
+
+    visit work_threads_path
+    assert_selector ".work-threads__item", text: thread_name, wait: 10
+    assert_selector ".work-threads__item", text: "Planned"
+    save_thread_screenshot "work-list.png"
+  end
+
+  test "shows work assignment activity to the owner and opens the exact thread" do
+    thread_name = "Cross-feature work handoff"
+    message = "The assigned work message remains available."
+
+    using_session("Kevin") do
+      sign_in "kevin@37signals.com"
+      visit activity_items_url
+      assert_selector "#activity-inbox-title", text: "Activity inbox", wait: 10
+    end
+
+    create_thread_from_panel(thread_name, message)
+    thread = ChannelThread.find_by!(name: thread_name)
+
+    find("#thread-panel [data-thread-panel-target='manage'] summary").click
+    click_button "Track as work"
+    assert_selector "#thread-panel [data-thread-panel-target='work']", visible: true, wait: 10
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    find("#thread-panel [data-thread-panel-target='workOwner'] option", text: "Kevin", exact_text: true).select_option
+    wait_for_condition { thread.reload.work_owner_id == users(:kevin).id }
+
+    find("#thread-panel [data-thread-panel-target='workManage'] summary").click
+    find("#thread-panel [data-thread-panel-target='workStatus'] option[value='in_progress']").select_option
+    assert_selector "#thread-panel [data-thread-panel-target='workStatusLabel']", text: "In progress", wait: 10
+
+    using_session("Kevin") do
+      assert_selector ".activity-item", text: /Work assignment/, wait: 10
+      assert_selector ".activity-item", text: /Owner: unassigned.*Kevin/, wait: 10
+      status_item = find("article.activity-item", text: /Status: Planned → In progress/, wait: 10)
+      status_item.find("button", text: "Open").click
+
+      wait_for_thread_conversation(thread_name)
+      assert_thread_message message
+      current_uri = URI.parse(page.current_url)
+      assert_equal URI.parse(room_url(rooms(:designers), thread: thread.id)).path, current_uri.path
+      assert_equal "thread=#{thread.id}", current_uri.query
+    end
+  end
+
   test "keeps the thread drawer usable on a phone and preserves the channel" do
     create_thread_from_panel("Mobile thread", "The mobile thread starter.")
     close_threads

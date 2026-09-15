@@ -87,6 +87,15 @@ export default class extends Controller {
 
     const currentRoomId = document.querySelector('meta[name="current-room-id"]')?.content
 
+    this.sidebarTarget.querySelectorAll("[data-workspace-destination]").forEach((link) => {
+      const isCurrent = window.location.pathname === link.dataset.workspaceDestination
+      if (isCurrent) {
+        link.setAttribute("aria-current", "page")
+      } else {
+        link.removeAttribute("aria-current")
+      }
+    })
+
     this.sidebarTarget.querySelectorAll("[data-room-id]").forEach((roomLink) => {
       const isCurrent = Boolean(currentRoomId) && roomLink.dataset.roomId === currentRoomId
       roomLink.classList.toggle("room--active", isCurrent)

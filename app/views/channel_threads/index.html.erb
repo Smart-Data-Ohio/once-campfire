@@ -8,6 +8,11 @@
         <li>
           <%= link_to thread.name, room_thread_path(@room, thread) %>
           <span><%= thread.message_count %> messages · <%= thread.status %></span>
+          <% if thread.work? %>
+            <% owner = thread.work_owner %>
+            <% owner_label = owner.blank? ? "Unassigned" : thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
+            <span>Work: <%= thread.work_status_label %> · <%= owner_label %></span>
+          <% end %>
         </li>
       <% end %>
     </ul>

@@ -22,6 +22,22 @@
     </header>
 
     <div class="sidebar__scroll overflow-y overflow-hide-scrollbar">
+      <nav class="sidebar-list workspace-destinations" aria-label="Your workspace">
+        <%= link_to activity_items_path, class: "sidebar-item btn", data: {
+              workspace_destination: activity_items_path,
+              controller: "activity-indicator",
+              activity_indicator_url_value: unread_count_activity_items_path(format: :json)
+            } do %>
+          <%= image_tag "notification-bell-everything.svg", size: 20, aria: { hidden: "true" }, class: "colorize--black" %>
+          <span class="sidebar-item__label">Activity inbox</span>
+          <span class="workspace-activity-count" data-activity-indicator-target="count" hidden></span>
+        <% end %>
+        <%= link_to work_threads_path, class: "sidebar-item btn", data: { workspace_destination: work_threads_path } do %>
+          <%= image_tag "check.svg", size: 20, aria: { hidden: "true" }, class: "colorize--black" %>
+          <span class="sidebar-item__label">Work threads</span>
+        <% end %>
+      </nav>
+
       <section class="sidebar-section sidebar-section--channels rooms" aria-labelledby="channels-heading">
         <header class="sidebar-section__header">
           <h2 id="channels-heading">Channels</h2>

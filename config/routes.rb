@@ -126,6 +126,15 @@ Rails.application.routes.draw do
     delete :clear, on: :collection
   end
 
+  resources :activity_items, path: "activity", only: :index do
+    get :unread_count, on: :collection
+    post :open, on: :member
+    patch :read, on: :member
+    patch :handled, on: :member
+  end
+
+  resources :work_threads, path: "work", only: :index
+
   resource :unfurl_link, only: :create
 
   get "webmanifest"    => "pwa#manifest"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_15_170100) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -60,6 +60,20 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "activity_items", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.datetime "handled_at"
+    t.datetime "read_at"
+    t.integer "source_id", null: false
+    t.string "source_type", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
+    t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
+    t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+  end
+
   create_table "bans", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address", null: false
@@ -90,10 +104,14 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
     t.integer "parent_message_id"
     t.integer "room_id", null: false
     t.datetime "updated_at", null: false
+    t.integer "work_owner_id"
+    t.string "work_status"
     t.index ["creator_id"], name: "index_channel_threads_on_creator_id"
     t.index ["parent_message_id"], name: "index_channel_threads_on_parent_message_id", unique: true, where: "parent_message_id IS NOT NULL"
     t.index ["room_id", "closed_at", "locked_at"], name: "index_channel_threads_on_room_id_and_closed_at_and_locked_at"
     t.index ["room_id", "last_activity_at"], name: "index_channel_threads_on_room_id_and_last_activity_at"
+    t.index ["room_id", "work_status", "last_activity_at"], name: "index_channel_threads_on_room_and_work_status_and_activity"
+    t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
   end
 
   create_table "huddle_cleanups", force: :cascade do |t|
@@ -243,6 +261,25 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
     t.index ["user_id"], name: "index_webhooks_on_user_id"
   end
 
+  create_table "work_thread_events", force: :cascade do |t|
+    t.integer "actor_id"
+    t.integer "channel_thread_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.integer "from_owner_id"
+    t.string "from_owner_name"
+    t.string "from_status"
+    t.json "metadata"
+    t.integer "to_owner_id"
+    t.string "to_owner_name"
+    t.string "to_status"
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_work_thread_events_on_actor_id"
+    t.index ["channel_thread_id", "created_at"], name: "index_work_thread_events_on_thread_and_created_at"
+    t.index ["channel_thread_id"], name: "index_work_thread_events_on_channel_thread_id"
+    t.index ["event_type", "created_at"], name: "index_work_thread_events_on_type_and_created_at"
+  end
+
   create_table "workspace_presence_leases", force: :cascade do |t|
     t.string "connection_id", null: false
     t.datetime "created_at", null: false
@@ -258,11 +295,13 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "activity_items", "users", on_delete: :cascade
   add_foreign_key "bans", "users"
   add_foreign_key "boosts", "messages"
   add_foreign_key "channel_threads", "messages", column: "parent_message_id", on_delete: :nullify
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
+  add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify
@@ -274,6 +313,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
   add_foreign_key "thread_memberships", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "thread_memberships", "users", on_delete: :cascade
   add_foreign_key "webhooks", "users"
+  add_foreign_key "work_thread_events", "channel_threads", on_delete: :cascade
+  add_foreign_key "work_thread_events", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
   add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade
 

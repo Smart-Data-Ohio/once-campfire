@@ -27,7 +27,7 @@ class ChannelThreadsController < ApplicationController
       format.html
       format.json do
         render json: {
-          thread: thread_payload(@thread),
+          thread: thread_payload(@thread, include_work_history: true, include_work_owner_options: true),
           parent_message: message_payload(@thread.parent_message),
           messages: @messages.map { |message| message_payload(message, include_thread_summary: false) }
         }
@@ -74,12 +74,13 @@ class ChannelThreadsController < ApplicationController
   def update
     attributes = thread_update_attributes
     requested_status = attributes.delete(:status)
+    work_attributes = thread_work_update_attributes(attributes)
 
     ChannelThread.transaction do
       @thread.with_lock do
         @thread.reload
         ensure_current_parent_membership!
-        raise ThreadUpdateForbidden unless allowed_thread_update?(attributes:, requested_status:)
+        raise ThreadUpdateForbidden unless allowed_thread_update?(attributes:, requested_status:, work_attributes:)
         @thread.update!(attributes) if attributes.present?
 
         case requested_status
@@ -99,16 +100,18 @@ class ChannelThreadsController < ApplicationController
         else
           raise ActiveRecord::RecordInvalid.new(@thread.tap { |thread| thread.errors.add(:status, "is invalid") })
         end
+
+        @thread.update_work!(actor: Current.user, **work_attributes) if work_attributes.present?
       end
     end
 
     respond_to do |format|
       format.html { redirect_to room_thread_path(@room, @thread) }
-      format.json { render json: { thread: thread_payload(@thread.reload) } }
+      format.json { render json: { thread: thread_payload(@thread.reload, include_work_history: true, include_work_owner_options: true) } }
     end
   rescue ActiveRecord::RecordInvalid => error
     render_error error.record.errors.full_messages.to_sentence
-  rescue ThreadUpdateForbidden, ActiveRecord::RecordNotFound
+  rescue ThreadUpdateForbidden, ChannelThread::WorkUpdateForbidden, ActiveRecord::RecordNotFound
     head :forbidden
   end
 
@@ -160,6 +163,10 @@ class ChannelThreadsController < ApplicationController
       case params[:state].to_s
       when "active", "open", ""
         scope.active
+      when "work", "working"
+        scope.work.where.not(work_status: "done")
+      when "done", "completed"
+        scope.work.where(work_status: "done")
       when "closed"
         scope.closed
       when "locked"
@@ -179,8 +186,19 @@ class ChannelThreadsController < ApplicationController
       head :forbidden unless @thread.lifecycle_manageable_by?(Current.user)
     end
 
-    def allowed_thread_update?(attributes:, requested_status:)
+    def allowed_thread_update?(attributes:, requested_status:, work_attributes:)
       return false if attributes.present? && !@thread.settings_manageable_by?(Current.user)
+
+      if work_attributes.present?
+        return false unless @thread.work_manageable_by?(Current.user)
+        return false if work_attributes.key?(:work_owner_id) && !@thread.work_assignment_manageable_by?(Current.user)
+
+        if work_attributes.key?(:work_status)
+          requested_work_status = work_attributes[:work_status].to_s.presence
+          conversion = @thread.work_status.present? != requested_work_status.present?
+          return false if conversion && !@thread.work_conversion_manageable_by?(Current.user)
+        end
+      end
 
       case requested_status
       when nil
@@ -215,9 +233,23 @@ class ChannelThreadsController < ApplicationController
 
     def thread_update_attributes
       source = params[:thread].present? ? params.require(:thread) : params
-      source.permit(:name, :auto_archive_after_minutes, :status).to_h.symbolize_keys.tap do |attributes|
+      source.permit(:name, :auto_archive_after_minutes, :status, :work_status, :work_owner_id).to_h.symbolize_keys.tap do |attributes|
         attributes[:auto_archive_after_minutes] = attributes[:auto_archive_after_minutes].to_i if attributes.key?(:auto_archive_after_minutes)
       end
+    end
+
+    def thread_work_update_attributes(attributes)
+      work_attributes = {}
+      if attributes.key?(:work_status)
+        work_attributes[:work_status] = attributes.delete(:work_status)
+      end
+
+      if attributes.key?(:work_owner_id)
+        work_attributes[:work_owner_id] = attributes.delete(:work_owner_id)
+      end
+
+      work_attributes[:work_owner_id] = nil if work_attributes[:work_owner_id].respond_to?(:empty?) && work_attributes[:work_owner_id].empty?
+      work_attributes
     end
 
     def parent_message_from_params

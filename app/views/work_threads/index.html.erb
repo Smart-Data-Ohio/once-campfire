@@ -1,0 +1,41 @@
+<% @page_title = "Work" %>
+<% @body_class = "sidebar work-workspace" %>
+
+<% content_for :head do %>
+  <%= turbo_exempts_page_from_cache %>
+<% end %>
+
+<% content_for :nav do %>
+  <div class="room-header__identity room--current min-width">
+    <span class="room-header__kind">Workspace</span>
+    <h1 class="room__contents overflow-ellipsis">
+      <span class="room-header__name overflow-ellipsis">Work</span>
+    </h1>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<section class="work-threads" aria-labelledby="work-threads-title">
+  <header class="work-threads__header">
+    <div>
+      <span class="work-threads__eyebrow">Workspace work</span>
+      <h1 id="work-threads-title">Work threads</h1>
+      <p>Pick up an active conversation without searching through archived channel threads.</p>
+    </div>
+
+    <nav class="work-threads__filters" aria-label="Work thread filters">
+      <%= link_to "Open work", work_threads_path(state: "open"), class: [ "btn", "work-threads__filter", "active": @state == "open" ] %>
+      <%= link_to "Completed", work_threads_path(state: "done"), class: [ "btn", "work-threads__filter", "active": @state == "done" ] %>
+      <%= link_to "All work", work_threads_path(state: "all"), class: [ "btn", "work-threads__filter", "active": @state == "all" ] %>
+    </nav>
+  </header>
+
+  <% if @threads.empty? %>
+    <p class="work-threads__empty">No work threads match this view.</p>
+  <% else %>
+    <div class="work-threads__list" role="list">
+      <%= render partial: "work_threads/thread", collection: @threads, as: :thread %>
+    </div>
+  <% end %>
+</section>
