@@ -120,10 +120,16 @@ require_image() {
 
 # discover_container [expected_image_ref]
 #
-# With an expected image, returns the running container whose ONCE settings
-# point at exactly that reference. Without one, returns the single running
-# application container, or the single stopped one if none are running. Refuses
-# to guess when more than one candidate matches.
+# With an expected image, returns the container whose ONCE settings point at
+# exactly that reference, preferring a running one but also accepting a stopped
+# one: a candidate image that crashes on boot still has to be found so the
+# caller can report it as unhealthy rather than as a script error. Without an
+# expected image, returns the single running application container, or the
+# single stopped one if none are running. Refuses to guess when more than one
+# candidate matches.
+#
+# When an expected image simply is not there, this returns 1 without dying, so
+# the caller stays inside the 10/20/30 exit-code contract.
 discover_container() {
   local expected="${1:-}"
   local -a running=() stopped=() matched=()
@@ -144,10 +150,17 @@ discover_container() {
         matched+=("$name")
       fi
     done
+    if [ "${#matched[@]}" -eq 0 ]; then
+      for name in "${stopped[@]}"; do
+        if [ "$(settings_field "$name" '.image')" = "$expected" ]; then
+          matched+=("$name")
+        fi
+      done
+    fi
     case "${#matched[@]}" in
       1) printf '%s' "${matched[0]}"; return 0 ;;
-      0) die "no running ONCE container is serving $expected" ;;
-      *) die "more than one running ONCE container serves $expected: ${matched[*]}" ;;
+      0) warn "no ONCE container, running or stopped, is configured for $expected"; return 1 ;;
+      *) die "more than one ONCE container is configured for $expected: ${matched[*]}" ;;
     esac
   fi
 
@@ -547,9 +560,17 @@ phase_preflight() {
 # -------------------------------------------------------------------- freeze --
 
 FREEZE_MOUNTPOINT=""
+REHEARSAL_CONTAINER=""
 
 freeze_cleanup() {
   local status=$?
+  # `docker run --rm` cleans up on its own exit, but not when this script is
+  # killed while the rehearsal is still running.
+  if [ -n "$REHEARSAL_CONTAINER" ]; then
+    docker rm -f "$REHEARSAL_CONTAINER" >/dev/null 2>&1 \
+      && warn "freeze: removed the stranded rehearsal container $REHEARSAL_CONTAINER"
+    REHEARSAL_CONTAINER=""
+  fi
   purge_volume_scratch "$FREEZE_MOUNTPOINT"
   remove_scratch
   if [ "$status" -ne 0 ]; then
@@ -651,7 +672,7 @@ phase_freeze() {
     --arg volume "$volume" \
     --arg mountpoint "$mountpoint" \
     --arg previous_image "$previous_image" \
-    --arg previous_revision "$(read_json_field "$preflight" '.current_revision // "unknown"')" \
+    --arg previous_revision "$(read_json_field "$preflight" '(.current_revision | select(. != "" and . != null)) // "unknown"')" \
     --arg rollback_tag "campfire-rollback:before-$RELEASE_LABEL" \
     --arg app_archive_sha256 "$once_sha" \
     --arg host_archive_sha256 "$host_sha" \
@@ -679,10 +700,17 @@ phase_freeze() {
 # This is deploy/README.md steps 4 and 5, and it happens before the live
 # application is touched so a bad migration never reaches production data.
 rehearse_migration() {
+  # A resumed run must not inherit a rehearsal performed against a different
+  # candidate: that would vouch for a migration nobody ran.
   if have_state_file rehearsal-result.json \
      && [ "$(jq -r '.verified // false' "$(state_path rehearsal-result.json)")" = "true" ]; then
-    log "freeze: migration already rehearsed for this label, keeping the result"
-    return 0
+    local rehearsed_image
+    rehearsed_image="$(jq -r '.image // ""' "$(state_path rehearsal-result.json)")"
+    if [ "$rehearsed_image" = "$IMAGE_REF" ]; then
+      log "freeze: migration already rehearsed for this label and image, keeping the result"
+      return 0
+    fi
+    warn "freeze: the recorded rehearsal was run against ${rehearsed_image:-an unrecorded image}, not $IMAGE_REF; rehearsing again"
   fi
 
   log "freeze: rehearsing the migration on a copy with the candidate image"
@@ -691,7 +719,9 @@ rehearse_migration() {
   install -m 0600 -o 1000 -g 1000 "$(state_path before.sqlite3)" "$SCRATCH_DIR/backups/production.sqlite3"
 
   local status=0
-  docker run --rm --network none --memory 768m \
+  REHEARSAL_CONTAINER="campfire-rehearsal-$RELEASE_LABEL"
+  docker rm -f "$REHEARSAL_CONTAINER" >/dev/null 2>&1 || true
+  docker run --rm --name "$REHEARSAL_CONTAINER" --network none --memory 768m \
     -v "$SCRATCH_DIR:/rails/storage" \
     -e SECRET_KEY_BASE_DUMMY=1 \
     "$IMAGE_REF" \
@@ -705,6 +735,7 @@ rehearse_migration() {
       bundle exec script/admin/verify-additive-sqlite-migration \
         /rails/storage/rehearsal-before.sqlite3 /rails/storage/rehearsal-after.sqlite3
     ' > "$(state_path migration-verification.txt)" 2>&1 || status=$?
+  REHEARSAL_CONTAINER=""
   chmod 0600 "$(state_path migration-verification.txt)"
 
   local preserved additive
@@ -712,8 +743,8 @@ rehearse_migration() {
   additive="$(sed -n 's/^ADDITIVE: //p' "$(state_path migration-verification.txt)" | tail -n1)"
 
   if [ "$status" -ne 0 ]; then
-    jq -n --argjson verified false --arg exit_status "$status" \
-      '{verified:false, exit_status:($exit_status|tonumber), preserved:null, additive:null}' \
+    jq -n --argjson verified false --arg exit_status "$status" --arg image "$IMAGE_REF" \
+      '{verified:false, exit_status:($exit_status|tonumber), image:$image, preserved:null, additive:null}' \
       | write_state rehearsal-result.json
     warn "migration rehearsal FAILED (exit ${status}); full output is in $(state_path migration-verification.txt)"
     tail -n 5 "$(state_path migration-verification.txt)" >&2 || true
@@ -725,7 +756,8 @@ rehearse_migration() {
   fi
 
   jq -n --arg preserved "${preserved:-unknown}" --arg additive "${additive:-unknown}" \
-    '{verified:true, exit_status:0, preserved:$preserved, additive:$additive}' \
+    --arg image "$IMAGE_REF" \
+    '{verified:true, exit_status:0, image:$image, preserved:$preserved, additive:$additive}' \
     | write_state rehearsal-result.json
 
   log "migration rehearsal PASSED: ${preserved:-unknown}; ${additive:-unknown}"
@@ -760,15 +792,29 @@ phase_cutover() {
 
   log "cutover: once update $app_host --image $IMAGE_REF --auto-update=false"
   log "cutover: --env is deliberately omitted so the existing environment is preserved"
-  once update "$app_host" --image "$IMAGE_REF" --auto-update=false
+  # A failure here may still have switched ONCE's settings or left a broken
+  # container behind, so it is reported as unhealthy rather than as a generic
+  # error: the recovery phase needs to run.
+  if ! once update "$app_host" --image "$IMAGE_REF" --auto-update=false; then
+    warn "cutover: 'once update' failed; the application may be partly switched"
+    exit "$EXIT_UNHEALTHY"
+  fi
 
   local container
-  container="$(discover_container "$IMAGE_REF")"
+  container="$(discover_container "$IMAGE_REF" || true)"
+  if [ -z "$container" ]; then
+    warn "cutover: nothing is configured for $IMAGE_REF after 'once update'"
+    exit "$EXIT_UNHEALTHY"
+  fi
   if ! container_running "$container"; then
     log "cutover: application is not running, starting it"
-    once start "$app_host"
+    once start "$app_host" || warn "cutover: once start reported an error"
     sleep 3
-    container="$(discover_container "$IMAGE_REF")"
+    container="$(discover_container "$IMAGE_REF" || true)"
+    if [ -z "$container" ] || ! container_running "$container"; then
+      warn "cutover: the application did not stay running on the new image"
+      exit "$EXIT_UNHEALTHY"
+    fi
   fi
   log "cutover: new container $container"
 
@@ -875,6 +921,55 @@ phase_cutover() {
 
 # ----------------------------------------------------------------- rollback --
 
+RESTORE_TARGET=""
+
+# Returns ONCE to the previous image and gets it serving again, WITHOUT touching
+# the database. Both rollback branches use this. Restoring the image is safe
+# even when the database has moved on: `bin/start-app` runs `db:prepare` before
+# puma, so the candidate migrates the live database as soon as it boots, and the
+# freeze rehearsal has already proved that migration additive. The previous
+# code therefore still reads the migrated schema.
+restore_previous_image() {
+  local app_host="$1" previous_image="$2" rollback_tag="$3"
+  local container settings_image=""
+
+  container="$(discover_container || true)"
+  [ -n "$container" ] && settings_image="$(settings_field "$container" '.image')"
+
+  if docker image inspect "$rollback_tag" >/dev/null 2>&1; then
+    log "rollback: the previous image is retained locally as $rollback_tag"
+  else
+    warn "rollback: $rollback_tag is not present locally"
+  fi
+
+  if [ "$settings_image" = "$previous_image" ]; then
+    # The cutover never reached `once update`, so ONCE still points at the
+    # previous image and the local copy is enough: no registry round trip.
+    RESTORE_TARGET="$previous_image (already configured)"
+    log "rollback: ONCE still points at the previous image, starting it from the local copy"
+    once start "$app_host" || warn "rollback: once start reported an error"
+  else
+    # ONCE 0.3.2 always resolves --image through the registry, so it cannot
+    # consume the local-only campfire-rollback tag. The previous image's own
+    # registry reference is used instead; its layers are still in the local
+    # Docker cache, and the release has not logged out yet.
+    RESTORE_TARGET="$previous_image"
+    log "rollback: returning ONCE to $previous_image"
+    if ! once update "$app_host" --image "$previous_image" --auto-update=false; then
+      warn "rollback: 'once update --image $previous_image' failed"
+      warn "rollback: the exact previous image is retained locally as '$rollback_tag', but ONCE 0.3.2"
+      warn "rollback: resolves --image through the registry and cannot use a local-only tag."
+      warn "rollback: an operator must restore registry access, or push that tag somewhere ONCE can reach."
+      RESTORE_TARGET="restore failed"
+    fi
+  fi
+
+  container="$(discover_container || true)"
+  if [ -n "$container" ] && ! container_running "$container"; then
+    once start "$app_host" || warn "rollback: once start reported an error"
+  fi
+}
+
 phase_rollback() {
   local preflight freeze app_host mountpoint previous_image rollback_tag frozen_fingerprint
   preflight="$(state_path preflight-result.json)"
@@ -894,40 +989,55 @@ phase_rollback() {
   current_fingerprint="$(live_database_fingerprint "$mountpoint")"
 
   if [ "$current_fingerprint" != "$frozen_fingerprint" ]; then
-    # The live database moved after the freeze. It may contain migrations, user
-    # messages, or both. Restoring the frozen copy would discard them, so this
-    # stops and pages instead.
+    # The live database moved after the freeze. It holds migrations, user
+    # writes, or both. Restoring the frozen copy would discard them, so the
+    # database is left exactly as it is — but the service still comes back, on
+    # the previous image, which the rehearsal proved can read the migrated
+    # schema. Nothing is lost, the site is up, and the non-zero exit still pages.
     action="refused-database-changed"
     reason="the live database changed after the freeze (${frozen_fingerprint} -> ${current_fingerprint})"
     warn "rollback: $reason"
+    warn "rollback: the database will NOT be restored; returning to the previous image only"
+
+    restore_previous_image "$app_host" "$previous_image" "$rollback_tag"
+    if wait_for_health "$app_host" "$HEALTH_TIMEOUT"; then health=healthy; else health=unhealthy; fi
+
     jq -n \
       --arg phase rollback --arg at "$(now_utc)" --arg label "$RELEASE_LABEL" \
       --arg app_host "$app_host" --arg action "$action" --arg reason "$reason" \
+      --arg restored_image "$RESTORE_TARGET" \
+      --arg rollback_tag "$rollback_tag" \
       --arg frozen "$frozen_fingerprint" --arg current "$current_fingerprint" \
-      --arg previous_image "$previous_image" --arg timer "$TIMER_UNIT" \
+      --arg previous_image "$previous_image" --arg health "$health" --arg timer "$TIMER_UNIT" \
       '{phase:$phase, at:$at, release_label:$label, app_host:$app_host, action:$action,
-        reason:$reason, frozen_live_database_sha256:$frozen,
+        reason:$reason, database_restored:false, restored_image:$restored_image,
+        retained_local_tag:$rollback_tag,
+        frozen_live_database_sha256:$frozen,
         current_live_database_sha256:$current, previous_image:$previous_image,
-        health:"stopped", feed_timer:$timer,
+        health:$health, feed_timer:$timer,
         feed_timer_state:"left paused for operator review"}' \
       | write_state rollback-result.json
 
     printf '\n' >&2
     warn "================ OPERATOR ACTION REQUIRED ================"
-    warn "The application on ${app_host} is STOPPED and has been left exactly as it was."
-    warn "Its database has changed since the write freeze, so this script will not"
-    warn "restore ${STATE_DIR}/before.sqlite3 over it: that would discard whatever was"
-    warn "written after the freeze."
+    warn "The database on ${app_host} changed after the write freeze, so this script"
+    warn "did NOT restore ${STATE_DIR}/before.sqlite3 over it: that would discard"
+    warn "whatever was written after the freeze."
     warn ""
-    warn "Decide by hand, then act:"
-    warn "  * To keep the new writes, bring the app back up on the NEW image:"
+    warn "The application has been returned to the previous image (${RESTORE_TARGET})"
+    warn "and /up reports ${health}. The database was left untouched. The previous code"
+    warn "is running against the migrated schema, which the pre-cutover rehearsal"
+    warn "verified as additive."
+    warn ""
+    warn "This still needs a human. Decide, then act:"
+    warn "  * If the release should go ahead after all, put the new image back:"
     warn "      sudo once update ${app_host} --image ${IMAGE_REF:-<new image>} --auto-update=false"
-    warn "  * To go back to the previous image WITHOUT losing the new writes, only do so"
-    warn "    if that image's schema still reads the migrated database:"
-    warn "      sudo once update ${app_host} --image ${previous_image} --auto-update=false"
-    warn "  * To return to the frozen checkpoint and accept losing everything written"
-    warn "    after it, restore from ${STATE_DIR}/before.once.tar.gz and keep the feed"
-    warn "    delivery state consistent with the restored message history."
+    warn "  * If the previous code is misreading the migrated schema, return to the"
+    warn "    frozen checkpoint and accept losing everything written after it:"
+    warn "    restore from ${STATE_DIR}/before.once.tar.gz and keep the feed delivery"
+    warn "    state consistent with the restored message history."
+    warn "  * Compare ${STATE_DIR}/before.sqlite3 with the live database before"
+    warn "    discarding anything."
     warn ""
     warn "The ${TIMER_UNIT} feed timer is deliberately left paused."
     warn "========================================================="
@@ -940,42 +1050,8 @@ phase_rollback() {
   reason="the live database is unchanged since the freeze, so the previous image was restored and nothing was lost"
   log "rollback: the live database is unchanged since the freeze, restoring the previous image"
 
-  local container settings_image=""
-  container="$(discover_container || true)"
-  [ -n "$container" ] && settings_image="$(settings_field "$container" '.image')"
-
-  if docker image inspect "$rollback_tag" >/dev/null 2>&1; then
-    log "rollback: the previous image is retained locally as $rollback_tag"
-  else
-    warn "rollback: $rollback_tag is not present locally"
-  fi
-
-  if [ "$settings_image" = "$previous_image" ]; then
-    # The cutover never reached `once update`, so ONCE still points at the
-    # previous image and the local copy is enough: no registry round trip.
-    restore_target="$previous_image (already configured)"
-    log "rollback: ONCE still points at the previous image, starting it from the local copy"
-    once start "$app_host" || warn "rollback: once start reported an error"
-  else
-    # ONCE 0.3.2 always resolves --image through the registry, so it cannot
-    # consume the local-only campfire-rollback tag. The previous image's own
-    # registry reference is used instead; its layers are still in the local
-    # Docker cache, and the release has not logged out yet.
-    restore_target="$previous_image"
-    log "rollback: returning ONCE to $previous_image"
-    if ! once update "$app_host" --image "$previous_image" --auto-update=false; then
-      warn "rollback: 'once update --image $previous_image' failed"
-      warn "rollback: the exact previous image is retained locally as '$rollback_tag', but ONCE 0.3.2"
-      warn "rollback: resolves --image through the registry and cannot use a local-only tag."
-      warn "rollback: an operator must restore registry access, or push that tag somewhere ONCE can reach."
-      restore_target="restore failed"
-    fi
-  fi
-
-  container="$(discover_container || true)"
-  if [ -n "$container" ] && ! container_running "$container"; then
-    once start "$app_host" || warn "rollback: once start reported an error"
-  fi
+  restore_previous_image "$app_host" "$previous_image" "$rollback_tag"
+  restore_target="$RESTORE_TARGET"
   if wait_for_health "$app_host" "$HEALTH_TIMEOUT"; then health=healthy; else health=unhealthy; fi
 
   warn "rollback: the $TIMER_UNIT feed timer is deliberately left paused for operator review"
@@ -988,8 +1064,8 @@ phase_rollback() {
     --arg frozen "$frozen_fingerprint" --arg current "$current_fingerprint" \
     --arg health "$health" --arg timer "$TIMER_UNIT" \
     '{phase:$phase, at:$at, release_label:$label, app_host:$app_host, action:$action,
-      reason:$reason, restored_image:$restored_image, previous_image:$previous_image,
-      retained_local_tag:$rollback_tag,
+      reason:$reason, database_restored:false, restored_image:$restored_image,
+      previous_image:$previous_image, retained_local_tag:$rollback_tag,
       frozen_live_database_sha256:$frozen, current_live_database_sha256:$current,
       health:$health, feed_timer:$timer,
       feed_timer_state:"left paused for operator review"}' \
@@ -1000,10 +1076,14 @@ phase_rollback() {
 
 # ------------------------------------------------------------------- finish --
 
+# Only ever prunes directories this script produced. `/var/backups` also holds
+# the hand-made checkpoints from earlier manual releases (campfire-chat-ui-*,
+# campfire-activity-workspace-* and so on) and those must survive untouched.
 prune_release_dirs() {
   local keep="$RELEASE_KEEP" dir count=0
   [ "$keep" -ge 1 ] 2>/dev/null || return 0
   while IFS= read -r dir; do
+    [ -f "$dir/preflight-result.json" ] || continue
     count=$((count + 1))
     if [ "$count" -gt "$keep" ]; then
       log "finish: pruning old release directory $dir"

@@ -289,8 +289,11 @@ jobs:
           remote="sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' EXPECTED_APP_HOST='${GCP_APP_HOST}' /opt/campfire-deploy/campfire-release.sh preflight"
           # The VM receives a read-only Artifact Registry token, not the deployer's
           # own credential, and it arrives only on the SSH session's standard
-          # input: never in argv, an environment variable, or a file.
-          gcloud auth print-access-token --impersonate-service-account="$GCP_IMAGE_PULLER_SA" \
+          # input: never in argv or a file. It is registered as a secret first so
+          # that nothing downstream can print it, deliberately or by accident.
+          token="$(gcloud auth print-access-token --impersonate-service-account="$GCP_IMAGE_PULLER_SA")"
+          echo "::add-mask::${token}"
+          printf '%s\n' "$token" \
             | gcloud compute ssh "$GCP_INSTANCE" \
                 --zone "$GCP_ZONE" --tunnel-through-iap --quiet --command "$remote"
 
@@ -391,17 +394,35 @@ jobs:
           IMAGE_REF: ${{ steps.image.outputs.reference }}
           SIMULATE_FAILURE: ${{ steps.plan.outputs.simulate_failure }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # The remote exit code is the whole signal here: 10 means it never
+          # became healthy, 20 means it is healthy but a read-only check failed.
+          # Recovery must not touch a healthy application, so the code is
+          # published as a step output before this step fails.
+          set +e
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' CAMPFIRE_RELEASE_SIMULATE_FAILURE='${SIMULATE_FAILURE}' /opt/campfire-deploy/campfire-release.sh cutover"
+          rc=$?
+          set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 20 ]; then
+            echo "::error::the application is HEALTHY on the new image but a read-only check failed (exit 20). It has been left running; no rollback was attempted."
+          fi
+          exit "$rc"
 
       # Runs on failure, cancellation and timeout alike: anything that leaves the
       # write freeze without a successful cutover needs the host dealt with.
-      # The script decides what is safe: it only restores the previous image when
-      # the live database is provably untouched, and otherwise stops and pages.
+      #
+      # Exit 20 is the exception. The application is up and serving on the new
+      # image; a read-only check disagreed with it. Recovery starts by stopping
+      # the app, so running it here would turn a reporting failure into an
+      # outage. The job still fails, loudly, and an operator decides.
       - name: Recover after a failed or interrupted cutover
         id: rollback
-        if: always() && steps.freeze.conclusion == 'success' && steps.cutover.conclusion != 'success'
+        if: >-
+          always() && steps.freeze.conclusion == 'success'
+          && steps.cutover.conclusion != 'success'
+          && steps.cutover.outputs.rc != '20'
         timeout-minutes: 30
         shell: bash
         env:
@@ -475,6 +496,50 @@ jobs:
             echo "::warning::${timer} was active before the release and is '${active}' now; it needs an operator"
             echo "> :warning: The timer was active before this release and is **${active}** now. Resume it once the host has been reviewed." >> "$GITHUB_STEP_SUMMARY"
           fi
+          # The timer was already paused when this release started. `finish`
+          # faithfully restores that, which means the feed stays stopped — but it
+          # usually means an earlier release paused it and nobody resumed it.
+          if [[ "$recorded" == *"enabled=enabled"* ]] && [[ "$recorded" == *"active=inactive"* ]]; then
+            echo "::warning::${timer} was already enabled-but-inactive before this release; the feed was not running to begin with"
+            echo "> :warning: The timer was **enabled but inactive before this release started**, so it was restored to that state and the feed is still not running. That is usually the residue of an earlier interrupted release — check whether it should be resumed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Exit 20: healthy, but a read-only check disagreed. Nothing was rolled
+      # back on purpose. This step exists to make that decision visible.
+      - name: Report a healthy application that failed its checks
+        if: always() && steps.cutover.outputs.rc == '20'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          state_dir="/var/backups/campfire-${LABEL}"
+          deploy="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo cat '${state_dir}/deploy-result.json' 2>/dev/null || echo '{}'" 2>/dev/null | tr -d '\r')"
+          jq -e . <<<"$deploy" >/dev/null 2>&1 || deploy='{}'
+          failures="$(jq -r '.failed_checks // "unknown"' <<<"$deploy")"
+          files_ok="$(jq -r '.uploaded_files_identical // "unknown"' <<<"$deploy")"
+          {
+            echo "# :warning: RELEASE FAILED ITS CHECKS — THE APPLICATION IS STILL RUNNING"
+            echo
+            echo "The new image became healthy and is serving on \`${GCP_INSTANCE}\`, then"
+            echo "${failures} read-only check(s) failed. Because the application is up and may"
+            echo "have accepted writes, **no rollback was attempted and the database was not"
+            echo "touched**. The job fails so a human looks at it; the site is not down."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Running image | \`${REFERENCE}\` |"
+            echo "| Failed checks | \`${failures}\` |"
+            echo "| Uploaded files unchanged | \`${files_ok}\` |"
+            echo "| Release directory | \`${state_dir}\` |"
+            echo
+            echo "Review the checks in the cutover step's log. If the release must be undone,"
+            echo "do it by hand — the retained image tag and the frozen checkpoint are both in"
+            echo "the release directory, and the feed timer is still paused."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report the recovery outcome
         if: always() && steps.rollback.conclusion != 'skipped' && steps.rollback.conclusion != ''
@@ -514,18 +579,29 @@ jobs:
 
           if [ "$action" = "refused-database-changed" ]; then
             {
-              echo "## :no_entry: The database was NOT restored, and the app is STOPPED"
+              echo "## :no_entry: The database was NOT restored"
               echo
               echo "${reason}."
               echo
-              echo "The live database changed after the write freeze, so restoring the frozen"
-              echo "copy would have discarded whatever was written after it. The recovery phase"
-              echo "stopped the application and changed nothing else."
+              echo "The live database changed after the write freeze — the new image runs"
+              echo "\`db:prepare\` before puma, so it migrates on boot — and restoring the frozen"
+              echo "copy would have discarded that along with anything written since. The"
+              echo "database was therefore left untouched."
               echo
-              echo "**An operator must decide and act on \`${GCP_INSTANCE}\`:**"
+              echo "The application **was** returned to the previous image, which the pre-cutover"
+              echo "rehearsal proved can read the migrated schema."
               echo
-              echo "- Keep the new writes and stay on the new image, or"
-              echo "- return to \`${previous_image}\` only if its schema still reads the migrated database, or"
+              echo "| Field | Value |"
+              echo "| --- | --- |"
+              echo "| App host | \`${app_host}\` |"
+              echo "| Running image | \`${restored_image}\` |"
+              echo "| Health | \`${health}\` |"
+              echo "| Database | left as it was, **not** restored |"
+              echo
+              echo "**This still needs an operator on \`${GCP_INSTANCE}\`:**"
+              echo
+              echo "- Confirm the previous code is behaving correctly against the migrated schema, or"
+              echo "- put the new image back and continue the release, or"
               echo "- restore \`${state_dir}/before.once.tar.gz\` and accept losing everything written after the freeze."
               echo
               echo "The feed timer is deliberately left paused."
@@ -598,8 +674,13 @@ jobs:
           logged_out="$(jq -r '.registry_logged_out // false' finish.json)"
           snapshot_line="${SNAPSHOT:-unknown}"
           [ "$SKIP_SNAPSHOT" = "true" ] && snapshot_line="skipped (skip_snapshot=true)"
-          ci_line="$CI_RUN_URL"
-          [ "$ci_line" = "none" ] && ci_line="no successful CI run was recorded for this revision"
+          # Only render a link when there is a URL to link to; a sentinel inside
+          # markdown link syntax produces a broken link in the pasted record.
+          if [ -z "$CI_RUN_URL" ] || [ "$CI_RUN_URL" = "none" ]; then
+            ci_line="- CI: no successful \`CI\` run was recorded for this revision."
+          else
+            ci_line="- [CI on the application revision](${CI_RUN_URL})."
+          fi
 
           {
             echo "## Paste-ready release record"
@@ -618,7 +699,7 @@ jobs:
             echo
             echo "## Validation"
             echo
-            echo "- [CI on the application revision](${ci_line})."
+            echo "${ci_line}"
             echo "- Before the cutover, the candidate image migrated a copy of the frozen database in a network-isolated throwaway container: ${preserved}; additive ${additive}."
             echo "- Writes were frozen at \`${frozen_at}\` and reopened at \`${reopened}\`."
             echo "- After the cutover, health \`GET https://${app_host}/up\` returned \`${health_status}\`, the running digest, storage volume and environment key names matched, and all ${file_count} pre-existing uploaded files were unchanged (\`${files_ok}\`)."
