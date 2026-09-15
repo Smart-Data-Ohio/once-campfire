@@ -335,15 +335,18 @@ jobs:
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' CAMPFIRE_RELEASE_SIMULATE_FAILURE='${SIMULATE_FAILURE}' /opt/campfire-deploy/campfire-release.sh cutover"
 
-      - name: Roll back after a failed cutover
+      # Any failure once writes are frozen leaves the application stopped, so the
+      # rollback runs for a failed snapshot as well as a failed cutover. It
+      # restarts the app on the previous digest either way.
+      - name: Roll back after a failure during the write freeze
         id: rollback
-        if: failure() && steps.cutover.conclusion == 'failure'
+        if: failure() && steps.freeze.conclusion == 'success'
         shell: bash
         env:
           LABEL: ${{ steps.plan.outputs.label }}
         run: |
           set -euo pipefail
-          echo "::error::cutover failed; rolling back to the previous image and restoring the frozen database"
+          echo "::error::the release failed while writes were frozen; rolling back to the previous image and restoring the frozen database"
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh rollback"
 
@@ -424,7 +427,7 @@ jobs:
             {
               echo "# :rotating_light: RELEASE FAILED AND WAS ROLLED BACK :rotating_light:"
               echo
-              echo "The cutover never reached a healthy \`/up\` on \`${app_host}\`."
+              echo "The release failed while writes were frozen (cutover outcome: \`${CUTOVER}\`)."
               echo "\`${app_host}\` was returned to \`${previous_image}\` and the frozen database was restored."
               echo "**The Open Roles feed timer was deliberately left paused. Review the host before resuming it.**"
               echo
