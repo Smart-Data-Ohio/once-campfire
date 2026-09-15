@@ -576,7 +576,21 @@ jobs:
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$action" = "refused-database-changed" ]; then
+          if [ "$action" = "refused-application-healthy" ]; then
+            healthy_at="$(jq -r '.cutover_healthy_at // "unknown"' rollback.json)"
+            {
+              echo "## :white_check_mark: The application is healthy and was left alone"
+              echo
+              echo "The cutover succeeded at \`${healthy_at}\` and \`https://${app_host}/up\` still"
+              echo "returns 200. The release was interrupted after that — a cancellation, a"
+              echo "timeout or a dropped connection — so the recovery phase declined to stop and"
+              echo "downgrade a working deployment. Nothing was stopped, restored or changed."
+              echo
+              echo "**Bookkeeping is still outstanding on \`${GCP_INSTANCE}\`:** the feed timer is"
+              echo "paused and the temporary registry credentials are still present. Re-run this"
+              echo "workflow's \`finish\` phase, or do both by hand."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$action" = "refused-database-changed" ]; then
             {
               echo "## :no_entry: The database was NOT restored"
               echo

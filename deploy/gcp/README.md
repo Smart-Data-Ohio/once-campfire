@@ -83,7 +83,7 @@ moment writes are frozen. Every invocation takes `flock` on
 | `preflight` | Discovers the ONCE app, container, storage volume and current digest; **records the feed timer state once** (a retry never overwrites it); checks free disk against the real volume and image sizes; refuses to run on top of an in-flight ONCE backup or inside the nightly backup window; authenticates to the registry from stdin; pulls the exact digest and asserts it is `linux/amd64`. A dry run stops here. |
 | `freeze` | **Refuses a release directory that already has `freeze-result.json` unless `RESUME=1`.** Pauses the feed timer and waits for the current feed run to finish; snapshots the database through the SQLite backup API; stops the app and **asserts no application container is still running**; fingerprints the live database; hashes every uploaded file; tags `campfire-rollback:before-<label>`; archives the ONCE application and the host feed state; then **rehearses the migration** on a copy. Any failure here restores the feed timer through a trap. |
 | `cutover` | `once update <host> --image IMAGE@DIGEST --auto-update=false` (no `--env`, so ONCE keeps the whole existing environment map), waits for `/up` to return 200, then runs read-only checks: running digest, environment key names, volume identity, pre-existing uploaded file hashes, and required processes. Exits `10` if it never became healthy and `20` if it became healthy but a check failed. |
-| `rollback` | Stops the app, asserts it is stopped, then compares the live database fingerprint to the freeze. **It never writes to the database.** In both cases it returns ONCE to the previous image and gets it serving again — starting it from the local copy when ONCE still points at it (the cutover never got as far as `once update`), otherwise through `once update --image <previous registry reference>`. What differs is the verdict: an unchanged database means nothing was lost and the phase exits `0`; a changed database means the candidate already migrated or accepted writes, so the frozen copy is **not** restored over it, the run is recorded as `refused-database-changed`, and it exits `30` to page an operator. Leaves the feed timer paused either way. |
+| `rollback` | Refuses outright when the cutover already reported healthy and `/up` still returns 200: an interruption after a successful cutover must not downgrade a working deployment, so it records `refused-application-healthy` and exits `30` with the outstanding bookkeeping. Otherwise it stops the app, asserts it is stopped, then compares the live database fingerprint to the freeze. **It never writes to the database.** In both cases it returns ONCE to the previous image and gets it serving again — starting it from the local copy when ONCE still points at it (the cutover never got as far as `once update`), otherwise through `once update --image <previous registry reference>`. What differs is the verdict: an unchanged database means nothing was lost and the phase exits `0`; a changed database means the candidate already migrated or accepted writes, so the frozen copy is **not** restored over it, the run is recorded as `refused-database-changed`, and it exits `30` to page an operator. Leaves the feed timer paused either way. |
 | `finish` | Restores the feed timer to its recorded state, drops registry credentials, writes `finish-result.json` and `writes-reopened-at`, then prunes old release directories. |
 | `logout` | Drops registry credentials only. Used to end a dry run. |
 | `timer-state` | Prints the recorded and current feed timer state as JSON. Read-only. |
@@ -93,9 +93,9 @@ moment writes are frozen. Every invocation takes `flock` on
 | Code | Meaning |
 | --- | --- |
 | `1` | A precondition or a phase failed. Nothing was cut over. |
-| `10` | The cutover never reached a healthy `/up`. The database may still be untouched, so the rollback can complete. |
+| `10` | The cutover never reached a healthy `/up`. If it aborted before `once update` the database is untouched and the rollback completes cleanly; otherwise the candidate has usually already migrated it on boot, so the run exits `30` and restores the previous image without touching the database. |
 | `20` | The application became healthy but a read-only check failed. It may have accepted writes, so it is **left running** and the workflow does not attempt recovery. The job fails; an operator decides. |
-| `30` | The rollback refused to restore the database because it changed after the freeze. The previous image was still restored and the app is serving; the database was left as it was. **An operator must act.** |
+| `30` | The rollback refused to change something. Either the database changed after the freeze — the previous image was still restored and the app is serving, the database was left as it was — or the application is healthy on the new image and was left running untouched. **An operator must act** in both cases. |
 
 ### Configuration
 
@@ -155,6 +155,9 @@ preflight-result.json       app, volume, current and target image and revision
 freeze-result.json          previous image and revision, rollback tag, archive
                             SHA-256s, and the live database fingerprint
 deploy-result.json          running digest, env key names, check results
+cutover-healthy-at          when /up first returned 200 on the new image; its
+                            presence is what stops a later recovery from
+                            downgrading a deployment that is still working
 rollback-result.json        written only when the recovery phase ran
 finish-result.json          feed timer state, registry logout proof, health
 writes-reopened-at          the moment chat reopened
@@ -246,7 +249,8 @@ deliberate exception: exit `20` — healthy, but a read-only check failed — le
 the running application alone, because recovery begins by stopping it and a
 reporting failure should not become an outage.
 
-Recovery never writes to the database. It restores the previous image and gets it
+Recovery never writes to the database, and never downgrades an application that is
+still healthy on the new image. Otherwise it restores the previous image and gets it
 serving; the job summary then says plainly whether the database was left as it was
 and an operator has to decide. The frozen checkpoint, the boot-disk snapshot and
 the `campfire-rollback:before-<label>` image all stay on the host.

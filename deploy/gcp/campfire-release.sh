@@ -823,6 +823,12 @@ phase_cutover() {
     exit "$EXIT_UNHEALTHY"
   fi
 
+  # Recorded the moment the new image serves, so that a recovery triggered by
+  # something other than the application itself — a cancelled job, a runner
+  # timeout, a dropped SSH session — can tell a working deployment from a
+  # broken one and decline to downgrade it.
+  now_utc | write_state cutover-healthy-at
+
   # From here the application is serving and may accept writes. Every check
   # below is read-only: it can fail the release, but nothing it finds justifies
   # restoring a database over writes that users may already have made.
@@ -931,7 +937,7 @@ RESTORE_TARGET=""
 # code therefore still reads the migrated schema.
 restore_previous_image() {
   local app_host="$1" previous_image="$2" rollback_tag="$3"
-  local container settings_image=""
+  local container settings_image="" started_image="" needs_update=1
 
   container="$(discover_container || true)"
   [ -n "$container" ] && settings_image="$(settings_field "$container" '.image')"
@@ -942,13 +948,31 @@ restore_previous_image() {
     warn "rollback: $rollback_tag is not present locally"
   fi
 
+  # Fast path. The container left on the host still carries the previous
+  # image's settings, so simply starting it may be enough and costs no registry
+  # round trip. That is only a hint, though, not proof: an `once update` that
+  # failed *after* rewriting ONCE's own settings leaves exactly this state while
+  # ONCE already points at the candidate, in which case `once start` would boot
+  # the broken image. So what actually came up is verified before trusting it.
   if [ "$settings_image" = "$previous_image" ]; then
-    # The cutover never reached `once update`, so ONCE still points at the
-    # previous image and the local copy is enough: no registry round trip.
-    RESTORE_TARGET="$previous_image (already configured)"
-    log "rollback: ONCE still points at the previous image, starting it from the local copy"
+    log "rollback: the existing container still carries the previous image, trying a local start"
     once start "$app_host" || warn "rollback: once start reported an error"
-  else
+    sleep 3
+    container="$(discover_container || true)"
+    if [ -n "$container" ] && container_running "$container"; then
+      started_image="$(settings_field "$container" '.image')"
+    fi
+    if [ "$started_image" = "$previous_image" ]; then
+      RESTORE_TARGET="$previous_image (started from the local copy)"
+      log "rollback: $app_host is running the previous image again"
+      needs_update=0
+    else
+      warn "rollback: the local start brought up '${started_image:-nothing}', not the previous image"
+      warn "rollback: ONCE's stored settings must already point elsewhere; forcing an explicit update"
+    fi
+  fi
+
+  if [ "$needs_update" -eq 1 ]; then
     # ONCE 0.3.2 always resolves --image through the registry, so it cannot
     # consume the local-only campfire-rollback tag. The previous image's own
     # registry reference is used instead; its layers are still in the local
@@ -979,6 +1003,50 @@ phase_rollback() {
   previous_image="$(read_json_field "$freeze" '.previous_image')"
   rollback_tag="$(read_json_field "$freeze" '.rollback_tag')"
   frozen_fingerprint="$(read_json_field "$freeze" '.frozen_live_database_sha256')"
+
+  # The cutover got the new image serving and it is still serving now. Whatever
+  # brought the workflow here — a cancelled job, a runner timeout, a dropped
+  # connection — did not come from the application, and stopping a working
+  # deployment to downgrade it would be strictly worse than leaving it alone.
+  if have_state_file cutover-healthy-at; then
+    local healthy_at current_code
+    healthy_at="$(cat "$(state_path cutover-healthy-at)")"
+    current_code="$(health_code "$app_host")"
+    if [ "$current_code" = "200" ]; then
+      local reason="the cutover succeeded at ${healthy_at} and https://${app_host}/up still returns 200, so the running deployment was left alone"
+      warn "rollback: $reason"
+      jq -n \
+        --arg phase rollback --arg at "$(now_utc)" --arg label "$RELEASE_LABEL" \
+        --arg app_host "$app_host" --arg action refused-application-healthy \
+        --arg reason "$reason" --arg healthy_at "$healthy_at" \
+        --arg image "${IMAGE_REF:-unknown}" --arg previous_image "$previous_image" \
+        --arg rollback_tag "$rollback_tag" --arg timer "$TIMER_UNIT" \
+        '{phase:$phase, at:$at, release_label:$label, app_host:$app_host, action:$action,
+          reason:$reason, database_restored:false, cutover_healthy_at:$healthy_at,
+          running_image:$image, previous_image:$previous_image,
+          retained_local_tag:$rollback_tag, health:"healthy", feed_timer:$timer,
+          feed_timer_state:"left paused for operator review"}' \
+        | write_state rollback-result.json
+
+      printf '\n' >&2
+      warn "================ OPERATOR ACTION REQUIRED ================"
+      warn "The recovery phase ran, but ${app_host} is HEALTHY on the new image and has"
+      warn "been serving since ${healthy_at}. Nothing was stopped, downgraded or restored."
+      warn ""
+      warn "The release was interrupted after the cutover succeeded, so all that is left"
+      warn "is the bookkeeping an operator has to finish by hand:"
+      warn "  * resume the ${TIMER_UNIT} feed timer once the host looks right:"
+      warn "      sudo systemctl start ${TIMER_UNIT}"
+      warn "  * drop the temporary registry credentials:"
+      warn "      sudo env RELEASE_LABEL='${RELEASE_LABEL}' /opt/campfire-deploy/campfire-release.sh finish"
+      warn ""
+      warn "If the release must be undone, do it deliberately: the previous image is"
+      warn "${previous_image} and the frozen checkpoint is in ${STATE_DIR}."
+      warn "========================================================="
+      exit "$EXIT_ROLLBACK_REFUSED"
+    fi
+    warn "rollback: the cutover reported healthy at ${healthy_at} but /up now returns ${current_code}; continuing with the recovery"
+  fi
 
   warn "rollback: stopping $app_host before inspecting the database"
   once stop "$app_host" || warn "rollback: once stop reported an error"
