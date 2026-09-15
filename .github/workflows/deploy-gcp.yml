@@ -183,10 +183,14 @@ jobs:
           echo "Found ${runs} successful CI run(s) for ${SHA}."
 
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          # The credentials file drives the gcloud CLI; the access token is the
+          # short-lived registry credential handed to the VM over stdin.
+          token_format: access_token
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
@@ -235,10 +239,13 @@ jobs:
         env:
           LABEL: ${{ steps.plan.outputs.label }}
           IMAGE_REF: ${{ steps.image.outputs.reference }}
+          REGISTRY_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           set -euo pipefail
           remote="sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' EXPECTED_APP_HOST='${GCP_APP_HOST}' /opt/campfire-deploy/campfire-release.sh preflight"
-          gcloud auth print-access-token | gcloud compute ssh "$GCP_INSTANCE" \
+          # The token reaches the host only on the SSH session's standard input;
+          # it is never written to a file or passed in argv.
+          printf '%s\n' "$REGISTRY_TOKEN" | gcloud compute ssh "$GCP_INSTANCE" \
             --zone "$GCP_ZONE" --tunnel-through-iap --quiet --command "$remote"
 
       - name: Dry run summary
