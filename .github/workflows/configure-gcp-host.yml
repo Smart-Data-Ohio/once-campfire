@@ -120,7 +120,7 @@ jobs:
             echo "| Instance | \`${GCP_INSTANCE}\` (\`${GCP_ZONE}\`) |"
             echo "| Dry run | \`${DRY_RUN}\` |"
             echo "| Swap file | \`$(field swap_path)\` |"
-            echo "| Swap size | \`$(field swap_size_mb) MB\` |"
+            echo "| Swap size | \`$(field swap_size_mb) MB\` on the host, \`$(field swap_requested_mb) MB\` requested |"
             echo "| Swap active | \`$(field swap_active)\` |"
             echo "| Created by this run | \`$(field swap_created)\` |"
             echo "| Persisted in /etc/fstab | \`$(field fstab_entry)\` |"

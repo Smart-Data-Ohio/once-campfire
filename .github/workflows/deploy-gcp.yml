@@ -320,6 +320,10 @@ jobs:
         id: prepare_host
         timeout-minutes: 15
         shell: bash
+        # Belt and braces around HOST_PREP_STRICT=false: even a fault in this
+        # phase — not just the host drift it already steps around — must not be
+        # what stops a release. The outcome is reported in the summary instead.
+        continue-on-error: true
         env:
           LABEL: ${{ steps.plan.outputs.label }}
           DRY_RUN: ${{ steps.plan.outputs.dry_run }}
@@ -335,10 +339,12 @@ jobs:
           # sized or a disk too full is reported and stepped around, never a
           # reason to refuse to deploy. The phase is idempotent, so on a prepared
           # host it is a no-op. A dry run changes nothing but its result file.
+          rc=0
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' HOST_PREP_STRICT=false /opt/campfire-deploy/campfire-release.sh prepare-host"
-          # Reporting must never be the thing that fails a release: a dropped
-          # tunnel here degrades every field to "unknown".
+            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' HOST_PREP_STRICT=false /opt/campfire-deploy/campfire-release.sh prepare-host" || rc=$?
+          # The result is read even when the phase failed, so the summary can say
+          # what the host looks like now. Reporting must never be the thing that
+          # fails a release either: a dropped tunnel degrades a field to "unknown".
           json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
             --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')" || true
           # `//` in jq treats `false` as absent, and `false` is exactly the
@@ -350,11 +356,16 @@ jobs:
           {
             echo "swap_path=$(field swap_path)"
             echo "swap_size_mb=$(field swap_size_mb)"
+            echo "swap_requested_mb=$(field swap_requested_mb)"
             echo "swap_active=$(field swap_active)"
             echo "swap_created=$(field swap_created)"
             echo "swappiness=$(field swappiness)"
             echo "skipped_reason=$(field skipped_reason)"
           } >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::host preparation exited ${rc}; the release continues and the summary records it"
+          fi
+          exit "$rc"
 
       - name: Preflight on the VM
         id: preflight
@@ -390,10 +401,12 @@ jobs:
           ENVIRONMENT: ${{ inputs.environment }}
           SWAP_PATH: ${{ steps.prepare_host.outputs.swap_path }}
           SWAP_SIZE_MB: ${{ steps.prepare_host.outputs.swap_size_mb }}
+          SWAP_REQUESTED_MB: ${{ steps.prepare_host.outputs.swap_requested_mb }}
           SWAP_CREATED: ${{ steps.prepare_host.outputs.swap_created }}
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
           SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
+          PREP_OUTCOME: ${{ steps.prepare_host.outcome }}
         run: |
           set -euo pipefail
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
@@ -414,10 +427,13 @@ jobs:
             echo "| Image | \`${REFERENCE}\` |"
             echo "| Release label | \`${LABEL}\` |"
             echo "| Would snapshot | \`${SNAPSHOT}\` |"
-            echo "| Swap file | \`${SWAP_PATH}\`, \`${SWAP_SIZE_MB} MB\`, active \`${SWAP_ACTIVE}\`, created this run \`${SWAP_CREATED}\` |"
+            echo "| Swap file | \`${SWAP_PATH}\`, \`${SWAP_SIZE_MB} MB\` on the host of \`${SWAP_REQUESTED_MB} MB\` requested, active \`${SWAP_ACTIVE}\`, created this run \`${SWAP_CREATED}\` |"
             echo "| vm.swappiness | \`${SWAPPINESS}\` |"
             if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
               echo "| Host preparation skipped | \`${SWAP_SKIPPED}\` |"
+            fi
+            if [ "$PREP_OUTCOME" != "success" ]; then
+              echo "| Host preparation step | \`${PREP_OUTCOME}\` — it did not stop the release; read its log |"
             fi
             echo
             echo "Re-run with \`dry_run=false\` to perform the release."
@@ -749,10 +765,12 @@ jobs:
           CI_RUN_URL: ${{ steps.ci.outputs.run_url }}
           SWAP_PATH: ${{ steps.prepare_host.outputs.swap_path }}
           SWAP_SIZE_MB: ${{ steps.prepare_host.outputs.swap_size_mb }}
+          SWAP_REQUESTED_MB: ${{ steps.prepare_host.outputs.swap_requested_mb }}
           SWAP_CREATED: ${{ steps.prepare_host.outputs.swap_created }}
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
           SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
+          PREP_OUTCOME: ${{ steps.prepare_host.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -816,6 +834,9 @@ jobs:
             host_line="- Host preparation: \`${SWAP_SIZE_MB} MB\` swap at \`${SWAP_PATH}\` (active \`${SWAP_ACTIVE}\`, created by this release \`${SWAP_CREATED}\`), \`vm.swappiness=${SWAPPINESS}\`."
             if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
               host_line="${host_line} Host preparation was skipped: ${SWAP_SKIPPED}."
+            fi
+            if [ "$PREP_OUTCOME" != "success" ]; then
+              host_line="${host_line} The host preparation step itself reported \`${PREP_OUTCOME}\`; it did not stop the release."
             fi
             echo "$host_line"
             echo "- Open Roles timer restored to \`${timer_state}\`; temporary registry credentials removed: \`${logged_out}\`."

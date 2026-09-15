@@ -159,7 +159,8 @@ be the last word, and a swap file created after it would quietly eat a gigabyte 
 the budget it had just approved. On a prepared host the phase is a no-op that reports
 what is already there, and `swap_created` in `prepare-host-result.json` says whether
 this run made the file. `swap_size_mb` reports the size of the file that is actually
-on the host, which is not necessarily the size that was asked for.
+on the host — `0` when there is none — and `swap_requested_mb` what was asked for;
+the two differ exactly when the phase decided to leave the host alone.
 
 It is deliberately unwilling to do the interesting thing:
 
@@ -172,13 +173,23 @@ It is deliberately unwilling to do the interesting thing:
 - It refuses to create a swap file that would leave the root filesystem under 5 GB
   free, and it never touches a swap device other than `SWAP_PATH`.
 
-`HOST_PREP_STRICT` decides what those first and third conditions *mean*. The
-on-demand workflow runs strict (`true`): fixing the host is the point of the run, so
-drift fails it. A release runs non-strict (`false`): the condition is logged as a
-warning, nothing on the host is touched, and the reason is recorded in the result
-file as `skipped_reason` and surfaced in the job summary. A release must never be
-blocked by a swap file somebody else sized. A signature that is not swap fails in
-both modes.
+`HOST_PREP_STRICT` decides what all of that *means*. The on-demand workflow runs
+strict (`true`): fixing the host is the point of the run, so drift fails it. A release
+runs non-strict (`false`): the condition is logged as a warning, the swap file and
+`/etc/fstab` are left untouched — `vm.swappiness` is still applied, since it is
+independent of the swap file — and the reason is recorded in the result file as
+`skipped_reason` and surfaced in the job summary. A release must never be blocked by
+a swap file somebody else sized. The recorded reasons are `wrong-size`,
+`non-swap-signature`, `not-a-regular-file`, `preexisting-file-refused`,
+`insufficient-free-space` and `fstab-preexisting-errors`.
+
+Drift is not the same as a fault. A missing tool, a `mkswap` that fails on a file
+this run just built, or an `/etc/fstab` that only this phase's own line broke are
+bugs in the phase or in the host's basics, and they fail in either mode. As a second
+line of defence the release workflow marks the step `continue-on-error`, so even
+those cannot stop a release; the step's outcome is reported in the job summary and
+the release record instead. The on-demand workflow deliberately does not, because
+there a failure is the answer the run exists to give.
 
 Two failure modes get specific care, because both are the kind that only show up
 later:
@@ -188,16 +199,24 @@ later:
   partial file and a sweep that removes a stale one at the start of the next run. A
   step timeout, a cancelled job or a dropped IAP tunnel therefore leaves nothing that
   the next release would refuse as wrong-sized.
-- **`/etc/fstab` is never appended to blindly.** A last line without a trailing
-  newline would fuse with the swap entry and send the next reboot into emergency
-  mode. The phase builds the candidate beside the original, terminates it with a
-  newline if the original lacked one, checks it with `findmnt --verify --fstab`,
-  keeps the previous copy as `/etc/fstab.campfire.bak`, and only then moves it into
-  place with the original's mode and owner.
+- **`/etc/fstab` is never appended to blindly.** The phase verifies the existing
+  file with `findmnt --verify` *before anything else happens*: an `/etc/fstab` that
+  was already broken is the host's problem, but adding a swap entry to it — or
+  activating swap this phase could then not record — would make it ours, so it stops
+  there (`fstab-preexisting-errors`). Otherwise it builds the candidate beside the
+  original, terminates it with a newline if the original lacked one (a last line
+  without one would fuse with the swap entry and send the next reboot into emergency
+  mode), verifies the candidate, keeps the previous copy as `/etc/fstab.campfire.bak`,
+  and only then moves it into place with the original's mode and owner. A dry run
+  builds and verifies that candidate too, then throws it away, so a green dry run
+  means the real append verifies.
 
-If `swapon` refuses a file this run just created with `fallocate` — the "swapfile has
-holes" case on some filesystems — the phase rebuilds that same file with `dd` and
-retries once. A file it did not create is never removed. It also warns, without
+Whether `fallocate` can be used is settled by asking it for one megabyte first, not
+by letting a real allocation fail halfway, so the code that builds the file runs
+under `errexit` and a failing `mkswap` is reported as a failing `mkswap`. If `swapon`
+then refuses a file this run just created with `fallocate` — the "swapfile has holes"
+case on some filesystems — the phase rebuilds that same file with `dd` and retries
+once. A file it did not create is never removed or rewritten. It also warns, without
 failing, when `/etc/sysctl.conf` sets `vm.swappiness`, because systemd applies that
 file after everything in `/etc/sysctl.d` and it would win at every boot.
 
