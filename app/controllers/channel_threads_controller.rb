@@ -20,17 +20,19 @@ class ChannelThreadsController < ApplicationController
   end
 
   def show
-    @messages = @thread.messages.with_creator.with_attachment_details.with_boosts.last_page
+    @messages = @thread.messages.with_rendering_details.last_page
     no_store_response! if request.format.json?
 
     respond_to do |format|
       format.html
       format.json do
-        render json: {
-          thread: thread_payload(@thread, include_work_history: true, include_work_owner_options: true),
-          parent_message: message_payload(@thread.parent_message),
-          messages: @messages.map { |message| message_payload(message, include_thread_summary: false) }
-        }
+        caching_thread_payloads do
+          render json: {
+            thread: thread_payload(@thread, include_work_history: true, include_work_owner_options: true),
+            parent_message: message_payload(@thread.parent_message),
+            messages: @messages.map { |message| message_payload(message, include_thread_summary: false) }
+          }
+        end
       end
     end
   end
@@ -284,7 +286,7 @@ class ChannelThreadsController < ApplicationController
     end
 
     def find_content_messages
-      messages = @thread.messages.with_creator.with_attachment_details.with_boosts
+      messages = @thread.messages.with_rendering_details
       return [ messages.last_page, nil ] if params[:message_id].blank?
 
       anchor = @thread.messages.find(params[:message_id])

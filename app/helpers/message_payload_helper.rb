@@ -26,41 +26,27 @@ module MessagePayloadHelper
     }.compact
   end
 
+  # Reuse thread payloads for the duration of the block. Building one costs
+  # several queries (membership lookup, message count, member count, and the
+  # permission checks), and a list of messages from a single thread repeats all
+  # of it per message. Opt-in rather than automatic so that an action which
+  # mutates a thread and then re-renders it cannot serve a stale payload.
+  def caching_thread_payloads
+    previous, @thread_payload_cache = @thread_payload_cache, {}
+    yield
+  ensure
+    @thread_payload_cache = previous
+  end
+
   def thread_payload(thread, include_work_history: false, include_work_owner_options: false)
     return if thread.blank?
 
-    membership = Current.user && thread.membership_for(Current.user)
-    # Explicit nulls tell an open panel to clear a deleted starter or old state.
-    {
-      id: thread.id,
-      name: thread.name,
-      status: thread.status,
-      room_id: thread.room_id,
-      parent_message_id: thread.parent_message_id,
-      last_activity_at: thread.last_activity_at&.utc,
-      closed_at: thread.closed_at&.utc,
-      locked_at: thread.locked_at&.utc,
-      auto_archive_after_minutes: thread.auto_archive_after_minutes,
-      work: thread.work?,
-      work_status: thread.work_status,
-      work_owner_id: thread.work_owner_id,
-      work_owner: work_owner_payload(thread.work_owner),
-      work_owner_active: thread.work_owner_active?,
-      work_history: include_work_history ? work_thread_event_payloads(thread) : nil,
-      work_owner_options: include_work_owner_options ? work_owner_options(thread) : nil,
-      joined: membership.present?,
-      unread: membership&.unread?,
-      involvement: membership&.involvement,
-      message_count: thread.messages.count,
-      member_count: thread.memberships.count,
-      creator: user_payload(thread.creator),
-      # `url` is the JSON/thread API endpoint consumed by the panel. Human
-      # permalinks use `permalink_url`, which opens the parent room and its
-      # normal composer instead of the standalone nested-message page.
-      url: room_thread_url(thread.room, thread),
-      permalink_url: room_url(thread.room, thread: thread.id),
-      permissions: thread_permissions_payload(thread)
-    }
+    if @thread_payload_cache
+      @thread_payload_cache[[ thread.id, include_work_history, include_work_owner_options ]] ||=
+        build_thread_payload(thread, include_work_history:, include_work_owner_options:)
+    else
+      build_thread_payload(thread, include_work_history:, include_work_owner_options:)
+    end
   end
 
   def message_permalink_url(message)
@@ -186,6 +172,41 @@ module MessagePayloadHelper
       thread.present? ? thread_payload(thread) : nil
     end
 
+    def build_thread_payload(thread, include_work_history: false, include_work_owner_options: false)
+      membership = Current.user && thread.membership_for(Current.user)
+      # Explicit nulls tell an open panel to clear a deleted starter or old state.
+      {
+        id: thread.id,
+        name: thread.name,
+        status: thread.status,
+        room_id: thread.room_id,
+        parent_message_id: thread.parent_message_id,
+        last_activity_at: thread.last_activity_at&.utc,
+        closed_at: thread.closed_at&.utc,
+        locked_at: thread.locked_at&.utc,
+        auto_archive_after_minutes: thread.auto_archive_after_minutes,
+        work: thread.work?,
+        work_status: thread.work_status,
+        work_owner_id: thread.work_owner_id,
+        work_owner: work_owner_payload(thread.work_owner),
+        work_owner_active: thread.work_owner_active?,
+        work_history: include_work_history ? work_thread_event_payloads(thread) : nil,
+        work_owner_options: include_work_owner_options ? work_owner_options(thread) : nil,
+        joined: membership.present?,
+        unread: membership&.unread?,
+        involvement: membership&.involvement,
+        message_count: thread.messages.count,
+        member_count: thread.memberships.count,
+        creator: user_payload(thread.creator),
+        # `url` is the JSON/thread API endpoint consumed by the panel. Human
+        # permalinks use `permalink_url`, which opens the parent room and its
+        # normal composer instead of the standalone nested-message page.
+        url: room_thread_url(thread.room, thread),
+        permalink_url: room_url(thread.room, thread: thread.id),
+        permissions: thread_permissions_payload(thread)
+      }
+    end
+
     def thread_permissions_payload(thread)
       membership = Current.user && thread.membership_for(Current.user)
       settings = thread.settings_manageable_by?(Current.user)
@@ -208,12 +229,19 @@ module MessagePayloadHelper
       }
     end
 
+    # Reads the boosts association in memory. A GROUP BY plus a pluck meant two
+    # round trips even when the rows were already loaded.
     def reaction_payload(message)
-      counts = message.boosts.group(:content).distinct.count(:booster_id)
-      active = message.boosts.where(booster: Current.user).pluck(:content).to_set
+      by_content = message.boosts.group_by(&:content)
+      current_user_id = Current.user&.id
 
       EmojiHelper::REACTIONS.to_h do |character, title|
-        [ character, { title:, count: counts.fetch(character, 0), active: active.include?(character) } ]
+        boosts = by_content[character] || []
+        [ character, {
+          title:,
+          count: boosts.map(&:booster_id).compact.uniq.size,
+          active: boosts.any? { |boost| boost.booster_id == current_user_id }
+        } ]
       end
     end
 end

@@ -34,10 +34,58 @@ class Message < ApplicationRecord
   scope :with_creator, -> { preload(creator: :avatar_attachment) }
   scope :with_attachment_details, -> {
     with_rich_text_body_and_embeds
-    with_attached_attachment
+      .with_attached_attachment
       .includes(attachment_blob: :variant_records)
   }
   scope :with_boosts, -> { includes(boosts: :booster) }
+  # Everything messages/_message and its partials touch, so rendering a page of
+  # messages costs a fixed number of queries instead of a set per message.
+  # messages/_context reads the reply source's author, body and room - it links
+  # to the source with message_link_url - and search results span rooms, so
+  # neither :room nor anything hanging off the reply source can be assumed
+  # already loaded.
+  scope :with_rendering_details, -> {
+    with_creator
+      .with_attachment_details
+      .with_boosts
+      .preload(:room, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+  }
+  # The JSON payload reads the creator, body, attachment filename, room, reply
+  # source and thread, but never boosts or image variants, so it gets a lighter
+  # set than the HTML partials need. The reply source needs its own room because
+  # compact_message_payload builds a permalink for it.
+  scope :with_payload_details, -> {
+    with_creator
+      .with_rich_text_body_and_embeds
+      .with_attached_attachment
+      .preload(:room, :thread, :channel_thread, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+  }
+
+  class << self
+    # The associations with_rendering_details loads, in the form
+    # ActiveRecord::Associations::Preloader wants. Derived from the scope rather
+    # than restated, so the two cannot drift apart.
+    def rendering_associations
+      relation = with_rendering_details
+      relation.preload_values + relation.includes_values
+    end
+
+    # Load those associations onto records that were selected without them, so
+    # that a conditional GET can answer 304 before paying for any of it.
+    def preload_rendering_details(records)
+      return records if records.empty?
+
+      ActiveRecord::Associations::Preloader.new(records: records, associations: rendering_associations).call
+      records
+    end
+  end
+
+  # Sorting in Ruby rather than with the `ordered` scope, because applying a
+  # scope to an association builds a fresh relation and so ignores the rows
+  # `with_boosts` already preloaded — one extra query per message rendered.
+  def ordered_boosts
+    boosts.sort_by { |boost| [ boost.created_at, boost.id ] }
+  end
 
   def plain_text_body
     text = markdown? ? Markdown.plain_text(body.body) : body.to_plain_text

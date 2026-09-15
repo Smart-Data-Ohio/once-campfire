@@ -1,6 +1,7 @@
 require "active_support/core_ext/integer/time"
 require "active_support/core_ext/numeric/bytes"
 require_relative "../../lib/rails_ext/log_scrubbing_formatter"
+require_relative "../../lib/rails_ext/immutable_asset_headers"
 
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
@@ -15,20 +16,21 @@ Rails.application.configure do
   config.consider_all_requests_local       = false
   config.action_controller.perform_caching = true
 
-  # Cache digest stamped assets for far-future expiry.
-  # Short cache for others: robots.txt, sitemap.xml, 404.html, etc.
+  # Short cache for everything the public file server serves: robots.txt,
+  # 404.html, 502.html and friends stay correctable rather than being pinned in
+  # every client for weeks.
+  #
+  # These values are emitted verbatim - Rack::Files merges this hash straight
+  # into the response - so they must be literal strings. A callable here is
+  # written out as "cache-control: #<Proc:0x...>". Digest-stamped assets get
+  # their far-future policy from RailsExt::ImmutableAssetHeaders instead.
   config.public_file_server.headers = {
-    "cache-control" => lambda do |path, _|
-      if path.start_with?("/assets/")
-        # Files in /assets/ are expected to be fully immutable.
-        # If the content change the URL too.
-        "public, immutable, max-age=#{1.year.to_i}"
-      else
-        # For anything else we cache for 1 minute.
-        "public, max-age=#{1.minute.to_i}, stale-while-revalidate=#{5.minutes.to_i}"
-      end
-    end
+    "cache-control" => "public, max-age=#{1.minute.to_i}, stale-while-revalidate=#{5.minutes.to_i}"
   }
+
+  if config.public_file_server.enabled
+    config.middleware.insert_before ActionDispatch::Static, RailsExt::ImmutableAssetHeaders
+  end
 
   # Ensures that a master key has been made available in either ENV["RAILS_MASTER_KEY"]
   # or in config/master.key. This key is used to decrypt credentials (and other encrypted files).
@@ -70,11 +72,6 @@ Rails.application.configure do
 
   # Cache in memory for now
   config.cache_store = :redis_cache_store
-
-  # Assets are cacheable
-  config.public_file_server.headers = {
-    "Cache-Control" => "public, max-age=#{30.days.to_i}"
-  }
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).

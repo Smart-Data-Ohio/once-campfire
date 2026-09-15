@@ -14,7 +14,11 @@ class ChannelThreadMessagesController < ApplicationController
 
     respond_to do |format|
       format.html
-      format.json { render json: { messages: @messages.map { |message| message_payload(message, include_thread_summary: false) } } }
+      format.json do
+        caching_thread_payloads do
+          render json: { messages: @messages.map { |message| message_payload(message, include_thread_summary: false) } }
+        end
+      end
     end
   end
 
@@ -112,7 +116,7 @@ class ChannelThreadMessagesController < ApplicationController
     end
 
     def find_paged_messages
-      messages = @thread.messages.with_creator.with_attachment_details.with_boosts
+      messages = @thread.messages.with_rendering_details
       case
       when params[:before].present?
         messages.page_before(@thread.messages.find(params[:before]))
