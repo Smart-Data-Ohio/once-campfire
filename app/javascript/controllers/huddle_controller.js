@@ -257,14 +257,15 @@ export default class extends Controller {
     }
   }
 
-  // With one share this simply opens it. With several it steps through them, so
-  // the banner and the room-header button stay useful once something is expanded.
+  // Opening from the banner or the room header goes to the most recent share,
+  // which is the one somebody just started and wants to be seen. Pressing it
+  // again steps through the rest rather than going dead.
   viewSharedScreen = () => {
     const tracks = this.#screenTracks()
     if (!tracks.length) return
 
-    const next = tracks[(tracks.indexOf(this.expandedTrack) + 1) % tracks.length]
-    this.#expandScreen(next)
+    const expanded = tracks.indexOf(this.expandedTrack)
+    this.#expandScreen(expanded === -1 ? tracks.at(-1) : tracks[(expanded + 1) % tracks.length])
   }
 
   keyPressed = (event) => {
@@ -357,10 +358,13 @@ export default class extends Controller {
   }
 
   async #startScreenShare(room) {
-    const { ScreenSharePresets } = this.liveKit
     const options = {
       contentHint: "detail",
-      resolution: ScreenSharePresets.h1080fps15.resolution,
+      // No `resolution`. A preset's resolution carries its frame rate too, so
+      // naming the 15 fps preset here would also cap *capture* at 15 fps. The SDK
+      // fills in 1080p/30 itself, and skips it on Safari 17, which cannot be
+      // constrained — a hard-coded value would lose that exemption. Encoding is
+      // capped separately by `screenShareEncoding` in `#roomOptions`.
       surfaceSwitching: "include",
       // Tab audio only. Capturing system audio while sharing a whole screen
       // feeds the speakers back into the huddle on Windows.
@@ -671,7 +675,9 @@ export default class extends Controller {
     this.element.classList.add("huddle--theater")
     this.#lockTheaterScroll(true)
     // Escape belongs to the browser at every other moment, so the handler is
-    // only bound while there is something to collapse.
+    // only bound while there is something to collapse. Cycling between shares
+    // re-adds it; addEventListener dedupes on (type, callback, capture), so the
+    // repeated add is a deliberate no-op rather than a second handler.
     window.addEventListener("keydown", this.keyPressed, { signal: this.abortController?.signal })
     this.#updateScreenControls()
     this.#applyScreenQuality(track)

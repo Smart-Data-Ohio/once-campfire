@@ -45,13 +45,15 @@ The huddle controls carry a "Noise suppression on/off" toggle. It defaults to on
 
 ### Screen sharing
 
-`setScreenShareEnabled` now requests `contentHint: "detail"`, the 1080p resolution of `ScreenSharePresets.h1080fps15`, `surfaceSwitching: "include"`, and tab audio (`audio: true`, `systemAudio: "exclude"`). Screen-share audio was already inside the token's publish grant.
+`setScreenShareEnabled` now requests `contentHint: "detail"`, `surfaceSwitching: "include"`, and tab audio (`audio: true`, `systemAudio: "exclude"`). Screen-share audio was already inside the token's publish grant.
+
+**Capture and encoding are separate ceilings.** No `resolution` is passed, so the SDK applies its own 1080p/30 capture constraint — and keeps its exemption for Safari 17, which cannot be constrained. Naming a preset's `resolution` here would have been a trap: a preset's resolution carries its frame rate, so asking for `h1080fps15.resolution` would have capped *capture* at 15 fps as well. Capture stays at 30 fps; the encoder is what limits the stream.
 
 `systemAudio: "exclude"` is a deliberate trade-off. Including system audio is the only way to carry sound from a native application being demonstrated, but on Windows an "Entire screen" capture with system audio also captures the huddle's own output from the speakers and feeds it back in. Browser echo cancellation does not run on a display-capture track, so that loop is not cancelled. Tab audio still covers the common case of sharing a browser tab playing a video. Somebody who needs native application audio has to route it separately today.
 
 The shared audio track publishes with `dtx: false`. Discontinuous transmission is tuned for speech and cuts the stream during perceived silence, which chops music and quiet passages in a demonstration. The microphone keeps `dtx: true`.
 
-Publishing uses `ScreenSharePresets.h1080fps15.encoding` (1920×1080, up to 2.5 Mbps, 15 fps) with `degradationPreference: "maintain-resolution"` — both the SDK's defaults, written out rather than inherited. Small code text stays readable under congestion because frames are dropped before resolution is. With simulcast on (also the SDK default) the publisher also sends a 960×540/15 layer at 625 kbps, so the uplink ceiling is about **3.1 Mbps**.
+Publishing uses `ScreenSharePresets.h1080fps15.encoding` (1920×1080, up to 2.5 Mbps, 15 fps) with `degradationPreference: "maintain-resolution"` — both the SDK's defaults, written out rather than inherited. Capturing at 30 and encoding at 15 is the SDK's own arrangement; the encoder drops every other frame rather than the capture missing them. Small code text stays readable under congestion because frames are dropped before resolution is. With simulcast on (also the SDK default) the publisher also sends a 960×540/15 layer at 625 kbps, so the uplink ceiling is about **3.1 Mbps**.
 
 **1080p/30 is the candidate to test, not the current setting.** `ScreenSharePresets.h1080fps30` would raise the top layer to 5 Mbps and the simulcast layer to 960×540/30 at 1.25 Mbps, about **6.25 Mbps** of publisher uplink — roughly double. That is a real network decision for an office link shared by several people, so it waits for the measurement work above rather than shipping on the strength of "sharper is better".
 
@@ -83,7 +85,7 @@ Every shared screen now carries an always-visible **Expand** and **Full screen**
 7. Listen with a noise source running — a fan, typing, a nearby conversation — and compare the toggle on and off. RNNoise removes steady broadband noise well and keyboard clicks partially; it is not a replacement for a headset in a loud room.
 8. Share an "Entire screen" on Windows with the huddle audio playing through speakers and confirm there is no feedback loop. Then share a browser tab playing a video and confirm its audio reaches the other participant.
 
-`test/system/huddles_test.rb` covers expand and collapse, the full-screen request chain and its fallback, the header indicator, the toggle switching off, back on, and surviving a rejoin, the processor surviving mute and unmute, and a processor that fails to start. Real full screen, two simultaneous shares and the Windows audio behavior are hand checks; the fake media device in headless Chrome cannot produce them.
+`test/system/huddles_test.rb` covers expand and collapse, the full-screen request chain and its fallback, the header indicator, two simultaneous shares each staying reachable from theater mode, the toggle switching off, back on, and surviving a rejoin, the processor surviving mute and unmute, and a processor that fails to start. Real full screen and the Windows audio behavior are hand checks; headless Chrome cannot produce them.
 
 ## Acceptance exercise
 
