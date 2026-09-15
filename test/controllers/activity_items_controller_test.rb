@@ -95,24 +95,18 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_empty response.parsed_body.fetch("activity_items")
     assert_equal 0, response.parsed_body.fetch("unread_count")
 
-    post open_activity_item_url(@item)
-    assert_response :not_found
-    patch read_activity_item_url(@item), params: { state: "read" }, as: :json
-    assert_response :not_found
-    patch handled_activity_item_url(@item), params: { state: "handled" }, as: :json
-    assert_response :not_found
+    assert_raises(ActiveRecord::RecordNotFound) { post open_activity_item_url(@item) }
+    assert_raises(ActiveRecord::RecordNotFound) { patch read_activity_item_url(@item), params: { state: "read" }, as: :json }
+    assert_raises(ActiveRecord::RecordNotFound) { patch handled_activity_item_url(@item), params: { state: "handled" }, as: :json }
     assert_predicate @item.reload, :unread?
   end
 
   test "knowing another recipient's item id does not allow opening or changing it" do
     other_item = ActivityItem.create!(user: users(:jason), source: @source, event_type: "mention")
 
-    post open_activity_item_url(other_item)
-    assert_response :not_found
-    patch read_activity_item_url(other_item), params: { state: "read" }, as: :json
-    assert_response :not_found
-    patch handled_activity_item_url(other_item), params: { state: "handled" }, as: :json
-    assert_response :not_found
+    assert_raises(ActiveRecord::RecordNotFound) { post open_activity_item_url(other_item) }
+    assert_raises(ActiveRecord::RecordNotFound) { patch read_activity_item_url(other_item), params: { state: "read" }, as: :json }
+    assert_raises(ActiveRecord::RecordNotFound) { patch handled_activity_item_url(other_item), params: { state: "handled" }, as: :json }
     assert_predicate other_item.reload, :unread?
   end
 
@@ -125,8 +119,7 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_empty response.parsed_body.fetch("activity_items")
     assert_equal 0, response.parsed_body.fetch("unread_count")
 
-    post open_activity_item_url(item_id)
-    assert_response :not_found
+    assert_raises(ActiveRecord::RecordNotFound) { post open_activity_item_url(item_id) }
   end
 
   test "opening an item marks it read and redirects to the exact message" do

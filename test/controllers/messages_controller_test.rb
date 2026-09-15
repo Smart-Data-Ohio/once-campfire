@@ -58,14 +58,14 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "broadcast message actions preserve a nonstandard request port" do
-    host! "once.campfire.test:3443"
-    post room_messages_url(@room, format: :turbo_stream), params: {
+    origin = "http://once.campfire.test:3443"
+    post "#{origin}#{room_messages_path(@room, format: :turbo_stream)}", params: {
       message: { markdown_source: "A live message", client_message_id: "broadcast-port" }
     }
 
     assert_rendered_turbo_stream_broadcast @room, :messages, action: "append", target: [ @room, :messages ] do
-      assert_select "[data-message-actions-metadata-url-value='#{actions_room_message_url(@room, Message.last, host: 'once.campfire.test:3443')}']"
-      assert_copy_link_button room_at_message_url(@room, Message.last, host: "once.campfire.test:3443")
+      assert_select "[data-message-actions-metadata-url-value='#{origin}#{actions_room_message_path(@room, Message.last)}']"
+      assert_copy_link_button "#{origin}#{room_at_message_path(@room, Message.last)}"
     end
   end
 

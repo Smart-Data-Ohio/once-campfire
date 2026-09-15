@@ -8,6 +8,9 @@ module SetCurrentRequest
   end
 
   def default_url_options
-    { host: Current.request&.host_with_port, protocol: Current.request_protocol }.compact_blank
+    # A broadcast renderer has its own synthetic request (usually port 80).
+    # Override its port explicitly; embedding the real port only in `host`
+    # still lets the renderer's separate port option replace it.
+    { host: Current.request&.host, port: Current.request&.port, protocol: Current.request_protocol }.compact_blank
   end
 end
