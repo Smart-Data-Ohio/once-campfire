@@ -490,8 +490,9 @@ swap_file_is_active() {
   swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$SWAP_PATH"
 }
 
-# The signature already on the file, if any. Empty means "nothing recognisable",
-# which is the only state other than `swap` that may be overwritten.
+# The signature already on the file, if any. Only `swap` lets this phase adopt a
+# file it did not create: no signature at all is not proof that the file is
+# empty, and mkswap would overwrite whatever is really in it.
 swap_file_type() {
   blkid -p -s TYPE -o value "$SWAP_PATH" 2>/dev/null || true
 }
@@ -628,7 +629,7 @@ phase_prepare_host() {
   trap prepare_host_cleanup EXIT
 
   local want_bytes=$(( SWAP_SIZE_MB * 1048576 ))
-  local created=false skipped_reason=""
+  local created=false skipped_reason="" skipped_message=""
 
   # Records host drift: the state of the host is an operator's business, not a
   # release's. Strict fails on it; non-strict records it and changes nothing.
@@ -638,6 +639,7 @@ phase_prepare_host() {
     warn "prepare-host: $message"
     warn "prepare-host: HOST_PREP_STRICT=false, so the swap file and /etc/fstab are left untouched (vm.swappiness is still applied) and the release continues"
     skipped_reason="$reason"
+    skipped_message="$message"
   }
 
   if [ "$dry_run" = true ]; then
@@ -692,6 +694,12 @@ phase_prepare_host() {
       if [ -n "$fs_type" ] && [ "$fs_type" != swap ]; then
         drift non-swap-signature \
           "$SWAP_PATH already holds a '$fs_type' signature, not swap. Refusing to run mkswap over data: an operator should move or remove that file and run this phase again."
+      elif [ -z "$fs_type" ]; then
+        # No signature is not proof of an empty file. This one was here before
+        # the run, and mkswap would overwrite whatever it actually holds, so
+        # only files this phase built itself are ever formatted.
+        drift unsigned-file \
+          "$SWAP_PATH carries no swap or filesystem signature at all, and it was not created by this run. Refusing to run mkswap over a file whose contents this phase cannot account for: an operator should confirm what it is, remove it, and run this phase again."
       elif [ "$have_bytes" -ne "$want_bytes" ]; then
         # Resizing means swapoff on a host that may be leaning on it. That is a
         # decision with an outage in it, so it belongs to a person.
@@ -708,21 +716,13 @@ phase_prepare_host() {
       log "prepare-host: $SWAP_PATH is already active"
     elif [ "$dry_run" = true ]; then
       log "prepare-host: would enable swap on $SWAP_PATH (present but inactive)"
+    elif swapon "$SWAP_PATH"; then
+      # It already carries a swap signature — that was checked above — so
+      # enabling it is the whole of the work. It is not ours to reformat.
+      log "prepare-host: enabled swap on $SWAP_PATH"
     else
-      local enabled=true
-      if [ -z "$fs_type" ]; then
-        log "prepare-host: $SWAP_PATH carries no signature; running mkswap"
-        mkswap "$SWAP_PATH" >/dev/null || enabled=false
-      fi
-      # This file is not ours: it was here before the run. Whatever the kernel
-      # dislikes about it, removing or rewriting it is an operator's call.
-      [ "$enabled" = false ] || swapon "$SWAP_PATH" || enabled=false
-      if [ "$enabled" = true ]; then
-        log "prepare-host: enabled swap on $SWAP_PATH"
-      else
-        drift preexisting-file-refused \
-          "the kernel refused the pre-existing $SWAP_PATH (mkswap or swapon failed). It was not created by this run, so nothing has been removed or rewritten; an operator should look at it."
-      fi
+      drift preexisting-file-refused \
+        "the kernel refused to enable the pre-existing $SWAP_PATH. It was not created by this run, so nothing has been removed or rewritten; an operator should look at it."
     fi
   else
     local swap_dir free_mb free_after
@@ -839,11 +839,13 @@ phase_prepare_host() {
     --argjson dry_run "$dry_run" \
     --argjson strict "$strict" \
     --arg skipped_reason "$skipped_reason" \
+    --arg skipped_message "$skipped_message" \
     '{phase:$phase, at:$at, release_label:$label, swap_path:$swap_path,
       swap_size_mb:$swap_size_mb, swap_requested_mb:$swap_requested_mb,
       swap_active:$swap_active, swap_created:$swap_created,
       swappiness:$swappiness, fstab_entry:$fstab_entry, dry_run:$dry_run, strict:$strict,
-      skipped_reason:(if $skipped_reason == "" then null else $skipped_reason end)}' \
+      skipped_reason:(if $skipped_reason == "" then null else $skipped_reason end),
+      skipped_message:(if $skipped_message == "" then null else $skipped_message end)}' \
     | write_state prepare-host-result.json
 
   if [ "$active" = true ]; then
@@ -858,6 +860,7 @@ phase_prepare_host() {
   printf 'fstab entry  : %s\n' "$fstab"
   printf 'swappiness   : %s (%s)\n' "$swappiness_now" "$SYSCTL_FILE"
   printf 'skipped      : %s\n' "${skipped_reason:-none}"
+  [ -z "$skipped_message" ] || printf 'because      : %s\n' "$skipped_message"
   printf 'result       : %s\n' "$(state_path prepare-host-result.json)"
   printf '============================\n\n'
 

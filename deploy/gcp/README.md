@@ -90,7 +90,7 @@ moment writes are frozen. Every invocation takes `flock` on
 
 | Phase | Effect |
 | --- | --- |
-| `prepare-host` | Makes sure the host itself can survive the release: an idempotent `/swapfile` of `SWAP_SIZE_MB` (default 1024), built beside the live file and moved into place whole, with a `findmnt`-verified `/etc/fstab` entry and `vm.swappiness=10` persisted in `/etc/sysctl.d/90-campfire.conf`. **Never resizes an existing swap file and never runs `mkswap` over a non-swap signature**; under `HOST_PREP_STRICT=false` that drift is a warning recorded as `skipped_reason` rather than a failure. Needs no other phase's state, touches neither the application nor the registry, and honours `DRY_RUN=true`. |
+| `prepare-host` | Makes sure the host itself can survive the release: an idempotent `/swapfile` of `SWAP_SIZE_MB` (default 1024), built beside the live file and moved into place whole, with a `findmnt`-verified `/etc/fstab` entry and `vm.swappiness=10` persisted in `/etc/sysctl.d/90-campfire.conf`. **Never resizes an existing swap file and only ever runs `mkswap` on a file it built itself**; under `HOST_PREP_STRICT=false` that drift is a warning recorded as `skipped_reason` rather than a failure. Needs no other phase's state, touches neither the application nor the registry, and honours `DRY_RUN=true`. |
 | `preflight` | Discovers the ONCE app, container, storage volume and current digest; **records the feed timer state once** (a retry never overwrites it); checks free disk against the real volume and image sizes; refuses to run on top of an in-flight ONCE backup or inside the nightly backup window; authenticates to the registry from stdin; pulls the exact digest and asserts it is `linux/amd64`. A dry run stops here. |
 | `freeze` | **Refuses a release directory that already has `freeze-result.json` unless `RESUME=1`.** Pauses the feed timer and waits for the current feed run to finish; snapshots the database through the SQLite backup API; stops the app and **asserts no application container is still running**; fingerprints the live database; hashes every uploaded file; tags `campfire-rollback:before-<label>`; archives the ONCE application and the host feed state; then **rehearses the migration** on a copy. Any failure here restores the feed timer through a trap. |
 | `cutover` | `once update <host> --image IMAGE@DIGEST --auto-update=false` (no `--env`, so ONCE keeps the whole existing environment map), waits for `/up` to return 200, then runs read-only checks: running digest, environment key names, volume identity, pre-existing uploaded file hashes, and required processes. Exits `10` if it never became healthy and `20` if it became healthy but a check failed. |
@@ -160,7 +160,8 @@ the budget it had just approved. On a prepared host the phase is a no-op that re
 what is already there, and `swap_created` in `prepare-host-result.json` says whether
 this run made the file. `swap_size_mb` reports the size of the file that is actually
 on the host — `0` when there is none — and `swap_requested_mb` what was asked for;
-the two differ exactly when the phase decided to leave the host alone.
+the two differ exactly when the phase decided to leave the host alone, in which case
+`skipped_reason` names the condition and `skipped_message` says it in words.
 
 It is deliberately unwilling to do the interesting thing:
 
@@ -170,6 +171,11 @@ It is deliberately unwilling to do the interesting thing:
   sizes in exact bytes.
 - A file at `SWAP_PATH` carrying a **signature that is not swap** — a filesystem
   image, an archive — is refused outright. `mkswap` over it would destroy data.
+- A file at `SWAP_PATH` carrying **no signature at all** is refused for the same
+  reason. Nothing distinguishes a swap file nobody formatted from a file somebody
+  left there, and an absent signature is not evidence of an empty file, so `mkswap`
+  only ever runs on a file this phase built itself. A pre-existing swap file that is
+  merely inactive is simply `swapon`'d.
 - It refuses to create a swap file that would leave the root filesystem under 5 GB
   free, and it never touches a swap device other than `SWAP_PATH`.
 
@@ -180,8 +186,9 @@ runs non-strict (`false`): the condition is logged as a warning, the swap file a
 independent of the swap file — and the reason is recorded in the result file as
 `skipped_reason` and surfaced in the job summary. A release must never be blocked by
 a swap file somebody else sized. The recorded reasons are `wrong-size`,
-`non-swap-signature`, `not-a-regular-file`, `preexisting-file-refused`,
-`insufficient-free-space` and `fstab-preexisting-errors`.
+`non-swap-signature`, `unsigned-file`, `not-a-regular-file`,
+`preexisting-file-refused`, `insufficient-free-space` and `fstab-preexisting-errors`,
+each with the operator-facing sentence in `skipped_message`.
 
 Drift is not the same as a fault. A missing tool, a `mkswap` that fails on a file
 this run just built, or an `/etc/fstab` that only this phase's own line broke are

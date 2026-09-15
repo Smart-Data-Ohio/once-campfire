@@ -361,6 +361,7 @@ jobs:
             echo "swap_created=$(field swap_created)"
             echo "swappiness=$(field swappiness)"
             echo "skipped_reason=$(field skipped_reason)"
+            echo "skipped_message=$(field skipped_message)"
           } >> "$GITHUB_OUTPUT"
           if [ "$rc" -ne 0 ]; then
             echo "::warning::host preparation exited ${rc}; the release continues and the summary records it"
@@ -406,6 +407,7 @@ jobs:
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
           SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
+          SWAP_SKIPPED_MESSAGE: ${{ steps.prepare_host.outputs.skipped_message }}
           PREP_OUTCOME: ${{ steps.prepare_host.outcome }}
         run: |
           set -euo pipefail
@@ -430,7 +432,7 @@ jobs:
             echo "| Swap file | \`${SWAP_PATH}\`, \`${SWAP_SIZE_MB} MB\` on the host of \`${SWAP_REQUESTED_MB} MB\` requested, active \`${SWAP_ACTIVE}\`, created this run \`${SWAP_CREATED}\` |"
             echo "| vm.swappiness | \`${SWAPPINESS}\` |"
             if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
-              echo "| Host preparation skipped | \`${SWAP_SKIPPED}\` |"
+              echo "| Host preparation skipped | \`${SWAP_SKIPPED}\` — ${SWAP_SKIPPED_MESSAGE} |"
             fi
             if [ "$PREP_OUTCOME" != "success" ]; then
               echo "| Host preparation step | \`${PREP_OUTCOME}\` — it did not stop the release; read its log |"
@@ -770,6 +772,7 @@ jobs:
           SWAP_ACTIVE: ${{ steps.prepare_host.outputs.swap_active }}
           SWAPPINESS: ${{ steps.prepare_host.outputs.swappiness }}
           SWAP_SKIPPED: ${{ steps.prepare_host.outputs.skipped_reason }}
+          SWAP_SKIPPED_MESSAGE: ${{ steps.prepare_host.outputs.skipped_message }}
           PREP_OUTCOME: ${{ steps.prepare_host.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -833,7 +836,7 @@ jobs:
             echo "- After the cutover, health \`GET https://${app_host}/up\` returned \`${health_status}\`, the running digest, storage volume and environment key names matched, and all ${file_count} pre-existing uploaded files were unchanged (\`${files_ok}\`)."
             host_line="- Host preparation: \`${SWAP_SIZE_MB} MB\` swap at \`${SWAP_PATH}\` (active \`${SWAP_ACTIVE}\`, created by this release \`${SWAP_CREATED}\`), \`vm.swappiness=${SWAPPINESS}\`."
             if [ -n "$SWAP_SKIPPED" ] && [ "$SWAP_SKIPPED" != "unknown" ]; then
-              host_line="${host_line} Host preparation was skipped: ${SWAP_SKIPPED}."
+              host_line="${host_line} Host preparation was skipped (\`${SWAP_SKIPPED}\`): ${SWAP_SKIPPED_MESSAGE}"
             fi
             if [ "$PREP_OUTCOME" != "success" ]; then
               host_line="${host_line} The host preparation step itself reported \`${PREP_OUTCOME}\`; it did not stop the release."

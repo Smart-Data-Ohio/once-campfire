@@ -128,6 +128,7 @@ jobs:
             skipped="$(field skipped_reason)"
             if [ "$skipped" != "unknown" ]; then
               echo "| Skipped | \`${skipped}\` |"
+              echo "| Why | $(field skipped_message) |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
