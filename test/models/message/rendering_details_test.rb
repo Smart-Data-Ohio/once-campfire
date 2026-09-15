@@ -9,6 +9,7 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
     @room = rooms(:designers)
     @people = [ users(:david), users(:jason), users(:jz) ]
     @people.each { |user| @room.memberships.find_or_create_by!(user:) }
+    @room_seq = 0
     Current.user = users(:david)
   end
 
@@ -16,15 +17,21 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
     Current.user = nil
   end
 
+  # Modelled on searches#index, which is the worst case: results span rooms, and
+  # a result that is a reply links to its source with message_link_url, so every
+  # distinct source room is another association to resolve. A page confined to a
+  # single room would hide that, because one lazy room load would serve it all.
   test "with_rendering_details costs the same number of queries regardless of page size" do
-    create_messages(3)
-    small = count_queries { touch_rendered_details Message.with_rendering_details.where(room: @room).to_a }
+    ids = create_conversations_across_rooms(3)
+    small = count_queries { touch_rendered_details Message.with_rendering_details.where(id: ids).to_a }
+    small_size = ids.size
 
-    create_messages(15, offset: 3)
-    large = count_queries { touch_rendered_details Message.with_rendering_details.where(room: @room).to_a }
+    ids += create_conversations_across_rooms(15)
+    large = count_queries { touch_rendered_details Message.with_rendering_details.where(id: ids).to_a }
 
     assert_equal small, large,
-      "with_rendering_details should be O(1) in queries, got #{small} for a small page and #{large} for a larger one"
+      "with_rendering_details should be O(1) in queries, got #{small} for #{small_size} " \
+      "messages across 3 rooms and #{large} for #{ids.size} across 18"
   end
 
   test "with_rendering_details loads every association the message partials read" do
@@ -41,6 +48,7 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
     assert_predicate subject.association(:creator), :loaded?
     assert_predicate subject.association(:rich_text_body), :loaded?
     assert_predicate subject.association(:reply_to_message), :loaded?
+    assert_predicate subject.reply_to_message.association(:room), :loaded?
     assert_predicate subject.reply_to_message.association(:rich_text_body), :loaded?
     assert_predicate subject.reply_to_message.creator.association(:avatar_attachment), :loaded?
     assert_predicate subject.boosts.first.association(:booster), :loaded?
@@ -74,7 +82,10 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
   test "ordered_boosts matches the ordered scope it replaced" do
     message = create_messages(1).first
     base = 2.hours.ago.change(usec: 0)
-    [ 2, 0, 1, 0 ].each_with_index do |offset, i|
+    # Distinct timestamps, deliberately: with a tie, `ordered` (ORDER BY
+    # created_at alone) has no defined order to compare against and SQLite would
+    # be free to return either row first.
+    [ 3, 0, 2, 1 ].each_with_index do |offset, i|
       message.boosts.create!(booster: @people[i % @people.size], content: "👋",
         created_at: base + offset.minutes)
     end
@@ -114,6 +125,24 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
   end
 
   private
+    # Each room gets a message and a reply to it. Replies cannot cross rooms -
+    # validate_conversation_links forbids it - so the way a real page ends up
+    # touching many source rooms is by spanning many rooms itself.
+    def create_conversations_across_rooms(rooms)
+      Array.new(rooms) do |i|
+        room = Rooms::Open.create!(name: "rendering #{@room_seq += 1}", creator: @people[0])
+        @people.each { |user| room.memberships.find_or_create_by!(user:) }
+
+        source = room.messages.create!(creator: @people[i % @people.size],
+          client_message_id: "conv-src-#{@room_seq}", body: "source in room #{@room_seq}")
+        reply = room.messages.create!(creator: @people[(i + 1) % @people.size],
+          client_message_id: "conv-reply-#{@room_seq}", reply_to_message: source,
+          body: "reply in room #{@room_seq}")
+
+        [ source.id, reply.id ]
+      end.flatten
+    end
+
     def create_messages(count, offset: 0)
       Array.new(count) do |i|
         @room.messages.create!(creator: @people[(i + offset) % @people.size],
@@ -128,7 +157,12 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
         message.body.to_s
         message.room.name
         message.ordered_boosts.each { |boost| boost.booster.name }
-        message.reply_to_message&.then { |source| [ source.body.to_s, source.creator.avatar_attachment ] }
+        # source.room matters: _context links to the reply source with
+        # message_link_url, and on searches#index the source can live in a
+        # different room than the message quoting it.
+        message.reply_to_message&.then do |source|
+          [ source.body.to_s, source.creator.avatar_attachment, source.room.name ]
+        end
       end
     end
 

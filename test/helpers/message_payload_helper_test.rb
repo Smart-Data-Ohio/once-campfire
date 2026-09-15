@@ -50,8 +50,10 @@ class MessagePayloadHelperTest < ActionView::TestCase
     assert_not payload["🎉"][:active]
   end
 
-  # A bot or a signed-out render has no Current.user. Comparing against nil must
-  # not match a boost whose booster_id happens to be missing.
+  # A bot or a signed-out render has no Current.user, so every comparison is
+  # against nil. booster_id is NOT NULL, so nothing can match - this pins that
+  # the no-user case stays inert rather than throwing or marking everything
+  # active.
   test "reaction_payload reports nothing active when there is no current user" do
     @message.boosts.destroy_all
     @message.boosts.create!(booster: users(:david), content: "👍")

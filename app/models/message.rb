@@ -40,23 +40,25 @@ class Message < ApplicationRecord
   scope :with_boosts, -> { includes(boosts: :booster) }
   # Everything messages/_message and its partials touch, so rendering a page of
   # messages costs a fixed number of queries instead of a set per message.
-  # messages/_context reads the reply source's author and body, and search
-  # results span rooms, so neither :room nor the reply source can be assumed
+  # messages/_context reads the reply source's author, body and room - it links
+  # to the source with message_link_url - and search results span rooms, so
+  # neither :room nor anything hanging off the reply source can be assumed
   # already loaded.
   scope :with_rendering_details, -> {
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, reply_to_message: [ :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply
   # source and thread, but never boosts or image variants, so it gets a lighter
-  # set than the HTML partials need.
+  # set than the HTML partials need. The reply source needs its own room because
+  # compact_message_payload builds a permalink for it.
   scope :with_payload_details, -> {
     with_creator
       .with_rich_text_body_and_embeds
       .with_attached_attachment
-      .preload(:room, :thread, :channel_thread, reply_to_message: [ :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, :thread, :channel_thread, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
 
   class << self
