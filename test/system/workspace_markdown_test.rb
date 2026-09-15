@@ -62,19 +62,20 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     within_message(message) do
       reveal_message_actions
       click_on "Edit message", exact: true
-      assert_field "Edit message", with: MARKDOWN
-      fill_in_markdown "Edit message", with: MARKDOWN.sub("Design review", "Review complete")
-      click_on "Save changes"
-      assert_selector "h2", text: "Review complete"
     end
+    assert_selector "#composer", text: "Editing Message"
+    assert_field "Write a message", with: MARKDOWN
+    fill_in_markdown "Write a message", with: MARKDOWN.sub("Design review", "Review complete")
+    click_on "Send Message"
+    within_message(message) { assert_selector "h2", text: "Review complete" }
 
     using_session("Kevin") { assert_selector ".message__body h2", text: "Review complete" }
     join_room rooms(:designers)
     within_message(message) do
       reveal_message_actions
       click_on "Edit message", exact: true
-      assert_field "Edit message", with: MARKDOWN.sub("Design review", "Review complete")
     end
+    assert_field "Write a message", with: MARKDOWN.sub("Design review", "Review complete")
   end
 
   test "desktop keyboard composition keeps line breaks and sends once after composition ends" do
@@ -101,7 +102,8 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_field "Write a message", with: ""
 
     editor.send_keys :arrow_up
-    assert_field "Edit message", with: "First line\nSecond line"
+    assert_selector "#composer", text: "Editing Message"
+    assert_field "Write a message", with: "First line\nSecond line"
   end
 
   test "untrusted markup stays inert in the delivered message" do
@@ -136,19 +138,18 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
       reveal_message_actions
       click_on "Reply", exact: true
     end
-    reply = find_field("Write a message").value
-    assert_includes reply, ">"
-    assert_includes reply, "A useful point"
-    assert_not_includes reply, "Copy code"
+    assert_selector "#composer [data-composer-target='contextLabel']", text: "Replying to JZ"
+    assert_selector "#composer [data-composer-target='contextPreview']", text: "A useful point"
+    assert_field "Write a message", with: ""
 
     upload_path = Rails.root.join("tmp/markdown-workspace-attachment.txt")
     File.write(upload_path, "An attachment sent from the Markdown composer.\n")
     find("#composer input[type='file']", visible: :all).set(upload_path)
     assert_selector "#composer", text: "markdown-workspace-attachment"
     click_on "Send Message"
-    assert_selector ".message[data-message-id] blockquote", text: "A useful point"
+    assert_selector ".message[data-message-id] .message__reply-preview", text: "A useful point"
     assert_message_text "markdown-workspace-attachment.txt"
-    assert Message.joins(:attachment_attachment).exists?
+    assert Message.joins(:attachment_attachment).exists?(reply_to_message_id: message.id)
   ensure
     File.delete(upload_path) if upload_path && File.exist?(upload_path)
   end

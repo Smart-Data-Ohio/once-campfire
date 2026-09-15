@@ -9,11 +9,17 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
 
     sign_in "jz@37signals.com"
     join_room rooms(:designers)
-    within_message messages(:third) do
-      reveal_message_actions
-      click_on "Edit message", exact: true
-      assert_selector "trix-editor"
-    end
+    # The normal composer is Markdown. Mount the retained legacy editor as a
+    # test fixture so its preview renderer keeps this browser security check.
+    page.execute_script <<~JS
+      const input = document.createElement("input")
+      input.type = "hidden"
+      input.id = "legacy-preview-fixture"
+      const editor = document.createElement("trix-editor")
+      editor.setAttribute("input", input.id)
+      document.querySelector("#main-content").append(input, editor)
+    JS
+    assert_selector "trix-editor"
   end
 
   teardown do

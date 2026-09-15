@@ -8,6 +8,6 @@ module SetCurrentRequest
   end
 
   def default_url_options
-    { host: Current.request_host, protocol: Current.request_protocol }.compact_blank
+    { host: Current.request&.host_with_port, protocol: Current.request_protocol }.compact_blank
   end
 end
