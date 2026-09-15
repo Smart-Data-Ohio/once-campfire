@@ -90,6 +90,7 @@ moment writes are frozen. Every invocation takes `flock` on
 
 | Phase | Effect |
 | --- | --- |
+| `prepare-host` | Makes sure the host itself can survive the release: an idempotent `/swapfile` of `SWAP_SIZE_MB` (default 1024) with an `/etc/fstab` entry, and `vm.swappiness=10` persisted in `/etc/sysctl.d/90-campfire.conf`. **Refuses, without changing anything, when a swap file of a different size already exists.** Needs no other phase's state, touches neither the application nor the registry, and honours `DRY_RUN=true`. |
 | `preflight` | Discovers the ONCE app, container, storage volume and current digest; **records the feed timer state once** (a retry never overwrites it); checks free disk against the real volume and image sizes; refuses to run on top of an in-flight ONCE backup or inside the nightly backup window; authenticates to the registry from stdin; pulls the exact digest and asserts it is `linux/amd64`. A dry run stops here. |
 | `freeze` | **Refuses a release directory that already has `freeze-result.json` unless `RESUME=1`.** Pauses the feed timer and waits for the current feed run to finish; snapshots the database through the SQLite backup API; stops the app and **asserts no application container is still running**; fingerprints the live database; hashes every uploaded file; tags `campfire-rollback:before-<label>`; archives the ONCE application and the host feed state; then **rehearses the migration** on a copy. Any failure here restores the feed timer through a trap. |
 | `cutover` | `once update <host> --image IMAGE@DIGEST --auto-update=false` (no `--env`, so ONCE keeps the whole existing environment map), waits for `/up` to return 200, then runs read-only checks: running digest, environment key names, volume identity, pre-existing uploaded file hashes, and required processes. Exits `10` if it never became healthy and `20` if it became healthy but a check failed. |
@@ -125,6 +126,12 @@ moment writes are frozen. Every invocation takes `flock` on
 | `MIN_FREE_DISK_MB` | `3072` | Floor checked before the image is pulled. |
 | `RELEASE_KEEP` | `3` | Release directories kept when pruning. |
 | `ALLOW_BACKUP_WINDOW` | `0` | `1` overrides the nightly ONCE backup window guard. |
+| `DRY_RUN` | `false` | `true` makes `prepare-host` report what it would change and change nothing. It still writes its result file. |
+| `SWAP_PATH` | `/swapfile` | The one swap file `prepare-host` manages. No other swap device is ever touched. |
+| `SWAP_SIZE_MB` | `1024` | Size of that swap file. A positive integer; an existing file of another size is refused, never resized. |
+| `SWAPPINESS` | `10` | `vm.swappiness` persisted in `SYSCTL_FILE`. |
+| `SYSCTL_FILE` | `/etc/sysctl.d/90-campfire.conf` | The sysctl drop-in `prepare-host` owns and rewrites. |
+| `MIN_FREE_AFTER_SWAP_MB` | `5120` | Free space that must remain on the swap file's filesystem after it exists. |
 | `LOCK_FILE` | `/var/lock/campfire-release.lock` | The per-host release lock. |
 | `CAMPFIRE_RELEASE_SIMULATE_FAILURE` | `0` | Validation only. `1` aborts the cutover before `once update`, so the database is provably untouched and the rollback completes. `2` lets the app go healthy and then forces a read-only check to fail, which is the case where the rollback must refuse. The deploy workflow rejects either outside the `validation` environment. |
 
@@ -135,6 +142,36 @@ moment writes are frozen. Every invocation takes `flock` on
 `du -sm` of the storage volume × 2 (one archive plus one rehearsal copy) + 512 MB on
 the `STATE_ROOT` filesystem, and the image size + 512 MB on `/var/lib/docker`. When
 both paths are on the same filesystem the two are summed and checked once.
+
+### Host preparation
+
+The app VM is an `e2-small`: 2 GB of RAM and, until this phase existed, no swap at
+all. A release is the worst moment on that host — a migration, a rehearsal container
+and two application containers briefly overlap — and with no swap the kernel's only
+answer to a spike is the OOM killer. 1 GB of swap turns that into slowness, which a
+release can survive; `vm.swappiness=10` keeps the kernel from using it for anything
+less urgent, so the steady state stays in RAM and the disk stays quiet.
+
+`prepare-host` is therefore part of the release path: `deploy-gcp.yml` runs it on
+every run, dry or real, right after preflight. On a prepared host it is a no-op that
+reports what is already there, and `swap_created` in `prepare-host-result.json` says
+whether this run made the file.
+
+It is deliberately unwilling to do the interesting thing. If `/swapfile` already
+exists at a different size, it **reports the mismatch and exits non-zero without
+touching it** — resizing swap means `swapoff` on a host that may be leaning on it,
+and that is an operator's decision, not a release's. The way forward is either to
+accept what is there (`SWAP_SIZE_MB=<the existing size>`) or to `swapoff` and remove
+the file by hand and re-run. It also refuses to create a swap file that would leave
+the root filesystem under 5 GB free, and it never touches a swap device other than
+`SWAP_PATH`.
+
+**Configure GCP host** (`.github/workflows/configure-gcp-host.yml`) applies the same
+phase on demand: `workflow_dispatch`, one `dry_run` input, the `production`
+environment and the same concurrency group as a release, so a host change and a
+release can never overlap on the same VM. It copies the release script, runs
+`prepare-host`, removes the script and writes the result to the job summary. It
+touches nothing else — not the app, the registry, the feed timer or a snapshot.
 
 ### Retention
 

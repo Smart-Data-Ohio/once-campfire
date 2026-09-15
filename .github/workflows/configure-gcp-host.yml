@@ -1,0 +1,125 @@
+name: Configure GCP host
+
+# Applies the host-level configuration the production VM needs — today a swap
+# file and vm.swappiness — without waiting for a release. `deploy-gcp.yml` runs
+# the same `prepare-host` phase on every run, so this workflow exists for
+# applying it now, or after an operator has had to undo it.
+#
+# It shares `deploy-gcp.yml`'s production concurrency group, so a host change
+# and a release can never be in flight on the same VM at once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what would change without changing anything
+        type: boolean
+        required: false
+        default: true
+
+permissions: {}
+
+jobs:
+  configure:
+    name: Prepare the production host
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-gcp-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    timeout-minutes: 30
+    env:
+      GCP_ZONE: ${{ vars.GCP_ZONE }}
+      GCP_INSTANCE: ${{ vars.GCP_INSTANCE }}
+      REMOTE_DIR: campfire-host-${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 10
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        timeout-minutes: 5
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        timeout-minutes: 10
+
+      - name: Verify the deployer identity
+        timeout-minutes: 2
+        shell: bash
+        env:
+          GCP_DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+        run: |
+          set -euo pipefail
+          # Authenticating only writes a credential file; this is the first
+          # proof that the Workload Identity binding can actually impersonate
+          # the deployer, and it is cheap.
+          err="$(mktemp)"
+          trap 'rm -f "$err"' EXIT
+          if ! gcloud auth print-access-token >/dev/null 2>"$err"; then
+            cat "$err"
+            echo "::error::could not obtain an access token as ${GCP_DEPLOYER_SA}; check the Workload Identity binding for this environment"
+            exit 1
+          fi
+          echo "Obtained an access token as ${GCP_DEPLOYER_SA}."
+
+      - name: Copy the release script to the VM
+        id: copy
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute scp --quiet --zone "$GCP_ZONE" --tunnel-through-iap \
+            deploy/gcp/campfire-release.sh "${GCP_INSTANCE}:${REMOTE_DIR}.sh"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+
+      - name: Prepare the host (swap)
+        id: prepare_host
+        timeout-minutes: 15
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          LABEL: host-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' /opt/campfire-deploy/campfire-release.sh prepare-host"
+          json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')"
+          jq -e . <<<"$json" >/dev/null 2>&1 || json='{}'
+          # `//` in jq treats `false` as absent, and `false` is exactly the
+          # interesting answer here, so ask whether the key is there instead.
+          field() { jq -r --arg k "$1" 'if has($k) then (.[$k] | tostring) else "unknown" end' <<<"$json"; }
+          {
+            echo "## Host preparation"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Instance | \`${GCP_INSTANCE}\` (\`${GCP_ZONE}\`) |"
+            echo "| Dry run | \`${DRY_RUN}\` |"
+            echo "| Swap file | \`$(field swap_path)\` |"
+            echo "| Swap size | \`$(field swap_size_mb) MB\` |"
+            echo "| Swap active | \`$(field swap_active)\` |"
+            echo "| Created by this run | \`$(field swap_created)\` |"
+            echo "| Persisted in /etc/fstab | \`$(field fstab_entry)\` |"
+            echo "| vm.swappiness | \`$(field swappiness)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the copied script from the VM
+        if: always() && steps.copy.conclusion == 'success'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "rm -f \"\$HOME/${REMOTE_DIR}.sh\"" || true

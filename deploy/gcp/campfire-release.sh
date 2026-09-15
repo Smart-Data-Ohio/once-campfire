@@ -15,6 +15,9 @@
 # restore a database over accepted writes.
 #
 # Phases:
+#   prepare-host  ensure the host itself is fit to run a release: a swap file of
+#              the configured size and vm.swappiness. Needs no other phase's
+#              state and touches neither the application nor the registry.
 #   preflight  discover the app, check capacity, record the feed timer state,
 #              authenticate to the registry and pull the exact digest.
 #   freeze     pause the feed timer, snapshot the database through the SQLite
@@ -56,6 +59,15 @@ set -euo pipefail
 # MIN_FREE_DISK_MB  floor checked before the image is pulled.
 # RELEASE_KEEP    number of release directories to keep when pruning.
 # ALLOW_BACKUP_WINDOW  1 to override the nightly ONCE backup window guard.
+# DRY_RUN         true to have `prepare-host` report what it would change and
+#                 change nothing. It still writes its result file.
+# SWAP_PATH       swap file `prepare-host` manages. No other swap device is
+#                 ever touched.
+# SWAP_SIZE_MB    size of that swap file. An existing file of a different size
+#                 is reported and refused, never resized.
+# SWAPPINESS      vm.swappiness persisted in SYSCTL_FILE.
+# SYSCTL_FILE     sysctl drop-in `prepare-host` owns.
+# MIN_FREE_AFTER_SWAP_MB  free space that must remain after the swap file exists.
 # CAMPFIRE_RELEASE_SIMULATE_FAILURE  validation only. `1` aborts the cutover
 #                 before `once update`, so the database is provably untouched
 #                 and the rollback can complete. `2` lets the app go healthy and
@@ -75,6 +87,12 @@ MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-3072}"
 RELEASE_KEEP="${RELEASE_KEEP:-3}"
 ALLOW_BACKUP_WINDOW="${ALLOW_BACKUP_WINDOW:-0}"
 CAMPFIRE_RELEASE_SIMULATE_FAILURE="${CAMPFIRE_RELEASE_SIMULATE_FAILURE:-0}"
+DRY_RUN="${DRY_RUN:-false}"
+SWAP_PATH="${SWAP_PATH:-/swapfile}"
+SWAP_SIZE_MB="${SWAP_SIZE_MB:-1024}"
+SWAPPINESS="${SWAPPINESS:-10}"
+SYSCTL_FILE="${SYSCTL_FILE:-/etc/sysctl.d/90-campfire.conf}"
+MIN_FREE_AFTER_SWAP_MB="${MIN_FREE_AFTER_SWAP_MB:-5120}"
 OPEN_ROLES_PATHS="${OPEN_ROLES_PATHS:-/opt/campfire-open-roles /etc/campfire-open-roles /var/lib/campfire-open-roles /etc/systemd/system/campfire-open-roles.service /etc/systemd/system/campfire-open-roles.timer}"
 
 STATE_ROOT="${STATE_ROOT:-/var/backups}"
@@ -421,6 +439,201 @@ assert_app_stopped() {
     fi
     sleep 2
   done
+}
+
+# -------------------------------------------------------------- prepare-host --
+
+# Gives the host the swap file and swappiness a 2 GB VM needs to survive a
+# memory spike instead of having the OOM killer end the release for us.
+#
+# It is deliberately conservative: it creates the swap file it is asked for, or
+# leaves the existing one exactly as it is. It never resizes a swap file that is
+# already there, and it never touches any swap device other than SWAP_PATH.
+# It needs no state from an earlier phase, so it can be run on its own.
+
+swap_file_is_active() {
+  swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$SWAP_PATH"
+}
+
+swap_file_has_signature() {
+  [ "$(blkid -p -s TYPE -o value "$SWAP_PATH" 2>/dev/null || true)" = "swap" ]
+}
+
+# A swap file is a copy of memory on disk. It must never exist readable by
+# anyone but root, not even for the seconds it takes to fill it.
+ensure_swap_file_mode() {
+  local mode owner
+  mode="$(stat -c %a "$SWAP_PATH")"
+  owner="$(stat -c %U:%G "$SWAP_PATH")"
+  if [ "$mode" != "600" ]; then
+    log "prepare-host: tightening $SWAP_PATH from mode $mode to 600"
+    chmod 0600 "$SWAP_PATH"
+  fi
+  if [ "$owner" != "root:root" ]; then
+    log "prepare-host: $SWAP_PATH is owned by $owner; making it root:root"
+    chown root:root "$SWAP_PATH"
+  fi
+}
+
+create_swap_file() {
+  local want_bytes=$(( SWAP_SIZE_MB * 1048576 )) got
+  ( umask 077; : > "$SWAP_PATH" )
+  ensure_swap_file_mode
+  if fallocate -l "${SWAP_SIZE_MB}M" "$SWAP_PATH" 2>/dev/null; then
+    log "prepare-host: allocated $SWAP_PATH with fallocate"
+  else
+    log "prepare-host: fallocate did not work here; writing zeros with dd instead"
+    dd if=/dev/zero of="$SWAP_PATH" bs=1M count="$SWAP_SIZE_MB" status=none \
+      || { rm -f "$SWAP_PATH"; die "prepare-host: could not allocate $SWAP_PATH"; }
+  fi
+  got="$(stat -c %s "$SWAP_PATH")"
+  if [ "$got" -ne "$want_bytes" ]; then
+    rm -f "$SWAP_PATH"
+    die "prepare-host: $SWAP_PATH came out $got bytes, expected $want_bytes; removed it"
+  fi
+}
+
+phase_prepare_host() {
+  local dry_run=false
+  case "$DRY_RUN" in
+    true|1|yes)    dry_run=true ;;
+    false|0|no|'') dry_run=false ;;
+    *) die "DRY_RUN must be true or false, got '$DRY_RUN'" ;;
+  esac
+
+  case "$SWAP_PATH" in
+    /*) : ;;
+    *) die "SWAP_PATH must be an absolute path, got '$SWAP_PATH'" ;;
+  esac
+  [[ "$SWAP_SIZE_MB" =~ ^[0-9]+$ ]] && [ "$SWAP_SIZE_MB" -gt 0 ] \
+    || die "SWAP_SIZE_MB must be a positive integer, got '$SWAP_SIZE_MB'"
+  [[ "$SWAPPINESS" =~ ^[0-9]+$ ]] && [ "$SWAPPINESS" -le 100 ] \
+    || die "SWAPPINESS must be an integer between 0 and 100, got '$SWAPPINESS'"
+
+  local want_bytes=$(( SWAP_SIZE_MB * 1048576 ))
+  local created=false active=false fstab=false
+
+  if [ "$dry_run" = true ]; then
+    log "prepare-host: DRY RUN — reporting what would change, changing nothing"
+  fi
+  log "prepare-host: want $SWAP_PATH at ${SWAP_SIZE_MB} MB with vm.swappiness=${SWAPPINESS}"
+
+  if [ -e "$SWAP_PATH" ]; then
+    [ -f "$SWAP_PATH" ] || die "prepare-host: $SWAP_PATH exists and is not a regular file; an operator must look at it"
+    local have_bytes have_mb
+    have_bytes="$(stat -c %s "$SWAP_PATH")"
+    have_mb=$(( have_bytes / 1048576 ))
+    # Resizing swap means swapoff on a host that may be leaning on it. That is a
+    # decision with an outage in it, so it belongs to a person, not to a release.
+    if [ "$have_bytes" -ne "$want_bytes" ]; then
+      die "prepare-host: $SWAP_PATH is ${have_mb} MB (${have_bytes} bytes) but SWAP_SIZE_MB asks for ${SWAP_SIZE_MB} MB. Refusing to resize an existing swap file: re-run with SWAP_SIZE_MB=${have_mb} to accept what is there, or have an operator 'swapoff ${SWAP_PATH}', remove it, and run this phase again."
+    fi
+    log "prepare-host: $SWAP_PATH already exists at ${SWAP_SIZE_MB} MB"
+    [ "$dry_run" = true ] || ensure_swap_file_mode
+    if swap_file_is_active; then
+      active=true
+      log "prepare-host: $SWAP_PATH is already active"
+    elif [ "$dry_run" = true ]; then
+      log "prepare-host: would enable swap on $SWAP_PATH (present but inactive)"
+    else
+      if ! swap_file_has_signature; then
+        log "prepare-host: $SWAP_PATH carries no swap signature; running mkswap"
+        mkswap "$SWAP_PATH" >/dev/null
+      fi
+      swapon "$SWAP_PATH"
+      active=true
+      log "prepare-host: enabled swap on $SWAP_PATH"
+    fi
+  else
+    local swap_dir free_mb free_after
+    swap_dir="$(dirname "$SWAP_PATH")"
+    free_mb="$(df -Pm "$swap_dir" | awk 'NR==2 {print $4}')"
+    free_after=$(( free_mb - SWAP_SIZE_MB ))
+    log "prepare-host: ${free_mb} MB free on the ${swap_dir} filesystem; ${free_after} MB would remain"
+    [ "$free_after" -ge "$MIN_FREE_AFTER_SWAP_MB" ] \
+      || die "prepare-host: a ${SWAP_SIZE_MB} MB swap file would leave ${free_after} MB free on ${swap_dir}, under the ${MIN_FREE_AFTER_SWAP_MB} MB floor"
+    if [ "$dry_run" = true ]; then
+      log "prepare-host: would create $SWAP_PATH (${SWAP_SIZE_MB} MB), mkswap it and swapon it"
+    else
+      create_swap_file
+      mkswap "$SWAP_PATH" >/dev/null
+      swapon "$SWAP_PATH"
+      created=true
+      active=true
+      log "prepare-host: created and enabled $SWAP_PATH (${SWAP_SIZE_MB} MB)"
+    fi
+  fi
+
+  # Without the fstab entry the swap file survives nothing: the next reboot
+  # comes back with the file on disk and no swap in use.
+  local fstab_line="$SWAP_PATH none swap sw 0 0"
+  if [ -f /etc/fstab ] && awk -v p="$SWAP_PATH" '$1 == p { found = 1 } END { exit found ? 0 : 1 }' /etc/fstab; then
+    fstab=true
+    log "prepare-host: /etc/fstab already has an entry for $SWAP_PATH"
+  elif [ "$dry_run" = true ]; then
+    log "prepare-host: would append '$fstab_line' to /etc/fstab"
+  else
+    printf '%s\n' "$fstab_line" >> /etc/fstab
+    fstab=true
+    log "prepare-host: appended '$fstab_line' to /etc/fstab"
+  fi
+
+  local sysctl_desired
+  sysctl_desired="$(printf '%s\n' \
+    '# Managed by deploy/gcp/campfire-release.sh (prepare-host). Do not edit by hand.' \
+    '# A 2 GB app VM should reach for swap late, and only to ride out a spike.' \
+    "vm.swappiness=${SWAPPINESS}")"
+  if [ -f "$SYSCTL_FILE" ] && [ "$(cat "$SYSCTL_FILE")" = "$sysctl_desired" ]; then
+    log "prepare-host: $SYSCTL_FILE already sets vm.swappiness=${SWAPPINESS}"
+    [ "$dry_run" = true ] || sysctl -q -p "$SYSCTL_FILE"
+  elif [ "$dry_run" = true ]; then
+    log "prepare-host: would set vm.swappiness=${SWAPPINESS} in $SYSCTL_FILE and apply it"
+  else
+    install -d -m 0755 "$(dirname "$SYSCTL_FILE")"
+    printf '%s\n' "$sysctl_desired" > "$SYSCTL_FILE.tmp"
+    chmod 0644 "$SYSCTL_FILE.tmp"
+    mv -f "$SYSCTL_FILE.tmp" "$SYSCTL_FILE"
+    sysctl -q -p "$SYSCTL_FILE"
+    log "prepare-host: wrote $SYSCTL_FILE and applied vm.swappiness=${SWAPPINESS}"
+  fi
+
+  local swappiness_now swappiness_json
+  swappiness_now="$(sysctl -n vm.swappiness 2>/dev/null || echo unknown)"
+  if [[ "$swappiness_now" =~ ^[0-9]+$ ]]; then
+    swappiness_json="$swappiness_now"
+  else
+    swappiness_json=null
+  fi
+
+  install -d -m 0755 "$STATE_ROOT"
+  jq -n \
+    --arg phase prepare-host \
+    --arg at "$(now_utc)" \
+    --arg label "$RELEASE_LABEL" \
+    --arg swap_path "$SWAP_PATH" \
+    --argjson swap_size_mb "$SWAP_SIZE_MB" \
+    --argjson swap_active "$active" \
+    --argjson swap_created "$created" \
+    --argjson swappiness "$swappiness_json" \
+    --argjson fstab_entry "$fstab" \
+    --argjson dry_run "$dry_run" \
+    '{phase:$phase, at:$at, release_label:$label, swap_path:$swap_path,
+      swap_size_mb:$swap_size_mb, swap_active:$swap_active, swap_created:$swap_created,
+      swappiness:$swappiness, fstab_entry:$fstab_entry, dry_run:$dry_run}' \
+    | write_state prepare-host-result.json
+
+  if [ "$active" = true ]; then
+    log "prepare-host: active swap: $(swapon --show=NAME,SIZE,USED --noheadings | tr '\n' ';')"
+  fi
+  printf '\n===== host preparation =====\n'
+  printf 'dry run      : %s\n' "$dry_run"
+  printf 'swap file    : %s (%s MB)\n' "$SWAP_PATH" "$SWAP_SIZE_MB"
+  printf 'created now  : %s\n' "$created"
+  printf 'swap active  : %s\n' "$active"
+  printf 'fstab entry  : %s\n' "$fstab"
+  printf 'swappiness   : %s (%s)\n' "$swappiness_now" "$SYSCTL_FILE"
+  printf 'result       : %s\n' "$(state_path prepare-host-result.json)"
+  printf '============================\n\n'
 }
 
 # ----------------------------------------------------------------- preflight --
@@ -1226,6 +1439,7 @@ phase_timer_state() {
 run_phase() {
   local phase="${1:-}"
   case "$phase" in
+    prepare-host) phase_prepare_host ;;
     preflight)   phase_preflight ;;
     freeze)      phase_freeze ;;
     cutover)     phase_cutover ;;
@@ -1233,17 +1447,25 @@ run_phase() {
     finish)      phase_finish ;;
     logout)      phase_logout ;;
     timer-state) phase_timer_state ;;
-    *) die "usage: $0 {preflight|freeze|cutover|rollback|finish|logout|timer-state}" ;;
+    *) die "usage: $0 {prepare-host|preflight|freeze|cutover|rollback|finish|logout|timer-state}" ;;
   esac
 }
 
 main() {
   require_root
   require_label
-  command -v docker >/dev/null || die "docker is not available"
   command -v jq >/dev/null || die "jq is not available"
-  command -v once >/dev/null || die "the once CLI is not available"
   command -v flock >/dev/null || die "flock is not available"
+  # `prepare-host` configures the kernel's view of memory and nothing else. It
+  # has to work on a host where the application has not been installed yet, so
+  # it must not be held to the application's prerequisites.
+  case "${1:-}" in
+    prepare-host) : ;;
+    *)
+      command -v docker >/dev/null || die "docker is not available"
+      command -v once >/dev/null || die "the once CLI is not available"
+      ;;
+  esac
 
   # One release at a time on this host, across every phase and every workflow run.
   exec 9>"$LOCK_FILE"
