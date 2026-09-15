@@ -48,4 +48,15 @@ class PresenceChannelTest < ActionCable::Channel::TestCase
       unsubscribe
     end
   end
+
+  test "refresh and unsubscribe tolerate a membership removed with the room" do
+    membership = users(:david).memberships.first
+    subscribe room_id: membership.room_id
+    membership.delete
+
+    assert_nothing_raised do
+      perform :refresh
+      unsubscribe
+    end
+  end
 end

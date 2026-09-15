@@ -57,6 +57,79 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "broadcast message actions preserve a nonstandard request port" do
+    origin = "http://once.campfire.test:3443"
+    post "#{origin}#{room_messages_path(@room, format: :turbo_stream)}", params: {
+      message: { markdown_source: "A live message", client_message_id: "broadcast-port" }
+    }
+
+    assert_rendered_turbo_stream_broadcast @room, :messages, action: "append", target: [ @room, :messages ] do
+      assert_select "[data-message-actions-metadata-url-value='#{origin}#{actions_room_message_path(@room, Message.last)}']"
+      assert_copy_link_button "#{origin}#{room_at_message_path(@room, Message.last)}"
+    end
+  end
+
+  test "creating a Markdown message preserves its source and derives the rich body" do
+    source = "# Release\n\n**Ready**"
+
+    post room_messages_url(@room, format: :turbo_stream), params: {
+      message: { body: "<script>wrong source</script>", markdown_source: source, client_message_id: 999 }
+    }
+
+    message = Message.last
+    assert_response :success
+    assert_equal source, message.markdown_source
+    assert_equal "Release\n\nReady", message.plain_text_body
+    assert_match %r{<h1>Release</h1>}, message.body.body.to_html
+    assert_no_match /script/, message.body.body.to_html
+  end
+
+  test "preview renders the same safe Markdown without writing" do
+    assert_no_difference -> { Message.count } do
+      post preview_room_messages_url(@room), params: {
+        message: { markdown_source: "## Preview\n\n<script>x</script>\n\n- [x] @[David]" }
+      }, as: :json
+    end
+
+    assert_response :success
+    html = response.parsed_body.fetch("html")
+    assert_match %r{<h2>Preview</h2>}, html
+    assert_match %r{<input type="checkbox" checked="" disabled="disabled">}, html
+    assert_match %r{<div class="mention mention--user-#{users(:david).id}"}, html
+    assert_match %r{data-user-id="#{users(:david).id}"}, html
+    assert_no_match /<script/, html
+  end
+
+  test "preview requires room membership" do
+    sign_in :kevin
+
+    assert_raises ActiveRecord::RecordNotFound do
+      post preview_room_messages_url(@room), params: { message: { markdown_source: "No access" } }
+    end
+  end
+
+  test "preview rejects oversized Markdown without parsing or writing it" do
+    assert_no_difference -> { Message.count } do
+      post preview_room_messages_url(@room), params: {
+        message: { markdown_source: "x" * (Message::Markdown::SOURCE_LIMIT + 1) }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_match(/limited/, response.parsed_body.fetch("error"))
+  end
+
+  test "preview is protected against cross-site form submissions" do
+    original_forgery_protection = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+
+    assert_raises ActionController::InvalidAuthenticityToken do
+      post preview_room_messages_url(@room), params: { message: { markdown_source: "No token" } }
+    end
+  ensure
+    ActionController::Base.allow_forgery_protection = original_forgery_protection
+  end
+
   test "creating a message broadcasts unread room to each member" do
     @room.users.each do |member|
       assert_broadcasts UnreadRoomsChannel.stream_name_for(member.id), 1 do
@@ -86,14 +159,37 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Updated body", message.reload.plain_text_body
   end
 
-  test "admin updates a message belonging to another user" do
-    message = @room.messages.where(creator: users(:jason)).first
+  test "updating a Markdown message preserves exact new source" do
+    message = @room.messages.create!(creator: users(:david), markdown_source: "**Before**", client_message_id: "markdown-update")
+    source = "## After\n\n`code`"
 
     Turbo::StreamsChannel.expects(:broadcast_replace_to).once
-    put room_message_url(@room, message), params: { message: { body: "Updated body" } }
+    put room_message_url(@room, message), params: { message: { markdown_source: source } }
 
     assert_redirected_to room_message_url(@room, message)
-    assert_equal "Updated body", message.reload.plain_text_body
+    assert_equal source, message.reload.markdown_source
+    assert_equal "After\n\ncode", message.plain_text_body
+  end
+
+  test "a legacy body update clears stale Markdown mode" do
+    message = @room.messages.create!(creator: users(:david), markdown_source: "**Before**", client_message_id: "markdown-to-rich")
+
+    Turbo::StreamsChannel.expects(:broadcast_replace_to).once
+    put room_message_url(@room, message), params: { message: { body: "Legacy again" } }
+
+    assert_redirected_to room_message_url(@room, message)
+    assert_nil message.reload.markdown_source
+    assert_equal "Legacy again", message.plain_text_body
+  end
+
+  test "admin cannot update a message belonging to another user" do
+    message = @room.messages.where(creator: users(:jason)).first
+
+    assert_no_changes -> { message.reload.plain_text_body } do
+      put room_message_url(@room, message), params: { message: { body: "Updated body" } }
+    end
+
+    assert_response :forbidden
   end
 
   test "destroy destroys a message belonging to the user" do
@@ -148,6 +244,15 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "mentioning a bot from Markdown triggers a webhook" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+
+    assert_enqueued_jobs 1, only: Bot::WebhookJob do
+      post room_messages_url(@room, format: :turbo_stream), params: { message: {
+        markdown_source: "Hey @[Bender Bot]", client_message_id: 999 } }
+    end
+  end
+
   private
     def ensure_messages_present(*messages, count: 1)
       messages.each do |message|
@@ -160,6 +265,6 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     def assert_copy_link_button(url)
-      assert_select ".btn[title='Copy link'][data-copy-to-clipboard-content-value='#{url}']"
+      assert_select "[data-message-actions-permalink-url-value='#{url}']"
     end
 end

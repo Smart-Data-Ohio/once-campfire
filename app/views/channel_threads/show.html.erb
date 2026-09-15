@@ -1,0 +1,44 @@
+<% @page_title = @thread.name %>
+
+<main class="thread" aria-labelledby="thread-title">
+  <header>
+    <h1 id="thread-title"><%= @thread.name %></h1>
+    <p><%= @thread.status %> · <%= @thread.message_count %> messages</p>
+    <% if @thread.work? %>
+      <% owner = @thread.work_owner %>
+      <% owner_label = owner.blank? ? "Unassigned" : @thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
+      <p aria-label="Work status">
+        Work: <%= @thread.work_status_label %> · <%= owner_label %>
+      </p>
+      <% if @thread.work_thread_events.any? %>
+        <details>
+          <summary>Work history</summary>
+          <ol>
+            <% @thread.work_thread_events.ordered.each do |event| %>
+              <li>
+                <%= event.actor&.name || "Former member" %> ·
+                <% if event.status_changed? %>
+                  status <%= ChannelThread::WORK_STATUS_LABELS.fetch(event.from_status, "Ordinary thread") %>
+                  → <%= ChannelThread::WORK_STATUS_LABELS.fetch(event.to_status, "Ordinary thread") %>
+                <% end %>
+                <% if event.owner_changed? %>
+                  <% if event.status_changed? %> · <% end %>
+                  owner <%= event.from_owner_name || "Unassigned" %>
+                  → <%= event.to_owner_name || "Unassigned" %>
+                <% end %>
+              </li>
+            <% end %>
+          </ol>
+        </details>
+      <% end %>
+    <% end %>
+  </header>
+
+  <% if @thread.parent_message %>
+    <article aria-label="Thread starter"><%= render @thread.parent_message %></article>
+  <% end %>
+
+  <section aria-label="Thread messages">
+    <%= render partial: "messages/message", collection: @messages %>
+  </section>
+</main>

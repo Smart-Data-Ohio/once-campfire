@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+LIVEKIT_VERSION="1.13.7"
+LIVEKIT_ARCHIVE="livekit_${LIVEKIT_VERSION}_linux_amd64.tar.gz"
+LIVEKIT_SHA256="6634aeeb2fb1366b6723708ae4320b9d5408106a4c63457c5e845ae3979c90e2"
+LIVEKIT_DOWNLOAD_URL="https://github.com/livekit/livekit/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+RUNTIME_DIR="$ROOT_DIR/.bundle/livekit"
+BINARY="$RUNTIME_DIR/livekit-server"
+ARCHIVE_PATH="$RUNTIME_DIR/$LIVEKIT_ARCHIVE"
+ENV_FILE="$RUNTIME_DIR/env"
+CONFIG_FILE="$RUNTIME_DIR/config.yaml"
+GATEWAY_DIR="$ROOT_DIR/script/livekit-gateway"
+GATEWAY_SERVER="$GATEWAY_DIR/server.mjs"
+
+usage() {
+  cat <<'USAGE'
+Usage: bin/livekit-local <command>
+
+Commands:
+  setup   Install and configure the pinned project-local LiveKit server
+  serve   Run LiveKit, the authorization gateway, and cleanup reconciliation
+  start   Run only the private LiveKit server (test and diagnostic use)
+  gateway Run only the authorization gateway (test and diagnostic use)
+  status  Check whether the private LiveKit server is ready
+  gateway-status  Check whether the authorization gateway is ready
+  paths   Print the non-secret runtime paths used by the integration
+USAGE
+}
+
+require_linux_amd64() {
+  if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+    printf 'LiveKit %s is pinned for Linux amd64; this host is %s/%s.\n' \
+      "$LIVEKIT_VERSION" "$(uname -s)" "$(uname -m)" >&2
+    exit 1
+  fi
+}
+
+verify_archive() {
+  printf '%s  %s\n' "$LIVEKIT_SHA256" "$ARCHIVE_PATH" | sha256sum --check --status
+}
+
+install_binary() {
+  local extract_dir
+
+  if [[ ! -f "$ARCHIVE_PATH" ]]; then
+    printf 'Downloading LiveKit Server v%s...\n' "$LIVEKIT_VERSION"
+    curl --fail --location --silent --show-error \
+      --output "$ARCHIVE_PATH.part" "$LIVEKIT_DOWNLOAD_URL"
+    mv "$ARCHIVE_PATH.part" "$ARCHIVE_PATH"
+  fi
+
+  if ! verify_archive; then
+    printf 'Checksum mismatch for %s; remove it and run setup again.\n' "$ARCHIVE_PATH" >&2
+    exit 1
+  fi
+
+  extract_dir=$(mktemp -d "$RUNTIME_DIR/extract.XXXXXX")
+  trap 'rm -rf "$extract_dir"' RETURN
+  tar -xzf "$ARCHIVE_PATH" -C "$extract_dir" livekit-server
+  if [[ "$($extract_dir/livekit-server --version)" != "livekit-server version $LIVEKIT_VERSION" ]]; then
+    printf 'Verified archive did not contain LiveKit Server version %s.\n' "$LIVEKIT_VERSION" >&2
+    exit 1
+  fi
+
+  if [[ ! -x "$BINARY" ]] || ! cmp --silent "$extract_dir/livekit-server" "$BINARY"; then
+    install -m 0755 "$extract_dir/livekit-server" "$BINARY"
+  fi
+  rm -rf "$extract_dir"
+  trap - RETURN
+
+  if [[ "$($BINARY --version)" != "livekit-server version $LIVEKIT_VERSION" ]]; then
+    printf 'Installed LiveKit binary did not report version %s.\n' "$LIVEKIT_VERSION" >&2
+    exit 1
+  fi
+}
+
+load_or_create_environment() {
+  local api_key api_secret gateway_secret env_temp
+
+  unset LIVEKIT_URL LIVEKIT_INTERNAL_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_GATEWAY_SECRET
+  if [[ -f "$ENV_FILE" ]]; then
+    chmod 0600 "$ENV_FILE"
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    api_key="${LIVEKIT_API_KEY:-}"
+    api_secret="${LIVEKIT_API_SECRET:-}"
+    gateway_secret="${LIVEKIT_GATEWAY_SECRET:-}"
+  else
+    api_key="local_$(openssl rand -hex 12)"
+    api_secret="$(openssl rand -hex 32)"
+    gateway_secret=""
+  fi
+
+  if [[ ! "$api_key" =~ ^local_[0-9a-f]{24}$ ]] || [[ ! "$api_secret" =~ ^[0-9a-f]{64}$ ]]; then
+    printf '%s contains invalid local LiveKit credentials; move it aside and run setup again.\n' "$ENV_FILE" >&2
+    exit 1
+  fi
+  if [[ -n "$gateway_secret" && ! "$gateway_secret" =~ ^[0-9a-f]{32,}$ ]]; then
+    printf '%s contains an invalid gateway secret; remove that entry and run setup again.\n' "$ENV_FILE" >&2
+    exit 1
+  fi
+  if [[ -z "$gateway_secret" ]]; then
+    gateway_secret="$(openssl rand -hex 32)"
+  fi
+
+  umask 077
+  env_temp=$(mktemp "$RUNTIME_DIR/env.XXXXXX")
+  {
+    printf "export LIVEKIT_URL='%s'\n" "ws://127.0.0.1:7883"
+    printf "export LIVEKIT_INTERNAL_URL='%s'\n" "http://127.0.0.1:7880"
+    printf "export LIVEKIT_API_KEY='%s'\n" "$api_key"
+    printf "export LIVEKIT_API_SECRET='%s'\n" "$api_secret"
+    printf "export LIVEKIT_GATEWAY_SECRET='%s'\n" "$gateway_secret"
+  } > "$env_temp"
+  chmod 0600 "$env_temp"
+  mv "$env_temp" "$ENV_FILE"
+
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+}
+
+install_gateway_dependencies() {
+  command -v node >/dev/null || { printf 'Node.js is required for the LiveKit authorization gateway.\n' >&2; exit 1; }
+  command -v npm >/dev/null || { printf 'npm is required for the LiveKit authorization gateway.\n' >&2; exit 1; }
+  if ! node -e 'const version = require(process.argv[1]); if (version.version !== "8.21.3") process.exit(1)' \
+    "$GATEWAY_DIR/node_modules/ws/package.json" 2>/dev/null; then
+    npm ci --ignore-scripts --no-audit --no-fund --prefix "$GATEWAY_DIR"
+  fi
+}
+
+write_config() {
+  umask 077
+  {
+    printf '%s\n' \
+      'port: 7880' \
+      'bind_addresses:' \
+      '  - 127.0.0.1' \
+      'rtc:' \
+      '  tcp_port: 0' \
+      '  udp_port: 7882' \
+      '  use_external_ip: false' \
+      '  node_ip: 127.0.0.1' \
+      '  enable_loopback_candidate: true' \
+      '  ips:' \
+      '    includes:' \
+      '      - 127.0.0.1/32' \
+      'turn:' \
+      '  enabled: false' \
+      'logging:' \
+      '  level: info' \
+      'keys:'
+    printf '  %s: %s\n' "$LIVEKIT_API_KEY" "$LIVEKIT_API_SECRET"
+  } > "$CONFIG_FILE"
+  chmod 0600 "$CONFIG_FILE"
+}
+
+setup() {
+  require_linux_amd64
+  command -v curl >/dev/null || { printf 'curl is required.\n' >&2; exit 1; }
+  command -v openssl >/dev/null || { printf 'openssl is required.\n' >&2; exit 1; }
+  command -v sha256sum >/dev/null || { printf 'sha256sum is required.\n' >&2; exit 1; }
+  command -v tar >/dev/null || { printf 'tar is required.\n' >&2; exit 1; }
+
+  mkdir -p "$RUNTIME_DIR"
+  install_binary
+  load_or_create_environment
+  install_gateway_dependencies
+  write_config
+
+  printf 'LiveKit Server v%s is installed behind ws://127.0.0.1:7883.\n' "$LIVEKIT_VERSION"
+  printf 'The private signaling and administration endpoint is http://127.0.0.1:7880.\n'
+  printf 'Environment: %s\n' "$ENV_FILE"
+}
+
+status() {
+  if curl --fail --silent --show-error --output /dev/null http://127.0.0.1:7880/; then
+    printf 'Private LiveKit is ready at http://127.0.0.1:7880.\n'
+  else
+    printf 'Private LiveKit is not ready at http://127.0.0.1:7880.\n' >&2
+    exit 1
+  fi
+}
+
+gateway_status() {
+  local status_code
+  status_code=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:7883/rtc/validate || true)
+  if [[ "$status_code" == "401" ]]; then
+    printf 'LiveKit authorization gateway is ready at ws://127.0.0.1:7883.\n'
+  else
+    printf 'LiveKit authorization gateway is not ready at ws://127.0.0.1:7883.\n' >&2
+    exit 1
+  fi
+}
+
+serve() {
+  local child_status interrupted=0 deadline alive pid
+  local -a child_pids=()
+
+  setup
+
+  stop_children() {
+    for pid in "${child_pids[@]}"; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+    deadline=$((SECONDS + 5))
+    while (( SECONDS < deadline )); do
+      alive=0
+      for pid in "${child_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then alive=1; fi
+      done
+      (( alive == 0 )) && break
+      sleep 0.1
+    done
+    for pid in "${child_pids[@]}"; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done
+    for pid in "${child_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  }
+
+  on_signal() {
+    interrupted=1
+    stop_children
+  }
+  run_reconciler() {
+    cd "$ROOT_DIR"
+    if [[ -x "$ROOT_DIR/.bundle/run" ]]; then
+      exec "$ROOT_DIR/.bundle/run" bin/huddle-reconcile
+    fi
+    exec bin/huddle-reconcile
+  }
+  trap on_signal INT TERM
+
+  "$BINARY" --config "$CONFIG_FILE" &
+  child_pids+=("$!")
+  node "$GATEWAY_SERVER" &
+  child_pids+=("$!")
+  run_reconciler &
+  child_pids+=("$!")
+
+  set +e
+  wait -n "${child_pids[@]}"
+  child_status=$?
+  set -e
+  trap - INT TERM
+  stop_children
+
+  if (( interrupted == 1 )); then exit 130; fi
+  if (( child_status == 0 )); then exit 1; fi
+  exit "$child_status"
+}
+
+case "${1:-}" in
+  setup)
+    setup
+    ;;
+  serve)
+    serve
+    ;;
+  start)
+    setup
+    exec "$BINARY" --config "$CONFIG_FILE"
+    ;;
+  gateway)
+    setup
+    exec node "$GATEWAY_SERVER"
+    ;;
+  status)
+    status
+    ;;
+  gateway-status)
+    gateway_status
+    ;;
+  paths)
+    printf 'Environment: %s\nConfig: %s\nBinary: %s\n' "$ENV_FILE" "$CONFIG_FILE" "$BINARY"
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

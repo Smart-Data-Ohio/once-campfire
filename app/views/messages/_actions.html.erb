@@ -1,58 +1,127 @@
-<%# Be sure to check/update messages/_template.html.erb when changing this file %>
+<%# The message action menu is opened by right-click, keyboard context-menu, or a mobile long-press. %>
+<%# Keep this partial in sync with messages/_template.html.erb when the message shell changes. %>
 
-<div class="message__actions" data-controller="soft-keyboard">
-  <%= tag.details class: "position-relative",
-      data: { controller: "popup", action: "keydown.esc->popup#close toggle->popup#toggle click@document->popup#closeOnClickOutside", popup_orientation_top_class: "popup-orientation-top" } do %>
-    <summary class="btn message__action-btn message__options-btn">
-      <%= image_tag "menu-dots-horizontal.svg", size: 20, class: "colorize--black", aria: { hidden: "true" } %>
-      <span class="for-screen-reader">Message options</span>
-    </summary>
+<% message_url = message_action_url(message) %>
+<% permalink_url = message_link_url(message) %>
+<% actions_url = if message.thread_message?
+  actions_room_thread_message_url(message.room, message.thread, message)
+else
+  actions_room_message_url(message.room, message)
+end %>
 
-    <div class="message__actions-menu border shadow" data-popup-target="menu">
-      <div class="quick-boosts">
-        <% EmojiHelper::REACTIONS.each do |character, title| %>
-          <%= form_with model: [ message, Boost.new ], data: { turbo_frame: dom_id(message, :boosting), action: "popup#close"} do |form| %>
-            <%= hidden_field_tag "boost[content]", character %>
-            <%= form.button type: "submit", title: title, class: "btn message__action-btn", data: { emoji: character } do %>
-              <figure class="margin-none boost-character"><%= character %></figure>
-              <span class="for-screen-reader"><%= title %></span>
-            <% end %>
+<div class="message__actions"
+     data-controller="message-actions"
+     data-message-actions-message-url-value="<%= message_url %>"
+     data-message-actions-permalink-url-value="<%= permalink_url %>"
+     data-message-actions-metadata-url-value="<%= actions_url %>">
+  <div id="<%= dom_id(message, :actions) %>"
+       class="message__actions-menu border shadow"
+       popover="manual"
+       role="menu"
+       aria-label="Message actions"
+       hidden
+       data-message-actions-target="menu">
+    <div class="message__quick-reactions" role="group" aria-label="Reactions">
+      <% EmojiHelper::REACTIONS.each do |character, title| %>
+        <%= form_with model: [ message, Boost.new ], class: "message__reaction-form",
+              data: { turbo_frame: dom_id(message, :boosting), action: "submit->message-actions#close" } do |form| %>
+          <%= hidden_field_tag "boost[content]", character %>
+          <%= form.button type: "submit", title: title, class: "btn message__quick-reaction", role: "menuitem", data: { reaction: character, message_actions_target: "item" } do %>
+            <span aria-hidden="true"><%= character %></span>
+            <span class="for-screen-reader"><%= title %></span>
           <% end %>
         <% end %>
-
-        <%= link_to new_message_boost_path(message),
-              class: "btn message__action-btn message__boost-btn",
-              data: { turbo_frame: dom_id(message, :new_boost), action: "soft-keyboard#open popup#close" } do %>
-          <%= image_tag "boost.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-          <span class="for-screen-reader">New boost</span>
-        <% end %>
-      </div>
-
-      <div class="flex flex-wrap border-top margin-block-start-half pad-block-start-half message__actions-grid">
-        <% if message.content_type.attachment? %>
-          <%= link_to rails_blob_path(message.attachment, disposition: "attachment", only_path: true), class: "btn message__action-btn center full-width hide-in-ios-pwa", title: "Download", aria: { label: "Download" } do %>
-            <%= image_tag "download.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-          <% end %>
-
-          <%= tag.button class: "btn message__action-btn center full-width",
-              data: { controller: "web-share", action: "web-share#share", web_share_files_value: rails_blob_path(message.attachment, only_path: true), web_share_title_value: message.attachment.filename.to_s }, title: "Share", aria: { label: "Share" } do %>
-            <%= image_tag "share.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-          <% end %>
-        <% else %>
-          <%= tag.button class: "btn message__action-btn center full-width", data: { action: "reply#reply" }, title: "Reply", aria: { label: "Reply" } do %>
-            <%= image_tag "reply.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-          <% end %>
-        <% end %>
-
-        <%= tag.button class: "btn message__action-btn center full-width", title: "Copy link", aria: { label: "Copy link" }, data: { controller: "copy-to-clipboard", action: "copy-to-clipboard#copy", copy_to_clipboard_success_class: "btn--success", copy_to_clipboard_content_value: url } do %>
-          <%= image_tag "link.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-        <% end %>
-
-        <%= link_to edit_room_message_path(message.room, message), class: "btn message__action-btn center full-width message__edit-btn",
-              data: { turbo_frame: dom_id(message, :edit) }, title: "Edit", aria: { label: "Edit"} do %>
-          <%= image_tag "pencil.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
-        <% end %>
-      </div>
+      <% end %>
     </div>
-  <% end %>
+
+    <div class="message__actions-grid border-top margin-block-start-half pad-block-start-half">
+      <%= tag.button type: "button", class: "btn message__menu-action", role: "menuitem",
+            data: { action: "message-actions#reply", message_actions_target: "item" } do %>
+        <%= image_tag "reply.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Reply</span>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action", role: "menuitem",
+            data: { action: "message-actions#copyText", message_actions_target: "item" } do %>
+        <%= image_tag "copy-paste.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Copy text</span>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action", role: "menuitem",
+            title: "Copy link", aria: { label: "Copy link" },
+            data: { action: "message-actions#copyLink", message_actions_target: "item", copy_to_clipboard_content_value: message_url } do %>
+        <%= image_tag "link.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Copy message link</span>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action", role: "menuitem",
+            data: { action: "message-actions#forward", message_actions_target: "item" } do %>
+        <%= image_tag "share.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Forward</span>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action", role: "menuitem",
+            data: { action: "message-actions#thread", message_actions_target: "item" } do %>
+        <%= image_tag "messages-outlined.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span data-message-actions-target="threadLabel">Create thread</span>
+      <% end %>
+
+      <% if message.content_type.attachment? %>
+        <%= link_to rails_blob_path(message.attachment, disposition: "attachment", only_path: true),
+              class: "btn message__menu-action hide-in-ios-pwa",
+              role: "menuitem", data: { message_actions_target: "item" } do %>
+          <%= image_tag "download.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+          <span>Download attachment</span>
+        <% end %>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action message__edit-action", role: "menuitem", hidden: true,
+            data: { action: "message-actions#edit", message_actions_target: "item" } do %>
+        <%= image_tag "pencil.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Edit message</span>
+      <% end %>
+
+      <%= tag.button type: "button", class: "btn message__menu-action message__delete-action", role: "menuitem", hidden: true,
+            data: { action: "message-actions#delete", message_actions_target: "item" } do %>
+        <%= image_tag "trash.svg", class: "colorize--black", size: 20, aria: { hidden: "true" } %>
+        <span>Delete message</span>
+      <% end %>
+    </div>
+
+    <span class="for-screen-reader" role="status" aria-live="polite" data-message-actions-target="status"></span>
+  </div>
+
+  <dialog class="message-forward-dialog" aria-labelledby="<%= dom_id(message, :forward_title) %>"
+          data-message-actions-target="forwardDialog">
+    <form class="message-forward-dialog__form" data-action="submit->message-actions#submitForward">
+      <header class="message-forward-dialog__header">
+        <div>
+          <span class="message-forward-dialog__eyebrow">Forward message</span>
+          <h2 id="<%= dom_id(message, :forward_title) %>">Choose destinations</h2>
+        </div>
+        <button type="button" class="btn btn--borderless message-forward-dialog__close"
+                aria-label="Close forward dialog" data-action="message-actions#closeForward">×</button>
+      </header>
+
+      <p class="message-forward-dialog__preview overflow-ellipsis" data-message-actions-target="forwardPreview"></p>
+
+      <label class="message-forward-dialog__note">
+        <span>Add a note <small>(optional)</small></span>
+        <textarea rows="2" maxlength="1000" placeholder="Add context for the recipients"
+                  data-message-actions-target="forwardNote"></textarea>
+      </label>
+
+      <fieldset class="message-forward-dialog__destinations">
+        <legend>Send to up to 5 channels or direct messages</legend>
+        <div class="message-forward-dialog__destination-list" data-message-actions-target="forwardDestinations"></div>
+      </fieldset>
+
+      <p class="message-forward-dialog__status" role="status" aria-live="polite" data-message-actions-target="forwardStatus"></p>
+
+      <footer class="message-forward-dialog__footer">
+        <button type="button" class="btn" data-action="message-actions#closeForward">Cancel</button>
+        <button type="submit" class="btn btn--reversed" data-message-actions-target="forwardSubmit">Forward</button>
+      </footer>
+    </form>
+  </dialog>
 </div>

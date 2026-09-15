@@ -7,21 +7,37 @@ import TypingTracker from "models/typing_tracker"
 export default class extends Controller {
   static targets = [ "author", "indicator" ]
   static classes = [ "active" ]
+  static values = { roomId: Number, threadId: Number }
+
+  #connectionToken = 0
 
   async connect() {
     if (!pageIsTurboPreview()) {
+      const connectionToken = ++this.#connectionToken
       this.tracker = new TypingTracker(this.#update.bind(this))
+      const parameters = {
+        channel: "TypingNotificationsChannel",
+        room_id: this.hasRoomIdValue ? this.roomIdValue : Current.room.id,
+      }
+      if (this.hasThreadIdValue && this.threadIdValue > 0) parameters.thread_id = this.threadIdValue
 
-      this.channel = await cable.subscribeTo(
-        { channel: "TypingNotificationsChannel", room_id: Current.room.id },
+      const channel = await cable.subscribeTo(
+        parameters,
         { received: this.#received.bind(this) }
       )
+      if (this.#connectionToken === connectionToken && this.element.isConnected) {
+        this.channel = channel
+      } else {
+        channel.unsubscribe()
+      }
     }
   }
 
   disconnect() {
+    this.#connectionToken++
     this.tracker?.close()
     this.channel?.unsubscribe()
+    this.channel = null
   }
 
   start({ target }) {
@@ -47,7 +63,7 @@ export default class extends Controller {
   }
 
   #send(action) {
-    this.channel.send({ action })
+    this.channel?.send({ action })
   }
 
   #update(message) {

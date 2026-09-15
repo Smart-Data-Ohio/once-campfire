@@ -47,9 +47,13 @@ module RoomsHelper
     end
   end
 
-  def composer_form_tag(room, &)
-    form_with model: Message.new, url: room_messages_path(room),
-      id: "composer", class: "margin-block flex-item-grow contain", data: composer_data_options(room), &
+  def composer_form_tag(room, thread: nil, &)
+    form_with model: Message.new,
+      url: thread ? room_thread_messages_path(room, thread) : room_messages_path(room),
+      id: thread ? dom_id(thread, :composer) : "composer",
+      namespace: thread ? "thread_#{thread.id}" : nil,
+      class: "margin-block flex-item-grow contain",
+      data: composer_data_options(room, thread:), &
   end
 
   def room_display_name(room, for_user: Current.user)
@@ -61,12 +65,15 @@ module RoomsHelper
   end
 
   private
-    def composer_data_options(room)
+    def composer_data_options(room, thread: nil)
+      message_area_id = thread ? dom_id(thread, :message_area) : "message-area"
       {
         controller: "composer drop-target",
-        action: composer_data_actions,
-        composer_messages_outlet: "#message-area",
-        composer_toolbar_class: "composer--rich-text", composer_room_id_value: room.id
+        action: "#{composer_data_actions} turbo:before-fetch-request->composer#prepareRequest messages:recover@window->composer#recover",
+        composer_messages_outlet: "##{message_area_id}",
+        composer_room_id_value: room.id,
+        composer_thread_id_value: thread&.id,
+        composer_thread_mode_value: thread.present?
       }
     end
 
@@ -77,7 +84,7 @@ module RoomsHelper
         "trix-file-accept->composer#preventAttachment refresh-room:online@window->composer#online"
 
       remaining_actions =
-        "typing-notifications#stop paste->composer#pasteFiles turbo:submit-end->composer#submitEnd refresh-room:offline@window->composer#offline"
+        "submit->typing-notifications#stop paste->composer#pasteFiles turbo:submit-end->composer#submitEnd refresh-room:offline@window->composer#offline"
 
       [ drop_target_actions, drag_and_drop_actions, trix_attachment_actions, remaining_actions ].join(" ")
     end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_15_170100) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -60,6 +60,20 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "activity_items", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.datetime "handled_at"
+    t.datetime "read_at"
+    t.integer "source_id", null: false
+    t.string "source_type", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
+    t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
+    t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+  end
+
   create_table "bans", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address", null: false
@@ -77,6 +91,63 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.datetime "updated_at", null: false
     t.index ["booster_id"], name: "index_boosts_on_booster_id"
     t.index ["message_id"], name: "index_boosts_on_message_id"
+  end
+
+  create_table "channel_threads", force: :cascade do |t|
+    t.integer "auto_archive_after_minutes", default: 4320, null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", null: false
+    t.integer "creator_id", null: false
+    t.datetime "last_activity_at", null: false
+    t.datetime "locked_at"
+    t.string "name", null: false
+    t.integer "parent_message_id"
+    t.integer "room_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "work_owner_id"
+    t.string "work_status"
+    t.index ["creator_id"], name: "index_channel_threads_on_creator_id"
+    t.index ["parent_message_id"], name: "index_channel_threads_on_parent_message_id", unique: true, where: "parent_message_id IS NOT NULL"
+    t.index ["room_id", "closed_at", "locked_at"], name: "index_channel_threads_on_room_id_and_closed_at_and_locked_at"
+    t.index ["room_id", "last_activity_at"], name: "index_channel_threads_on_room_id_and_last_activity_at"
+    t.index ["room_id", "work_status", "last_activity_at"], name: "index_channel_threads_on_room_and_work_status_and_activity"
+    t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
+  end
+
+  create_table "huddle_cleanups", force: :cascade do |t|
+    t.integer "attempts", default: 0, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "enqueued_at"
+    t.integer "huddle_grant_id"
+    t.string "identity"
+    t.datetime "last_attempted_at"
+    t.datetime "next_attempt_at"
+    t.string "operation", null: false
+    t.string "room_name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["completed_at", "next_attempt_at"], name: "index_huddle_cleanups_on_completed_at_and_next_attempt_at"
+    t.index ["huddle_grant_id"], name: "index_huddle_cleanups_on_huddle_grant_id"
+    t.index ["operation", "huddle_grant_id"], name: "index_huddle_cleanups_on_unique_participant_removal", unique: true, where: "operation = 'remove_participant'"
+    t.index ["operation", "room_name"], name: "index_huddle_cleanups_on_unique_room_deletion", unique: true, where: "operation = 'delete_room'"
+  end
+
+  create_table "huddle_grants", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "identity", null: false
+    t.integer "membership_id", null: false
+    t.datetime "revoked_at"
+    t.integer "room_id", null: false
+    t.string "room_name", null: false
+    t.integer "session_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
+    t.index ["membership_id"], name: "index_huddle_grants_on_membership_id"
+    t.index ["room_id"], name: "index_huddle_grants_on_room_id"
+    t.index ["session_id", "membership_id"], name: "index_active_huddle_grants_on_session_and_membership", unique: true, where: "revoked_at IS NULL"
+    t.index ["session_id"], name: "index_huddle_grants_on_session_id"
+    t.index ["user_id"], name: "index_huddle_grants_on_user_id"
   end
 
   create_table "memberships", force: :cascade do |t|
@@ -98,10 +169,21 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.string "client_message_id", null: false
     t.datetime "created_at", null: false
     t.integer "creator_id", null: false
+    t.text "forward_note"
+    t.datetime "forwarded_at"
+    t.integer "forwarded_from_message_id"
+    t.text "markdown_source"
+    t.boolean "reply_notify_author", default: true, null: false
+    t.datetime "reply_target_deleted_at"
+    t.integer "reply_to_message_id"
     t.integer "room_id", null: false
+    t.integer "thread_id"
     t.datetime "updated_at", null: false
     t.index ["creator_id"], name: "index_messages_on_creator_id"
+    t.index ["forwarded_from_message_id"], name: "index_messages_on_forwarded_from_message_id"
+    t.index ["reply_to_message_id"], name: "index_messages_on_reply_to_message_id"
     t.index ["room_id"], name: "index_messages_on_room_id"
+    t.index ["thread_id"], name: "index_messages_on_thread_id"
   end
 
   create_table "push_subscriptions", force: :cascade do |t|
@@ -144,6 +226,19 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
+  create_table "thread_memberships", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "involvement", default: "mentions", null: false
+    t.datetime "joined_at", null: false
+    t.integer "thread_id", null: false
+    t.datetime "unread_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["thread_id", "unread_at"], name: "index_thread_memberships_on_thread_id_and_unread_at"
+    t.index ["thread_id", "user_id"], name: "index_thread_memberships_on_thread_id_and_user_id", unique: true
+    t.index ["user_id"], name: "index_thread_memberships_on_user_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.text "bio"
     t.string "bot_token"
@@ -166,16 +261,62 @@ ActiveRecord::Schema[8.2].define(version: 2025_12_12_154340) do
     t.index ["user_id"], name: "index_webhooks_on_user_id"
   end
 
+  create_table "work_thread_events", force: :cascade do |t|
+    t.integer "actor_id"
+    t.integer "channel_thread_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.integer "from_owner_id"
+    t.string "from_owner_name"
+    t.string "from_status"
+    t.json "metadata"
+    t.integer "to_owner_id"
+    t.string "to_owner_name"
+    t.string "to_status"
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_work_thread_events_on_actor_id"
+    t.index ["channel_thread_id", "created_at"], name: "index_work_thread_events_on_thread_and_created_at"
+    t.index ["channel_thread_id"], name: "index_work_thread_events_on_channel_thread_id"
+    t.index ["event_type", "created_at"], name: "index_work_thread_events_on_type_and_created_at"
+  end
+
+  create_table "workspace_presence_leases", force: :cascade do |t|
+    t.string "connection_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.integer "session_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["connection_id"], name: "index_workspace_presence_leases_on_connection_id", unique: true
+    t.index ["expires_at"], name: "index_workspace_presence_leases_on_expires_at"
+    t.index ["session_id"], name: "index_workspace_presence_leases_on_session_id"
+    t.index ["user_id"], name: "index_workspace_presence_leases_on_user_id"
+  end
+
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "activity_items", "users", on_delete: :cascade
   add_foreign_key "bans", "users"
   add_foreign_key "boosts", "messages"
+  add_foreign_key "channel_threads", "messages", column: "parent_message_id", on_delete: :nullify
+  add_foreign_key "channel_threads", "rooms"
+  add_foreign_key "channel_threads", "users", column: "creator_id"
+  add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
+  add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
+  add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify
   add_foreign_key "messages", "rooms"
   add_foreign_key "messages", "users", column: "creator_id"
   add_foreign_key "push_subscriptions", "users"
   add_foreign_key "searches", "users"
   add_foreign_key "sessions", "users"
+  add_foreign_key "thread_memberships", "channel_threads", column: "thread_id", on_delete: :cascade
+  add_foreign_key "thread_memberships", "users", on_delete: :cascade
   add_foreign_key "webhooks", "users"
+  add_foreign_key "work_thread_events", "channel_threads", on_delete: :cascade
+  add_foreign_key "work_thread_events", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
+  add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade
 
   # Virtual tables defined in this database.
   # Note that virtual tables may not work with other database engines. Be careful if changing database.

@@ -9,16 +9,29 @@ class Messages::BoostsController < ApplicationController
   end
 
   def create
-    @boost = @message.boosts.create!(boost_params)
+    content = boost_params[:content]
+    @message.with_lock do
+      @message.reload
+      existing = @message.boosts.where(booster: Current.user, content:).to_a if EmojiHelper::REACTIONS.key?(content)
 
-    broadcast_create
+      if existing.present?
+        # Old data may contain duplicate reaction rows. Preserve it until this
+        # person explicitly toggles the reaction, then remove every duplicate
+        # so the next toggle has one clear meaning.
+        existing.each(&:destroy!)
+        @boost = existing.first
+      else
+        @boost = @message.boosts.create!(boost_params)
+      end
+    end
+
+    broadcast_reactions
     redirect_to message_boosts_url(@message)
   end
 
   def destroy
     @boost.destroy!
-
-    broadcast_remove
+    broadcast_reactions
   end
 
   private
@@ -35,11 +48,18 @@ class Messages::BoostsController < ApplicationController
     end
 
     def broadcast_create
-      @boost.broadcast_append_to @boost.message.room, :messages,
+      stream_target = @boost.message.conversation
+      @boost.broadcast_append_to stream_target, :messages,
         target: "boosts_message_#{@boost.message.client_message_id}", partial: "messages/boosts/boost", attributes: { maintain_scroll: true }
     end
 
     def broadcast_remove
-      @boost.broadcast_remove_to @boost.message.room, :messages
+      @boost.broadcast_remove_to @boost.message.conversation, :messages
+    end
+
+    def broadcast_reactions
+      @message.broadcast_replace_to @message.conversation, :messages,
+        target: ActionView::RecordIdentifier.dom_id(@message, :boosts),
+        partial: "messages/boosts/reactions", attributes: { maintain_scroll: true }
     end
 end

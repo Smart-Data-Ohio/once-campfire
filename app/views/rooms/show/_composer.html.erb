@@ -1,52 +1,67 @@
-<% content_for :footer do %>
-  <div class="composer flex align-end gap position-relative"
-      data-controller="typing-notifications" data-typing-notifications-active-class="typing-indicator--active">
-    <%= link_to searches_path, class: "btn flex-item-no-shrink margin-block-end composer__context-btn", style: "view-transition-name: input-switcher" do %>
-      <%= image_tag "search.svg", size: 20, aria: { hidden: "true" } %>
-      <span class="for-screen-reader">Search</span>
-    <% end %>
-
-    <turbo-frame id="composer-frame">
-      <%= composer_form_tag(room) do |form| %>
+<% thread = local_assigns[:thread] %>
+<% inline = local_assigns.fetch(:inline, false) %>
+<% reply_notify_id = dom_id(thread || room, :reply_notify) %>
+<% composer_markup = capture do %>
+  <div class="composer position-relative"
+      data-controller="typing-notifications"
+      data-typing-notifications-active-class="typing-indicator--active"
+      data-typing-notifications-room-id-value="<%= room.id %>"
+      data-typing-notifications-thread-id-value="<%= thread&.id %>">
+    <turbo-frame id="<%= thread ? dom_id(thread, :composer_frame) : "composer-frame" %>" class="composer__frame min-width">
+      <%= composer_form_tag(room, thread:) do |form| %>
         <fieldset data-composer-target="fields" contents>
-          <div class="flex flex-column">
+          <div class="composer__stack">
+            <div class="composer__context" hidden aria-live="polite" data-composer-target="context">
+              <div class="composer__context-copy min-width">
+                <span class="composer__context-label" data-composer-target="contextLabel"></span>
+                <span class="composer__context-preview overflow-ellipsis" data-composer-target="contextPreview"></span>
+                <span class="composer__feedback" role="alert" data-composer-target="feedback" hidden></span>
+              </div>
+
+              <label class="composer__reply-notify" for="<%= reply_notify_id %>" hidden data-composer-target="notifyControl">
+                <input id="<%= reply_notify_id %>" type="checkbox" name="message[reply_notify_author]" value="1" checked disabled data-composer-target="replyNotify"
+                       data-action="change->composer#notifyChanged" />
+                <span>Notify author</span>
+              </label>
+
+              <button type="button" class="btn btn--borderless composer__context-cancel"
+                      aria-label="Cancel message context" title="Cancel"
+                      data-action="composer#cancelContext">
+                <%= image_tag "remove.svg", size: 18, class: "colorize--black", aria: { hidden: "true" } %>
+              </button>
+            </div>
+
+            <%= form.hidden_field :reply_to_message_id, data: { composer_target: "replyTo" }, autocomplete: "off" %>
             <div class="composer__filelist flex flex--align-center gap flex-wrap" data-composer-target="fileList"></div>
 
-            <div class="flex composer__input input input--actor fill-white min-width" style="--input-border-radius: 1.3rem">
-              <div class="flex align-end gap full-width">
-                <%= image_tag "messages-outlined.svg", size: 22, aria: { hidden: "true" }, class: "composer__input-hint colorize--black", style: "view-transition-name: input-btn;" %>
+            <div class="composer__surface flex align-end gap">
+              <label class="composer__attachment-btn btn btn--borderless flex-item-no-shrink input--file" title="Attach a file">
+                <span class="composer__attachment-mark" aria-hidden="true">+</span>
+                <input type="file" data-action="composer#filePicked" multiple />
+                <span class="for-screen-reader">Attach a file</span>
+              </label>
 
-                <div class="flex flex-column flex-item-grow min-width gap">
-                  <%= form.rich_text_area :body,
-                        rows: 1,
-                        class: "input",
-                        style: "order: -1",
-                        aria: { multiline: "true", label: "Write a message" },
-                        data: {
-                          controller: "rich-autocomplete",
-                          action: rich_text_data_actions,
-                          rich_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
-                          permitted_attachment_types: "application/vnd.actiontext.opengraph-embed",
-                          composer_target: "text" } %>
-                </div>
-
-                <label class="btn btn--borderless txt-small flex-item-no-shrink composer__attachment-btn input--file">
-                  <%= image_tag "attachment.svg", size: 22, class: "colorize--black", aria: { hidden: "true" } %>
-                  <input type="file" data-action="composer#filePicked" multiple />
-                  <span class="for-screen-reader">Attach a file</span>
-                </label>
-
-                <button class="btn btn--borderless txt-small flex-item-no-shrink composer__rich-text-btn" type="button" data-action="composer#toggleToolbar">
-                  <%= image_tag "text-options.svg", size: 20, class: "colorize--black", aria: { hidden: "true" } %>
-                  <span class="for-screen-reader">Rich text</span>
-                </button>
-
-                <%= form.button name: "send", type: "submit", data: { action: "composer#submit" },
-                      class: "btn btn--reversed flex-item-no-shrink txt-small" do %>
-                  <%= image_tag "arrow-up.svg", size: 20, aria: { hidden: "true" } %>
-                  <span class="for-screen-reader">Send Message</span>
-                <% end %>
+              <div class="composer__editor min-width flex-item-grow" data-controller="markdown-editor">
+                <%= form.text_area :markdown_source,
+                      rows: 1,
+                      maxlength: 50_000,
+                      class: "composer__textarea input",
+                      placeholder: thread ? "Reply in #{thread.name}" : "Message ##{room_display_name(room)}",
+                      aria: { multiline: "true", label: thread ? "Write a thread reply" : "Write a message" },
+                      data: {
+                        controller: "markdown-autocomplete",
+                        action: "input->markdown-editor#resize input->markdown-autocomplete#search input->typing-notifications#start focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur keydown->markdown-editor#shortcut keydown->composer#submitByKeyboard",
+                        markdown_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
+                        markdown_editor_target: "source",
+                        composer_target: "markdown",
+                        suggestion_results_placement: "above" } %>
               </div>
+
+              <%= form.button name: "send", type: "submit", data: { action: "composer#submit", composer_target: "send" },
+                    class: "composer__send btn btn--reversed flex-item-no-shrink" do %>
+                <%= image_tag "arrow-up.svg", size: 17, aria: { hidden: "true" } %>
+                <span class="for-screen-reader"><%= thread ? "Send Reply" : "Send Message" %></span>
+              <% end %>
             </div>
           </div>
         </fieldset>
@@ -59,4 +74,12 @@
       <% end %>
     </turbo-frame>
   </div>
+<% end %>
+
+<% if inline %>
+  <%= composer_markup %>
+<% else %>
+  <% content_for :footer do %>
+    <%= composer_markup %>
+  <% end %>
 <% end %>

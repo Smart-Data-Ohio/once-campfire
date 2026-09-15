@@ -2,13 +2,14 @@ require "application_system_test_case"
 
 class BoostingMessagesTest < ApplicationSystemTestCase
   setup do
+    # Existing free-text boosts keep their input alongside grouped reactions.
+    messages(:third).boosts.create!(booster: users(:david), content: "Older note")
     sign_in "kevin@37signals.com"
     join_room rooms(:designers)
   end
 
   test "boosting a message" do
     within_message messages(:third) do
-      reveal_message_actions
       fill_in_boost_input "Good morning"
       click_on "Submit"
       assert_boost_text "Good morning"
@@ -33,7 +34,6 @@ class BoostingMessagesTest < ApplicationSystemTestCase
   test "message update preserves the input state" do
     within_message messages(:third) do
       assert_message_text "Third time's a charm."
-      reveal_message_actions
       fill_in_boost_input "Hey!"
     end
 
@@ -43,11 +43,11 @@ class BoostingMessagesTest < ApplicationSystemTestCase
 
       within_message messages(:third) do
         reveal_message_actions
-        find(".message__edit-btn").click
-
-        fill_in_rich_text_area "message_body", with: "Redacted!"
-        click_on "Save changes"
+        click_on "Edit message", exact: true
       end
+      fill_in_markdown "Write a message", with: "Redacted!"
+      click_on "Send Message"
+      assert_message_text "Redacted!"
     end
 
     within_message messages(:third) do
@@ -59,7 +59,6 @@ class BoostingMessagesTest < ApplicationSystemTestCase
   test "boost by another user preserves the input state" do
     within_message messages(:third) do
       assert_message_text "Third time's a charm."
-      reveal_message_actions
       fill_in_boost_input "Hey!"
     end
 
@@ -68,7 +67,6 @@ class BoostingMessagesTest < ApplicationSystemTestCase
       join_room rooms(:designers)
 
       within_message messages(:third) do
-        reveal_message_actions
         fill_in_boost_input "Morning"
         click_on "Submit"
         assert_boost_text "Morning"
@@ -85,7 +83,7 @@ class BoostingMessagesTest < ApplicationSystemTestCase
 
   private
     def fill_in_boost_input(text)
-      click_on "New boost"
+      click_on "Add a boost"
       fill_in "boost[content]", with: text
     end
 

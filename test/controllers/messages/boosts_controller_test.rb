@@ -23,4 +23,29 @@ class Messages::BoostsControllerTest < ActionDispatch::IntegrationTest
       end
     end
   end
+
+  test "a human emoji toggle removes legacy duplicates under the message lock" do
+    emoji = "👍"
+    Boost.create!(message: @message, booster: users(:david), content: emoji)
+    Boost.create!(message: @message, booster: users(:david), content: emoji)
+
+    assert_difference -> { @message.boosts.where(booster: users(:david), content: emoji).count }, -2 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: emoji } }
+      assert_redirected_to message_boosts_url(@message)
+    end
+  end
+
+  test "action metadata groups reaction counts by distinct reactor" do
+    emoji = "👍"
+    Boost.create!(message: @message, booster: users(:david), content: emoji)
+    Boost.create!(message: @message, booster: users(:david), content: emoji)
+    Boost.create!(message: @message, booster: users(:jason), content: emoji)
+
+    get actions_room_message_url(@message.room, @message, format: :json)
+
+    assert_response :success
+    reaction = response.parsed_body.dig("actions", "reactions", emoji)
+    assert_equal 2, reaction.fetch("count")
+    assert reaction.fetch("active")
+  end
 end

@@ -85,7 +85,20 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Bender Bot", json_message["creator"]["name"]
     assert_equal "bot", json_message["creator"]["role"]
     assert_equal @room.id, json_message["room"]["id"]
-    assert_equal room_message_url(@room, message), json_message["url"]
+    assert_equal room_at_message_url(@room, message), json_message["url"]
+  end
+
+  test "index includes safe rendered HTML and exact source for Markdown messages" do
+    source = "## Status\n\n<script>alert(1)</script>\n\n**Ready**"
+    message = @room.messages.create!(creator: users(:jason), markdown_source: source, client_message_id: "markdown-json")
+
+    get room_bot_messages_url(@room, users(:bender).bot_key)
+
+    assert_response :success
+    json_message = response.parsed_body.find { |item| item["id"] == message.id }
+    assert_equal source, json_message.dig("body", "markdown_source")
+    assert_match %r{<div class="markdown-body"><h2>Status</h2>}, json_message.dig("body", "html")
+    assert_no_match /<script/, json_message.dig("body", "html")
   end
 
   test "index pages through older messages with the Link header" do
@@ -163,7 +176,19 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal message.id, json["id"]
     assert_equal "Deployed.", json["body"]["plain_text"]
     assert_equal users(:bender).id, json["creator"]["id"]
-    assert_equal room_message_url(@room, message), json["url"]
+    assert_equal room_at_message_url(@room, message), json["url"]
+  end
+
+  test "bot body update converts a Markdown message back to legacy mode" do
+    message = @room.messages.create!(
+      creator: users(:bender), markdown_source: "**Deploying**", client_message_id: "bot-markdown"
+    )
+
+    patch room_bot_message_url(@room, users(:bender).bot_key, message), params: +"Deployed."
+
+    assert_response :ok
+    assert_nil message.reload.markdown_source
+    assert_equal "Deployed.", message.plain_text_body
   end
 
   test "update with UTF-8 content" do

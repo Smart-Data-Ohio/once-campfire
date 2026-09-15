@@ -12,6 +12,6 @@ export default class extends Controller {
 
   drop(event) {
     event.preventDefault()
-    this.dispatch("drop", { detail: { files: event.dataTransfer.files }})
+    this.dispatch("drop", { detail: { files: event.dataTransfer.files, source: this.element }})
   }
 }

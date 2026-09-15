@@ -202,7 +202,7 @@ export default class SuggestionController {
   // Keyboard events
 
   didPressKey(event) {
-    if (this.#committing) { return }
+    if (this.#committing || event.isComposing || event.keyCode === 229) { return }
 
     let result
     switch (event.keyCode) {
@@ -252,9 +252,8 @@ export default class SuggestionController {
 
   #didPressReturnKey() {
     if (this.#active) {
-      if (this.commitSuggestion()) {
-        return false
-      }
+      this.commitSuggestion()
+      return false
     }
   }
 

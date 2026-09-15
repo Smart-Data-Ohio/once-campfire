@@ -1,0 +1,22 @@
+<% @page_title = "Threads in #{room_display_name(@room)}" %>
+
+<main class="thread-list" aria-labelledby="thread-list-title">
+  <h1 id="thread-list-title">Threads in <%= room_display_name(@room) %></h1>
+  <% if @threads.any? %>
+    <ul>
+      <% @threads.each do |thread| %>
+        <li>
+          <%= link_to thread.name, room_thread_path(@room, thread) %>
+          <span><%= thread.message_count %> messages · <%= thread.status %></span>
+          <% if thread.work? %>
+            <% owner = thread.work_owner %>
+            <% owner_label = owner.blank? ? "Unassigned" : thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
+            <span>Work: <%= thread.work_status_label %> · <%= owner_label %></span>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <p>No threads yet.</p>
+  <% end %>
+</main>

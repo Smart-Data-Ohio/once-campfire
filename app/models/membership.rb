@@ -4,7 +4,9 @@ class Membership < ApplicationRecord
   belongs_to :room
   belongs_to :user
 
-  after_destroy_commit { user.reset_remote_connections }
+  before_destroy -> { HuddleGrant.revoke_for_membership!(self) }
+  after_destroy_commit :reset_user_remote_connections
+  after_destroy_commit :remove_thread_membership
 
   enum :involvement, %w[ invisible nothing mentions everything ].index_by(&:itself), prefix: :involved_in
 
@@ -21,4 +23,16 @@ class Membership < ApplicationRecord
   def unread?
     unread_at.present?
   end
+
+  private
+    def reset_user_remote_connections
+      user.reset_remote_connections
+    end
+
+    def remove_thread_membership
+      ThreadMembership
+        .joins(:thread)
+        .where(user_id: user_id, channel_threads: { room_id: room_id })
+        .delete_all
+    end
 end

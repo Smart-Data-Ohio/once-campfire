@@ -1,6 +1,11 @@
 Rails.application.routes.draw do
   root "welcome#show"
 
+  namespace :internal do
+    post "huddle/authorize", to: "huddle#authorize"
+    get "huddle/grants/:id", to: "huddle#show"
+  end
+
   resource :first_run
 
   resource :session do
@@ -60,7 +65,27 @@ Rails.application.routes.draw do
   end
 
   resources :rooms do
-    resources :messages
+    resources :messages do
+      post :preview, on: :collection
+      get :actions, on: :member
+      get :forward_source, on: :member, controller: "message_forward_sources"
+      resources :forwards, controller: "message_forwards", only: :create
+      get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+    end
+
+    resources :threads, controller: "channel_threads", only: %i[ index show create update destroy ] do
+      get :content, on: :member
+      resources :messages, controller: "channel_thread_messages", only: %i[ index show create update destroy ] do
+        get :actions, on: :member
+        get :forward_source, on: :member, controller: "message_forward_sources"
+        resources :forwards, controller: "message_forwards", only: :create
+        get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+      end
+      post :join, on: :member
+      delete :leave, on: :member
+      post :read, on: :member
+      patch :read, on: :member
+    end
 
     nested do
       scope path: ":bot_key", as: :bot, defaults: { format: :json } do
@@ -71,6 +96,8 @@ Rails.application.routes.draw do
     end
 
     scope module: "rooms" do
+      resources :members, only: :index
+      resource :huddle, only: %i[ show create ]
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
@@ -86,6 +113,10 @@ Rails.application.routes.draw do
   end
 
   resources :messages do
+    resources :forwards, controller: "message_forwards", only: :create
+    get :forward_source, on: :member, controller: "message_forward_sources"
+    get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+
     scope module: "messages" do
       resources :boosts
     end
@@ -94,6 +125,15 @@ Rails.application.routes.draw do
   resources :searches, only: %i[ index create ] do
     delete :clear, on: :collection
   end
+
+  resources :activity_items, path: "activity", only: :index do
+    get :unread_count, on: :collection
+    post :open, on: :member
+    patch :read, on: :member
+    patch :handled, on: :member
+  end
+
+  resources :work_threads, path: "work", only: :index
 
   resource :unfurl_link, only: :create
 

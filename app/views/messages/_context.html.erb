@@ -1,0 +1,27 @@
+<% if message.reply? %>
+  <% source = message.reply_to_message %>
+  <div class="message__reply-preview" data-reply-preview="true" data-reply-target-id="<%= source&.id %>">
+    <% if source.present? %>
+      <span class="message__reply-preview-label">Replying to <strong><%= source.creator.name %></strong></span>
+      <%= link_to message_link_url(source), class: "message__reply-preview-link", data: { reply_target_id: source.id } do %>
+        <span class="overflow-ellipsis"><%= source.plain_text_body.truncate(180) %></span>
+        <span class="for-screen-reader">View original message</span>
+      <% end %>
+    <% else %>
+      <span class="message__reply-preview-label">Replying to a deleted message</span>
+    <% end %>
+  </div>
+<% end %>
+
+<% if message.forwarded? %>
+  <div class="message__forwarded-label"
+       data-controller="forward-source"
+       data-forward-source-url-value="<%= "#{message_action_url(message)}/forward_source" %>">
+    <span>Forwarded</span>
+    <% if message.forward_note.present? %>
+      <span class="message__forwarded-note overflow-ellipsis"><%= message.forward_note %></span>
+    <% end %>
+    <a class="message__forwarded-source" hidden data-forward-source-target="link"
+       data-no-message-menu="true" target="_top">View original</a>
+  </div>
+<% end %>

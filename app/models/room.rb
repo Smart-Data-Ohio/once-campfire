@@ -19,9 +19,12 @@ class Room < ApplicationRecord
 
   has_many :users, through: :memberships
   has_many :messages, dependent: :destroy
+  has_many :root_messages, -> { where(thread_id: nil) }, class_name: "Message", foreign_key: :room_id
+  has_many :channel_threads, dependent: :destroy
 
   belongs_to :creator, class_name: "User", default: -> { Current.user }
 
+  before_destroy -> { HuddleGrant.revoke_for_room!(self) }
   validate :direct_rooms_keep_their_type, on: :update
 
   scope :opens,           -> { where(type: "Rooms::Open") }

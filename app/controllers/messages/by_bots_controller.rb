@@ -2,10 +2,11 @@ class Messages::ByBotsController < MessagesController
   include RawRequestBody
 
   allow_bot_access only: %i[ index create update destroy ]
+  skip_before_action :ensure_can_edit, :ensure_can_delete
 
   before_action :set_room
   before_action :set_message, only: %i[ update destroy ]
-  before_action :ensure_can_administer, only: %i[ update destroy ]
+  before_action :ensure_can_manage_bot_message, only: %i[ update destroy ]
   before_action :ensure_body_or_attachment_present, only: :create
 
   def index
@@ -36,8 +37,12 @@ class Messages::ByBotsController < MessagesController
       end
     end
 
+    def ensure_can_manage_bot_message
+      head :forbidden unless Current.user.can_administer?(@message)
+    end
+
     def set_pagination_headers
-      headers["X-Total-Count"] = @room.messages.count.to_s
+      headers["X-Total-Count"] = @room.root_messages.count.to_s
 
       if next_page = next_page_params
         headers["Link"] = %(<#{room_bot_messages_url(@room, params[:bot_key], **next_page)}>; rel="next")
@@ -47,18 +52,20 @@ class Messages::ByBotsController < MessagesController
     def next_page_params
       if @messages.any?
         if params[:after].present?
-          { after: @messages.last.id } if @room.messages.after(@messages.last).exists?
+          { after: @messages.last.id } if @room.root_messages.after(@messages.last).exists?
         else
-          { before: @messages.first.id } if @room.messages.before(@messages.first).exists?
+          { before: @messages.first.id } if @room.root_messages.before(@messages.first).exists?
         end
       end
     end
 
     def message_params
-      if params[:attachment]
+      attributes = if params[:attachment]
         params.permit(:attachment)
       else
         { body: raw_request_body }
       end
+
+      attributes.merge(markdown_source: nil)
     end
 end

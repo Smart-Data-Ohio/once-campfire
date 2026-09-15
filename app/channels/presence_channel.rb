@@ -9,11 +9,11 @@ class PresenceChannel < RoomChannel
   end
 
   def absent
-    membership.disconnected
+    membership&.disconnected
   end
 
   def refresh
-    membership.refresh_connection
+    membership&.refresh_connection
   end
 
   private

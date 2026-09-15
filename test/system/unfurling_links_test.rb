@@ -9,6 +9,18 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
 
     sign_in "jz@37signals.com"
     join_room rooms(:designers)
+    # The normal composer is Markdown. Mount the retained legacy editor as a
+    # test fixture so its preview renderer keeps this browser security check.
+    page.execute_script <<~JS
+      const input = document.createElement("input")
+      input.type = "hidden"
+      input.id = "legacy-preview-fixture"
+      const editor = document.createElement("trix-editor")
+      editor.setAttribute("input", input.id)
+      editor.setAttribute("data-permitted-attachment-types", "application/vnd.actiontext.opengraph-embed")
+      document.querySelector("#main-content").append(input, editor)
+    JS
+    assert_selector "trix-editor"
   end
 
   teardown do
@@ -16,7 +28,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
   end
 
   test "a quote in the opengraph image URL cannot add attributes to the preview" do
-    paste_into_composer @website.page_url
+    paste_into_legacy_editor @website.page_url
 
     assert_selector "trix-editor .og-embed__title", text: "A normal looking link"
 
@@ -25,7 +37,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
   end
 
   private
-    def paste_into_composer(url)
+    def paste_into_legacy_editor(url)
       page.execute_script(<<~JS, url)
         const editor = document.querySelector("trix-editor")
         editor.focus()

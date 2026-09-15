@@ -1,0 +1,43 @@
+<% @page_title = "Activity inbox" %>
+<% @body_class = "sidebar activity-inbox" %>
+<% content_for :head do %>
+  <%= turbo_exempts_page_from_cache %>
+  <meta name="activity-inbox" content="true">
+<% end %>
+
+<% content_for :nav do %>
+  <div class="room-header__identity room--current min-width">
+    <span class="room-header__kind">Personal workspace</span>
+    <h1 id="activity-inbox-title" class="room__contents">
+      <span class="room-header__name">Activity inbox</span>
+    </h1>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<section class="activity-inbox__page" aria-labelledby="activity-inbox-title"
+         data-controller="activity-inbox"
+         data-activity-inbox-url-value="<%= activity_items_path(status: @filter, before: params[:before], format: :turbo_stream) %>">
+  <header class="activity-inbox__header">
+    <div>
+      <p class="activity-inbox__kicker">Your conversations</p>
+      <p class="activity-inbox__description">Mentions, replies, followed threads, and work updates that need your attention.</p>
+    </div>
+    <span id="activity-unread-count" class="activity-inbox__count" <%= "hidden" if @unread_count.zero? %>><%= @unread_count %></span>
+  </header>
+
+  <nav class="activity-inbox__filters" aria-label="Activity filters">
+    <% ActivityItem::FILTERS.each do |filter| %>
+      <%= link_to filter.capitalize, activity_items_path(status: filter), class: [ "btn", "activity-inbox__filter", ("is-active" if @filter == filter) ], aria: { current: ("page" if @filter == filter) } %>
+    <% end %>
+  </nav>
+
+  <div id="activity-items-list" class="activity-inbox__list" aria-live="polite">
+    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter %>
+  </div>
+
+  <div id="activity-items-pagination">
+    <%= render "activity_items/pagination", filter: @filter, next_cursor: @next_cursor %>
+  </div>
+</section>

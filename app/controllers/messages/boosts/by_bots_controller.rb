@@ -8,7 +8,7 @@ class Messages::Boosts::ByBotsController < Messages::BoostsController
   def create
     @boost = @message.boosts.create!(boost_params)
 
-    broadcast_create
+    broadcast_reactions
     render :show, status: :created
   end
 

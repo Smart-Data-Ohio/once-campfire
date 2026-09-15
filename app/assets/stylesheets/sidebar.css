@@ -290,10 +290,6 @@
     }
   }
 
-  .message__actions {
-    display: none !important;
-    visibility: hidden !important;
-  }
 }
 
 .searches__recents {

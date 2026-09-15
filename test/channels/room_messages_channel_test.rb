@@ -84,3 +84,57 @@ class RoomMessagesViaStockTurboChannelTest < ActionCable::Channel::TestCase
     assert subscription.confirmed?
   end
 end
+
+class ChannelThreadMessagesChannelTest < ActionCable::Channel::TestCase
+  tests RoomMessagesChannel
+
+  setup do
+    @room = rooms(:designers)
+    @thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Guarded thread stream")
+    @signed_stream_name = Turbo::StreamsChannel.signed_stream_name [ @thread, :messages ]
+  end
+
+  test "a parent-room member may subscribe to a thread message stream" do
+    stub_connection(current_user: users(:kevin))
+
+    subscribe signed_stream_name: @signed_stream_name
+
+    assert subscription.confirmed?
+    assert_has_stream Turbo.signed_stream_verifier.verified(@signed_stream_name)
+  end
+
+  test "an outsider may not subscribe to a thread message stream" do
+    stub_connection(current_user: users(:bender))
+
+    subscribe signed_stream_name: @signed_stream_name
+
+    assert subscription.rejected?
+  end
+
+  test "a revoked parent-room member may not re-subscribe to a harvested thread stream" do
+    user = users(:kevin)
+    stub_connection(current_user: user)
+
+    subscribe signed_stream_name: @signed_stream_name
+    assert subscription.confirmed?, "kevin must start out able to subscribe"
+
+    @room.memberships.revoke_from(user)
+
+    subscribe signed_stream_name: @signed_stream_name
+    assert subscription.rejected?
+  end
+end
+
+class ChannelThreadMessagesViaStockTurboChannelTest < ActionCable::Channel::TestCase
+  tests Turbo::StreamsChannel
+
+  test "the stock turbo channel refuses a thread message stream" do
+    room = rooms(:designers)
+    thread = ChannelThread.create!(room:, creator: users(:jz), name: "Stock stream guard")
+    stub_connection(current_user: users(:kevin))
+
+    subscribe signed_stream_name: Turbo::StreamsChannel.signed_stream_name([ thread, :messages ])
+
+    assert subscription.rejected?
+  end
+end

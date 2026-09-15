@@ -67,6 +67,29 @@ jobs:
         with:
           advanced-security: false
 
+  test_gateway:
+    name: Huddle authorization gateway
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install gateway dependencies
+        run: npm ci --ignore-scripts --prefix script/livekit-gateway
+
+      - name: Test authorization and connection races
+        run: npm test --prefix script/livekit-gateway
+
   test:
     runs-on: ubuntu-latest
     permissions:
@@ -124,5 +147,25 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      - name: Run tests
-        run: bin/rails db:setup test:system
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install gateway dependencies
+        run: npm ci --ignore-scripts --prefix script/livekit-gateway
+
+      - name: Run browser tests with LiveKit
+        run: |
+          bin/livekit-local setup
+          source .bundle/livekit/env
+          bin/livekit-local start > /tmp/campfire-livekit.log 2>&1 &
+          livekit_pid=$!
+          trap 'kill "$livekit_pid"' EXIT
+          for _attempt in {1..30}; do
+            if bin/livekit-local status; then break; fi
+            sleep 1
+          done
+          bin/livekit-local status
+          LIVEKIT_SYSTEM_TESTS=1 PARALLEL_WORKERS=1 bin/rails db:setup test:system

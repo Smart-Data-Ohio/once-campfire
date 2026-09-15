@@ -1,0 +1,218 @@
+<aside id="thread-panel"
+       class="thread-panel"
+       aria-label="Channel threads"
+       aria-hidden="true"
+       inert
+       data-thread-panel-target="panel"
+       data-thread-panel-room-id="<%= room.id %>"
+       data-thread-panel-threads-url="<%= room_threads_path(room, format: :json) %>"
+       data-thread-panel-create-url="<%= room_threads_path(room, format: :json) %>"
+       data-thread-panel-channel-name="<%= room_display_name(room, for_user: nil) %>"
+       data-thread-panel-default-avatar-url="<%= asset_path("default-avatar.svg") %>">
+  <button type="button"
+          class="thread-panel__backdrop"
+          aria-hidden="true"
+          tabindex="-1"
+          data-thread-panel-target="backdrop"
+          data-action="thread-panel#close"
+          hidden></button>
+
+  <section class="thread-panel__surface" aria-labelledby="thread-panel-title">
+    <header class="thread-panel__header">
+      <div class="thread-panel__heading min-width">
+        <span class="thread-panel__kind">Channel threads</span>
+        <h2 id="thread-panel-title" data-thread-panel-target="title">Threads</h2>
+        <p data-thread-panel-target="channel"></p>
+      </div>
+
+      <div class="thread-panel__header-actions">
+        <button type="button"
+                class="btn thread-panel__browse-toggle"
+                aria-label="Browse threads"
+                title="Browse threads"
+                data-thread-panel-target="browserToggle"
+                data-action="thread-panel#showBrowser">
+          <%= image_tag "messages-outlined.svg", size: 18, aria: { hidden: "true" } %>
+          <span>Browse</span>
+        </button>
+
+        <button type="button"
+                class="btn thread-panel__close"
+                aria-label="Close threads"
+                title="Close threads"
+                data-thread-panel-target="close"
+                data-action="thread-panel#close">
+          <%= image_tag "remove.svg", size: 16, aria: { hidden: "true" } %>
+        </button>
+      </div>
+    </header>
+
+    <div class="thread-panel__body">
+      <section class="thread-panel__browser" aria-labelledby="thread-browser-title" data-thread-panel-target="browser">
+        <div class="thread-panel__browser-header">
+          <div class="min-width">
+            <h3 id="thread-browser-title">Browse threads</h3>
+            <p>Follow a focused conversation without leaving this channel.</p>
+          </div>
+
+          <button type="button"
+                  class="btn btn--reversed thread-panel__create-button"
+                  data-action="thread-panel#beginCreate">
+            <%= image_tag "messages-add.svg", size: 16, aria: { hidden: "true" } %>
+            <span>New thread</span>
+          </button>
+        </div>
+
+          <label class="thread-panel__filter">
+            <span>Show</span>
+            <select data-thread-panel-target="filter" data-action="change->thread-panel#filterChanged">
+              <option value="active">Active threads</option>
+              <option value="work">Open work</option>
+              <option value="done">Completed work</option>
+              <option value="closed">Closed threads</option>
+              <option value="all">All threads</option>
+            </select>
+        </label>
+
+        <p class="thread-panel__status" role="status" data-thread-panel-target="browserStatus">Loading threads…</p>
+        <div class="thread-panel__list" role="list" data-thread-panel-target="browserList"></div>
+      </section>
+
+      <section class="thread-panel__create" aria-labelledby="thread-create-title" data-thread-panel-target="create" hidden>
+        <div class="thread-panel__subheader">
+          <button type="button" class="btn thread-panel__back" data-action="thread-panel#showBrowser">
+            <%= image_tag "arrow-left.svg", size: 16, aria: { hidden: "true" } %>
+            <span>All threads</span>
+          </button>
+          <h3 id="thread-create-title">Start a thread</h3>
+        </div>
+
+        <div class="thread-panel__parent-preview" data-thread-panel-target="createParent" hidden></div>
+
+        <form class="thread-panel__create-form" data-action="submit->thread-panel#createThread">
+          <label class="thread-panel__field">
+            <span>Thread name <small>(optional)</small></span>
+            <input type="text" name="name" maxlength="100" autocomplete="off" placeholder="What should this conversation be called?" data-thread-panel-target="createName">
+          </label>
+          <label class="thread-panel__field">
+            <span>First message</span>
+            <textarea name="message" rows="4" maxlength="50000" required placeholder="Start the conversation…" data-thread-panel-target="createMessage"></textarea>
+          </label>
+          <input type="hidden" name="parent_message_id" data-thread-panel-target="createParentId">
+          <p class="thread-panel__form-status" role="status" data-thread-panel-target="createStatus"></p>
+          <div class="thread-panel__form-actions">
+            <button type="button" class="btn" data-action="thread-panel#showBrowser">Cancel</button>
+            <button type="submit" class="btn btn--reversed" data-thread-panel-target="createSubmit">
+              <span>Create thread</span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="thread-panel__conversation" aria-labelledby="thread-conversation-title" data-thread-panel-target="conversation" hidden>
+        <div class="thread-panel__conversation-header">
+          <button type="button" class="btn thread-panel__back" aria-label="Back to thread list" data-action="thread-panel#showBrowser">
+            <%= image_tag "arrow-left.svg", size: 16, aria: { hidden: "true" } %>
+            <span>Threads</span>
+          </button>
+
+          <div class="thread-panel__conversation-title min-width">
+            <h3 id="thread-conversation-title" data-thread-panel-target="conversationTitle">Thread</h3>
+            <p data-thread-panel-target="conversationMeta"></p>
+          </div>
+
+          <div class="thread-panel__thread-actions" aria-label="Thread actions">
+            <button type="button" class="btn" data-thread-panel-target="join" data-action="thread-panel#join">Join</button>
+            <button type="button" class="btn" data-thread-panel-target="leave" data-action="thread-panel#leave">Leave</button>
+
+            <details class="thread-panel__manage thread-panel__preferences" data-thread-panel-target="preferences" hidden>
+              <summary class="btn" aria-label="Thread preferences" title="Thread preferences">
+                <span>Preferences</span>
+              </summary>
+              <div class="thread-panel__manage-menu" role="menu" aria-label="Thread preferences">
+                <label class="thread-panel__setting" data-thread-panel-target="involvementControl">
+                  <span>Notify me about</span>
+                  <select data-thread-panel-target="involvement" data-action="change->thread-panel#changeInvolvement">
+                    <option value="everything">All messages</option>
+                    <option value="mentions">Mentions and replies</option>
+                    <option value="nothing">Nothing</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <details class="thread-panel__manage" data-thread-panel-target="manage" hidden>
+              <summary class="btn" aria-label="Thread settings" title="Thread settings">
+                <%= image_tag "settings.svg", size: 16, aria: { hidden: "true" } %>
+                <span>Manage</span>
+              </summary>
+              <div class="thread-panel__manage-menu" role="menu" aria-label="Manage thread">
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="rename" data-action="thread-panel#rename" hidden>Rename</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="convertToWork" data-action="thread-panel#convertToWork" hidden>Track as work</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="removeWork" data-action="thread-panel#removeWork" hidden>Stop tracking work</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="closeThread" data-action="thread-panel#closeThread" hidden>Close</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="reopen" data-action="thread-panel#reopen" hidden>Reopen</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="lock" data-action="thread-panel#lock" hidden>Lock</button>
+                <button type="button" class="btn" role="menuitem" data-thread-panel-target="unlock" data-action="thread-panel#unlock" hidden>Unlock</button>
+                <button type="button" class="btn btn--negative" role="menuitem" data-thread-panel-target="delete" data-action="thread-panel#delete" hidden>Delete</button>
+                <label class="thread-panel__setting" data-thread-panel-target="autoArchiveControl" hidden>
+                  <span>Auto-close after</span>
+                  <select data-thread-panel-target="autoArchive" data-action="change->thread-panel#changeAutoArchive">
+                    <option value="60">1 hour</option>
+                    <option value="1440">1 day</option>
+                    <option value="4320">3 days</option>
+                    <option value="10080">1 week</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <section class="thread-panel__work" aria-label="Work metadata" data-thread-panel-target="work" hidden>
+          <div class="thread-panel__work-heading">
+            <div>
+              <span class="thread-panel__work-kind">Tracked work</span>
+              <strong data-thread-panel-target="workStatusLabel"></strong>
+            </div>
+            <span class="thread-panel__work-owner" data-thread-panel-target="workOwnerLabel">Unassigned</span>
+          </div>
+
+          <details class="thread-panel__work-manage" data-thread-panel-target="workManage" hidden>
+            <summary class="btn">Update work</summary>
+            <div class="thread-panel__work-menu" role="group" aria-label="Update work">
+              <label class="thread-panel__setting">
+                <span>Work status</span>
+                <select data-thread-panel-target="workStatus" data-action="change->thread-panel#changeWorkStatus">
+                  <option value="planned">Planned</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+              <label class="thread-panel__setting">
+                <span>Owner</span>
+                <select data-thread-panel-target="workOwner" data-action="change->thread-panel#changeWorkOwner"></select>
+              </label>
+              <div class="thread-panel__work-buttons">
+                <button type="button" class="btn" data-thread-panel-target="workComplete" data-action="thread-panel#completeWork">Complete work</button>
+                <button type="button" class="btn" data-thread-panel-target="workReopen" data-action="thread-panel#reopenWork" hidden>Reopen work</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="thread-panel__work-history" data-thread-panel-target="workHistory" hidden>
+            <summary class="btn">Work history</summary>
+            <ol data-thread-panel-target="workHistoryList"></ol>
+          </details>
+        </section>
+
+        <div class="thread-panel__thread-status" role="status" aria-live="polite" data-thread-panel-target="threadStatus"></div>
+        <button type="button" class="btn thread-panel__retry" data-thread-panel-target="retry" data-action="thread-panel#retryContent" hidden>Try again</button>
+        <article class="thread-panel__parent" aria-label="Thread starter" data-thread-panel-target="parent" hidden></article>
+        <p class="thread-panel__empty" data-thread-panel-target="empty" hidden>This thread has no messages yet. Send the first one below.</p>
+        <div class="thread-panel__content" data-thread-panel-target="content"></div>
+      </section>
+    </div>
+  </section>
+</aside>

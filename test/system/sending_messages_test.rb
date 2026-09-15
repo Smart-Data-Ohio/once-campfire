@@ -34,10 +34,12 @@ class SendingMessagesTest < ApplicationSystemTestCase
 
     within_message messages(:third) do
       reveal_message_actions
-      find(".message__edit-btn").click
-      fill_in_rich_text_area "message_body", with: "Redacted!"
-      click_on "Save changes"
+      click_on "Edit message", exact: true
     end
+    assert_selector "#composer", text: "Editing Message"
+    fill_in_markdown "Write a message", with: "Redacted!"
+    click_on "Send Message"
+    assert_message_text "Redacted!"
 
     using_session("Kevin") do
       join_room rooms(:designers)
@@ -56,8 +58,6 @@ class SendingMessagesTest < ApplicationSystemTestCase
 
     within_message messages(:third) do
       reveal_message_actions
-      find(".message__edit-btn").click
-
       accept_confirm do
         click_on "Delete message"
       end

@@ -1,0 +1,15 @@
+<%= turbo_stream.replace "activity-items-list" do %>
+  <div id="activity-items-list" class="activity-inbox__list" aria-live="polite">
+    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter %>
+  </div>
+<% end %>
+
+<%= turbo_stream.replace "activity-unread-count" do %>
+  <span id="activity-unread-count" class="activity-inbox__count" <%= "hidden" if @unread_count.zero? %>><%= @unread_count %></span>
+<% end %>
+
+<%= turbo_stream.replace "activity-items-pagination" do %>
+  <div id="activity-items-pagination">
+    <%= render "activity_items/pagination", filter: @filter, next_cursor: @next_cursor %>
+  </div>
+<% end %>

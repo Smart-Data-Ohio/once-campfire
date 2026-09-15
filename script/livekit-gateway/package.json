@@ -1,0 +1,13 @@
+{
+  "name": "campfire-livekit-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test gateway.test.mjs"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

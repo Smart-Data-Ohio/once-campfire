@@ -1,20 +1,62 @@
 <% content_for :nav do %>
-  <%= account_logo_tag if Current.account.logo.attached? %>
-
-  <%= tag.span class: "btn btn--reversed btn--faux room--current" do %>
-    <h1 class="room__contents txt-medium overflow-ellipsis">
+  <div class="room-header__identity room--current min-width">
+    <span class="room-header__kind"><%= room.direct? ? "Direct message" : "Channel" %></span>
+    <h1 class="room__contents overflow-ellipsis">
       <% if room.direct? %>
         <span class="for-screen-reader">Ping with</span>
+      <% else %>
+        <span class="room-header__hash" aria-hidden="true">#</span>
       <% end %>
 
-      <%= room_display_name(room) %>
+      <span class="room-header__name overflow-ellipsis"><%= room_display_name(room) %></span>
     </h1>
-  <% end %>
+  </div>
 
-  <%= link_to_edit_room(room) do %>
-    <%= image_tag "menu-dots-horizontal.svg", size: 20, aria: { hidden: "true" } %>
-    <span class="for-screen-reader">Settings for this <%= room.direct? ? "Ping" : "room" %></span>
-  <% end %>
+  <div class="room-header__actions">
+    <button type="button"
+            class="btn room-header__action member-panel-toggle"
+            aria-controls="channel-members"
+            aria-expanded="false"
+            aria-label="Show members"
+            title="Show members"
+            data-member-panel-target="toggle"
+            data-action="member-panel#toggle">
+      <%= image_tag "everyone.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="member-panel-toggle__count" data-member-panel-target="toggleCount" aria-hidden="true"></span>
+    </button>
 
-  <%= render "rooms/involvements/bell", room: room %>
+    <%= link_to searches_path, class: "btn room-header__action", aria: { label: "Search messages" }, title: "Search messages" do %>
+      <%= image_tag "search.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="room-header__action-label">Search</span>
+    <% end %>
+
+    <% unless room.direct? %>
+      <%= tag.button type: "button", class: "btn room-header__action", aria: { label: "Show threads", controls: "thread-panel", expanded: "false" }, title: "Show threads",
+            data: { action: "thread-panel#toggle", thread_panel_target: "browserToggle" } do %>
+        <%= image_tag "messages-outlined.svg", size: 20, aria: { hidden: "true" } %>
+        <span class="room-header__action-label">Threads</span>
+        <span class="room-header__thread-unread" data-thread-panel-unread hidden></span>
+      <% end %>
+    <% end %>
+
+    <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
+      <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: "Join huddle" },
+            data: {
+              controller: "huddle-launcher",
+              action: "huddle-launcher#join",
+              huddle_launcher_room_id_value: room.id,
+              huddle_launcher_room_name_value: room_display_name(room)
+            } do %>
+        <%= image_tag "headphones.svg", size: 20, aria: { hidden: "true" } %>
+        <span data-huddle-launcher-target="label">Join huddle</span>
+      <% end %>
+    <% end %>
+
+    <%= link_to_edit_room(room) do %>
+      <%= image_tag "settings.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="for-screen-reader">Settings for this <%= room.direct? ? "Ping" : "room" %></span>
+    <% end %>
+
+    <%= render "rooms/involvements/bell", room: room %>
+  </div>
 <% end %>

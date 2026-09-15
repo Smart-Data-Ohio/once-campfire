@@ -3,6 +3,53 @@
   --boost-border-color: var(--color-border-dark);
 }
 
+.boosts__reactions,
+.boosts__legacy {
+  align-items: center;
+}
+
+.reaction-chip__form {
+  display: contents;
+}
+
+.reaction-chip {
+  --reaction-border-color: var(--color-border-dark);
+
+  align-items: center;
+  background: color-mix(in srgb, var(--color-bg) 88%, var(--color-border));
+  border: 1px solid var(--reaction-border-color);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 0.35rem;
+  min-block-size: 1.9rem;
+  padding: 0.15rem 0.55rem;
+  transition: background 120ms ease-in-out, border-color 120ms ease-in-out, box-shadow 120ms ease-in-out;
+
+  &:where(:not(:active):hover),
+  &:focus-visible {
+    --reaction-border-color: var(--color-selected-dark);
+    box-shadow: 0 0 0 var(--hover-size) var(--hover-color);
+  }
+
+  &.reaction-chip--active {
+    --reaction-border-color: var(--color-selected-dark);
+    background: color-mix(in srgb, var(--color-selected-dark) 18%, var(--color-bg));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-selected-dark) 55%, transparent);
+  }
+}
+
+.reaction-chip__emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.reaction-chip__count {
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-inline-size: 1ch;
+}
+
 /* Item */
 .boost {
   border: 1px solid var(--boost-border-color);

@@ -7,7 +7,7 @@
     <meta name="view-transition" content="same-origin">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#15171c" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
@@ -29,10 +29,22 @@
     <%= yield :head %>
   </head>
 
-  <body class="<%= body_classes %>" data-controller="local-time lightbox">
+  <body class="<%= body_classes %>"
+        data-controller="local-time lightbox workspace-navigation member-panel thread-panel"
+        data-action="keydown.esc@window->workspace-navigation#close keydown.esc@window->member-panel#close keydown.esc@window->thread-panel#close keydown@window->member-panel#trapFocus keydown@window->thread-panel#trapFocus member-panel:opening@window->workspace-navigation#close member-panel:opening@window->thread-panel#close workspace-navigation:opening@window->member-panel#close workspace-navigation:opening@window->thread-panel#close thread-messages:changed->thread-panel#messagesChanged thread-panel:opening@window->member-panel#close thread-panel:opening@window->workspace-navigation#close workspace-presence:connected@window->member-panel#refreshPresence turbo:before-cache@document->member-panel#prepareForCache turbo:before-cache@document->thread-panel#prepareForCache turbo:frame-load@document->workspace-navigation#syncCurrentRoom turbo:load@document->workspace-navigation#syncCurrentRoom turbo:load@document->member-panel#roomChanged rooms-list:unread@window->workspace-navigation#updateUnreadStatus rooms-list:read@window->workspace-navigation#updateUnreadStatus">
     <a href="#main-content" class="skip-navigation btn">Skip to main content</a>
 
     <nav id="nav">
+      <button type="button"
+              class="btn workspace-navigation__open"
+              aria-controls="sidebar"
+              aria-expanded="false"
+              aria-label="Open workspace navigation"
+              data-workspace-navigation-target="opener"
+              data-action="workspace-navigation#open">
+        <%= image_tag "menu.svg", size: 20, aria: { hidden: "true" } %>
+      </button>
+
       <%= yield :nav %>
     </nav>
 
@@ -57,9 +69,30 @@
       </footer>
     </main>
 
-    <aside id="sidebar" data-controller="toggle-class" data-toggle-class-toggle-class="open">
+    <%= yield :member_panel %>
+
+    <%= yield :thread_panel %>
+
+    <aside id="sidebar"
+           role="navigation"
+           aria-label="Workspace navigation"
+           data-workspace-navigation-target="sidebar"
+           data-action="click->workspace-navigation#navigate keydown->workspace-navigation#trapFocus">
+      <button type="button"
+              class="workspace-navigation__backdrop"
+              aria-hidden="true"
+              tabindex="-1"
+              data-workspace-navigation-target="backdrop"
+              data-action="workspace-navigation#close"
+              hidden></button>
       <%= yield :sidebar %>
     </aside>
+
+    <% if Current.user %>
+      <div id="workspace_presence" data-controller="workspace-presence" data-turbo-permanent hidden></div>
+    <% end %>
+
+    <%= render "layouts/huddle" if Current.user && Huddle.configured? %>
 
     <%= render "layouts/lightbox" %>
 

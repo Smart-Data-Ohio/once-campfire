@@ -1,5 +1,5 @@
 <% @page_title = room_display_name(@room) %>
-<% @body_class = "sidebar" %>
+<% @body_class = "sidebar room-workspace" %>
 <% content_for :head do %>
   <%= turbo_exempts_page_from_preview %>
   <meta name="current-room-id" content="<%= @room.id %>">
@@ -8,13 +8,19 @@
 <%= render "rooms/show/nav", room: @room %>
 
 <% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+<% content_for :member_panel do %>
+  <%= render "rooms/show/member_panel", room: @room %>
+<% end %>
+<% content_for :thread_panel do %>
+  <%= render "rooms/show/thread_panel", room: @room %>
+<% end %>
 
 <%= message_area_tag(@room) do %>
   <%= render "messages/template" %>
 
   <%= messages_tag(@room) do %>
     <%= render "rooms/show/invitation", room: @room %>
-    <%= render partial: "messages/message", collection: @messages, cached: true %>
+    <%= render partial: "messages/message", collection: @messages %>
   <% end %>
 
   <%= turbo_stream_from @room, :messages, channel: "RoomMessagesChannel" %>

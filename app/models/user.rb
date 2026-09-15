@@ -6,6 +6,9 @@ class User < ApplicationRecord
 
   has_many :reachable_messages, through: :rooms, source: :messages
   has_many :messages, dependent: :destroy, foreign_key: :creator_id
+  has_many :channel_threads, dependent: :destroy, foreign_key: :creator_id
+  has_many :thread_memberships, class_name: "ThreadMembership", dependent: :destroy
+  has_many :followed_threads, through: :thread_memberships, source: :thread
 
   has_many :push_subscriptions, class_name: "Push::Subscription", dependent: :delete_all
 
@@ -13,9 +16,13 @@ class User < ApplicationRecord
   has_many :searches, dependent: :delete_all
 
   has_many :sessions, dependent: :destroy
+  has_many :workspace_presence_leases, dependent: :delete_all
   has_many :bans, dependent: :destroy
 
   enum :status, %i[ active deactivated banned ], default: :active
+
+  before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
+  before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
 
   has_secure_password validations: false
 

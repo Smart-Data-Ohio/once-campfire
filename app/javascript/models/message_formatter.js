@@ -70,13 +70,47 @@ export default class MessageFormatter {
   }
 
   #highlightCode(body) {
-    body.querySelectorAll("pre").forEach(block => {
-      onNextEventLoopTick(() => this.#highlightCodeBlock(block))
+    body.querySelectorAll("pre").forEach(pre => {
+      onNextEventLoopTick(() => {
+        this.#highlightCodeBlock(pre)
+        this.#addCopyButton(pre)
+      })
     })
   }
 
-  #highlightCodeBlock(block) {
-    if (this.#isPlainText(block)) window.hljs.highlightElement(block)
+  #highlightCodeBlock(pre) {
+    const code = pre.querySelector(":scope > code") || pre
+    if (!code.dataset.highlighted && this.#isPlainText(code)) window.hljs.highlightElement(code)
+  }
+
+  #addCopyButton(pre) {
+    if (!pre.closest(".markdown-body, .markdown-preview")) return
+    if (pre.querySelector(":scope > .markdown-code-copy")) return
+
+    const code = pre.querySelector(":scope > code") || pre
+    const sourceText = code.textContent
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "markdown-code-copy btn btn--borderless txt-small"
+    button.textContent = "Copy code"
+    button.setAttribute("aria-label", "Copy code")
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(sourceText)
+        button.textContent = "Copied"
+        button.setAttribute("aria-label", "Code copied")
+      } catch {
+        button.textContent = "Copy failed"
+        button.setAttribute("aria-label", "Could not copy code")
+      } finally {
+        window.setTimeout(() => {
+          button.textContent = "Copy code"
+          button.setAttribute("aria-label", "Copy code")
+        }, 1600)
+      }
+    })
+
+    pre.append(button)
   }
 
   #isPlainText(element) {
@@ -90,6 +124,6 @@ export default class MessageFormatter {
   }
 
   get #selectorForCurrentUser() {
-    return `.mention img[src^="/users/${Current.user.id}/avatar"]`
+    return `.mention[data-user-id="${this.#userId}"], .mention.mention--user-${this.#userId}, .mention img[src^="/users/${this.#userId}/avatar"]`
   }
 }

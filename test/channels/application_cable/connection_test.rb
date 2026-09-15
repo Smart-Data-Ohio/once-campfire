@@ -7,6 +7,7 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     connect
 
     assert_equal users(:david), connection.current_user
+    assert_equal sessions(:david_safari), connection.current_session
   end
 
   test "rejects connection with missing user_id cookie" do
