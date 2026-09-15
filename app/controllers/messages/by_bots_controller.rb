@@ -25,6 +25,12 @@ class Messages::ByBotsController < MessagesController
   end
 
   private
+    # This endpoint renders message_payload, which never reads boosts or image
+    # variant records, so it skips the heavier rendering preloads.
+    def paged_message_scope
+      @room.root_messages.with_payload_details
+    end
+
     def set_room
       @room = Current.user.rooms.find_by(id: params[:room_id])
 

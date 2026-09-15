@@ -10,10 +10,14 @@ class MessagesController < ApplicationController
 
   def index
     no_store_response! if request.format.json?
+    # The page is selected without its associations so that a conditional GET
+    # can be answered from ids and timestamps alone. Only a request that is
+    # actually going to render pays to load bodies, attachments and boosts.
     @messages = find_paged_messages
 
     if @messages.any?
       fresh_when @messages
+      Message.preload_rendering_details(@messages) unless performed?
     else
       head :no_content
     end
@@ -91,12 +95,18 @@ class MessagesController < ApplicationController
     def find_paged_messages
       case
       when params[:before].present?
-        @room.root_messages.with_rendering_details.page_before(@room.root_messages.find(params[:before]))
+        paged_message_scope.page_before(@room.root_messages.find(params[:before]))
       when params[:after].present?
-        @room.root_messages.with_rendering_details.page_after(@room.root_messages.find(params[:after]))
+        paged_message_scope.page_after(@room.root_messages.find(params[:after]))
       else
-        @room.root_messages.with_rendering_details.last_page
+        paged_message_scope.last_page
       end
+    end
+
+    # Subclasses that render something other than the message partials override
+    # this to preload only what their representation reads.
+    def paged_message_scope
+      @room.root_messages
     end
 
 
