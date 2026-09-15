@@ -78,6 +78,36 @@ class MessageInteractionsTest < ApplicationSystemTestCase
     save_screenshot "desktop-edit-composer.png"
   end
 
+  test "a duplicate delivery does not replace the message while its actions are open" do
+    message = messages(:third)
+    within_message(message) do
+      open_message_actions
+      assert_button "Edit message", wait: 10
+    end
+
+    page.execute_script <<~JS, dom_id(message), dom_id(@room, :messages)
+      const [messageId, targetId] = arguments;
+      window.originalDeliveredMessage = document.getElementById(messageId);
+      const observeDelivery = event => {
+        const stream = event.detail.newStream;
+        if (stream.getAttribute('action') !== 'append' || stream.getAttribute('target') !== targetId) return;
+        document.removeEventListener('turbo:before-stream-render', observeDelivery);
+        const render = event.detail.render;
+        event.detail.render = async streamElement => {
+          await render(streamElement);
+          document.documentElement.setAttribute('data-duplicate-delivery-rendered', 'true');
+        };
+      };
+      document.addEventListener('turbo:before-stream-render', observeDelivery);
+    JS
+
+    message.broadcast_create
+    assert_selector "html[data-duplicate-delivery-rendered]", wait: 10
+    assert page.evaluate_script("window.originalDeliveredMessage.isConnected"), "redelivery must preserve the existing message and its active controls"
+    within_message(message) { click_button "Edit message" }
+    assert_field "Write a message", with: "Third time's a charm."
+  end
+
   test "keeps newer typing through an asynchronous edit and leaves failures in edit mode" do
     within_message(messages(:third)) do
       open_message_actions

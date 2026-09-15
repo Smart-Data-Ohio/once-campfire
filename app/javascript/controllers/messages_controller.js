@@ -72,6 +72,12 @@ export default class extends Controller {
       if (upToDate) {
         event.detail.render = async (streamElement) => {
           const didScroll = await this.#scrollManager.autoscroll(false, async () => {
+            // Check inside the render queue: the POST response and room
+            // broadcast can arrive before either copy has rendered. Preserve
+            // delivered nodes and their active controls. Pending messages
+            // have no server message ID and must still be replaced.
+            if (action === "append" && this.#alreadyDelivered(streamElement)) return
+
             await render(streamElement)
             await nextEventLoopTick()
 
@@ -169,6 +175,15 @@ export default class extends Controller {
 
 
   // Internal
+
+  #alreadyDelivered(stream) {
+    const incoming = Array.from(stream.templateContent.children)
+    return incoming.length > 0 && incoming.every(message => {
+      if (!message.matches(".message[data-message-id]")) return false
+      const existing = document.getElementById(message.id)
+      return existing?.parentElement === this.messagesTarget && existing.dataset.messageId === message.dataset.messageId
+    })
+  }
 
   async #ensureUpToDate() {
     if (!this.#paginator.upToDate) {
