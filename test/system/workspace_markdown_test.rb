@@ -141,6 +141,7 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_selector "#composer [data-composer-target='contextLabel']", text: "Replying to JZ"
     assert_selector "#composer [data-composer-target='contextPreview']", text: "A useful point"
     assert_field "Write a message", with: ""
+    uncheck "Notify author"
 
     upload_path = Rails.root.join("tmp/markdown-workspace-attachment.txt")
     File.write(upload_path, "An attachment sent from the Markdown composer.\n")
@@ -150,6 +151,8 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_selector ".message[data-message-id] .message__reply-preview", text: "A useful point"
     assert_message_text "markdown-workspace-attachment.txt"
     assert Message.joins(:attachment_attachment).exists?(reply_to_message_id: message.id)
+    assert_not Message.joins(:attachment_attachment).find_by!(reply_to_message_id: message.id).reply_notify_author?
+    assert_selector "#composer [data-composer-target='context'][hidden]", visible: false
   ensure
     File.delete(upload_path) if upload_path && File.exist?(upload_path)
   end

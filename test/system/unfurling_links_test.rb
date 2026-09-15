@@ -17,6 +17,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
       input.id = "legacy-preview-fixture"
       const editor = document.createElement("trix-editor")
       editor.setAttribute("input", input.id)
+      editor.setAttribute("data-permitted-attachment-types", "application/vnd.actiontext.opengraph-embed")
       document.querySelector("#main-content").append(input, editor)
     JS
     assert_selector "trix-editor"

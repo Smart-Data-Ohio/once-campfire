@@ -260,13 +260,17 @@ export default class extends Controller {
 
   async #submitFiles() {
     const files = this.#files
+    const mode = this.#mode
+    const reply = mode?.type === "reply" ? { id: mode.id, notify: mode.notify !== false } : null
+    const hasText = this.#validInput()
+    let allSucceeded = true
 
     this.#files = []
     this.#updateFileList()
 
     for (const file of files) {
       const clientMessageId = this.#generateClientId()
-      const uploader = new FileUploader(file, this.element.action, clientMessageId, this.#uploadProgress.bind(this))
+      const uploader = new FileUploader(file, this.element.action, clientMessageId, this.#uploadProgress.bind(this), reply)
 
       const body = this.#pendingUploadProgress(file.name)
       await this.messagesOutlet.insertPendingMessage(clientMessageId, body)
@@ -275,8 +279,13 @@ export default class extends Controller {
         const response = await uploader.upload()
         Turbo.renderStreamMessage(response)
       } catch {
+        allSucceeded = false
         this.messagesOutlet.failPendingMessage(clientMessageId)
       }
+    }
+
+    if (files.length && !hasText && allSucceeded && this.#mode === mode && this.element.isConnected) {
+      this.#clearReplyContext()
     }
   }
 
