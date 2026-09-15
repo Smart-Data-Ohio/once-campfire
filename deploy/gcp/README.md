@@ -53,6 +53,16 @@ onto one. GitHub Actions authenticates through Workload Identity Federation:
 - `campfire-image-puller@…` holds `artifactregistry.reader` and nothing else.
   `github-deployer` holds `roles/iam.serviceAccountTokenCreator` on it.
 
+Where this organization has GitHub's ID-qualified OIDC subjects enabled, the
+per-environment `principal://…/subject/…` bindings on `github-deployer` must spell the
+subject the way GitHub now mints it —
+`repo:Smart-Data-Ohio@262436228/once-campfire@1370426325:environment:<name>` — and not
+the older `repo:Smart-Data-Ohio/once-campfire:environment:<name>`. Attribute-based
+`principalSet` bindings (`repository`, `repository_owner`) are unaffected. A subject
+that does not match presents as `iam.serviceAccounts.getAccessToken` denied on the
+deployer service account, which the deploy workflow now surfaces in its own words
+rather than as a missing image.
+
 **The VM never receives the deployer's own credential.** The runner mints a token for
 the read-only puller with
 `gcloud auth print-access-token --impersonate-service-account="$GCP_IMAGE_PULLER_SA"`
