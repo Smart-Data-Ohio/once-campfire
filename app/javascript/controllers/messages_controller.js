@@ -8,7 +8,7 @@ import ScrollManager from "models/scroll_manager"
 export default class extends Controller {
   static targets = [ "latest", "message", "body", "messages", "template" ]
   static classes = [ "firstOfDay", "formatted", "me", "mentioned", "threaded" ]
-  static values = { pageUrl: String }
+  static values = { pageUrl: String, anchorMessageId: String }
 
   #clientMessage
   #paginator
@@ -31,8 +31,13 @@ export default class extends Controller {
     this.#clientMessage = new ClientMessage(this.templateTarget)
     this.#paginator = new MessagePaginator(this.messagesTarget, this.pageUrlValue, this.#formatter, this.#allContentViewed.bind(this))
     this.#scrollManager = new ScrollManager(this.messagesTarget)
+    this.#syncAtLatestState()
 
-    if (this.#hasSearchResult) {
+    if (this.hasAnchorMessageIdValue) {
+      this.#paginator.upToDate = false
+      this.#syncAtLatestState()
+      this.#scrollToAnchor()
+    } else if (this.#hasSearchResult) {
       this.#highlightSearchResult()
     } else {
       this.#scrollManager.autoscroll(true)
@@ -61,6 +66,8 @@ export default class extends Controller {
     if (target === this.messagesTarget.id) {
       const render = event.detail.render
       const upToDate = this.#paginator.upToDate
+      const action = event.detail.newStream.getAttribute("action")
+      this.#syncAtLatestState()
 
       if (upToDate) {
         event.detail.render = async (streamElement) => {
@@ -78,6 +85,13 @@ export default class extends Controller {
         }
       } else {
         this.latestTarget.hidden = false
+        if (action === "append") {
+          // An anchored page is a history window. Appending a live message to
+          // its end would make the paginator mistake the window for the
+          // latest page and could mark a joined thread read. Jump to newest
+          // reloads the actual last page, including the deferred message.
+          event.detail.render = async () => {}
+        }
       }
     }
   }
@@ -85,15 +99,23 @@ export default class extends Controller {
   async returnToLatest() {
     this.latestTarget.hidden = true
     await this.#ensureUpToDate()
-    this.#scrollManager.autoscroll(true)
+    this.#syncAtLatestState()
+    await this.#scrollManager.autoscroll(true)
+    this.#dispatchThreadMessagesChanged()
   }
 
   async editMyLastMessage(event) {
-    const editor = event.target.closest("#composer textarea, #composer trix-editor")
+    const editor = event.target?.closest?.("textarea, trix-editor")
+    const composer = editor?.closest("[data-controller~='composer']")
+    const outlet = composer?.dataset.composerMessagesOutlet
+    if (!editor || !composer || !outlet || document.querySelector(outlet) !== this.element) return
     const editorEmpty = editor instanceof HTMLTextAreaElement ? !editor.value : editor?.matches(":empty")
 
     if (editor && editorEmpty && this.#paginator.upToDate) {
-      this.#myLastMessage?.querySelector(".message__edit-btn")?.click()
+      const message = this.#myLastMessage
+      if (message) {
+        window.dispatchEvent(new CustomEvent("message-actions:edit-last", { detail: { message } }))
+      }
     }
   }
 
@@ -109,6 +131,7 @@ export default class extends Controller {
 
   async insertPendingMessage(clientMessageId, node) {
     await this.#ensureUpToDate()
+    this.#syncAtLatestState()
 
     return this.#scrollManager.autoscroll(true, async () => {
       const message = this.#clientMessage.render(clientMessageId, node)
@@ -128,6 +151,20 @@ export default class extends Controller {
 
   #allContentViewed() {
     this.latestTarget.hidden = true
+    this.#syncAtLatestState()
+    this.#dispatchThreadMessagesChanged()
+  }
+
+  #syncAtLatestState() {
+    if (this.#paginator) this.messagesTarget.dataset.messagesAtLatest = String(this.#paginator.upToDate)
+  }
+
+  #dispatchThreadMessagesChanged() {
+    if (!this.element.closest(".thread-panel__content")) return
+    this.element.dispatchEvent(new CustomEvent("thread-messages:changed", {
+      bubbles: true,
+      detail: { atLatest: true },
+    }))
   }
 
 
@@ -148,6 +185,17 @@ export default class extends Controller {
     }
 
     this.#paginator.upToDate = false
+    this.#syncAtLatestState()
+  }
+
+  #scrollToAnchor() {
+    const selector = `.message[data-message-id="${CSS.escape(this.anchorMessageIdValue)}"]`
+    const anchor = this.messagesTarget.querySelector(selector)
+    if (!anchor) return
+
+    anchor.scrollIntoView({ behavior: "instant", block: "center" })
+    this.latestTarget.hidden = false
+    this.#syncAtLatestState()
   }
 
   get #hasSearchResult() {

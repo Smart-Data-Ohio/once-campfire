@@ -59,11 +59,8 @@ module SystemTestHelper
   end
 
   def reveal_message_actions
-    find(".message__options-btn").click
-    rescue Capybara::ElementNotFound
-      find(".message__options-btn", visible: false).hover.click
-    ensure
-      assert_selector ".message__boost-btn", visible: true
+    find("[data-message-edit-format], [data-reply-target='body']", match: :first).right_click
+    assert_selector ".message[data-message-actions-open] .message__quick-reaction", visible: true
   end
 
   def dismiss_pwa_install_prompt

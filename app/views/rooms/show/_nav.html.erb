@@ -30,6 +30,15 @@
       <span class="room-header__action-label">Search</span>
     <% end %>
 
+    <% unless room.direct? %>
+      <%= tag.button type: "button", class: "btn room-header__action", aria: { label: "Show threads", controls: "thread-panel", expanded: "false" }, title: "Show threads",
+            data: { action: "thread-panel#toggle", thread_panel_target: "browserToggle" } do %>
+        <%= image_tag "messages-outlined.svg", size: 20, aria: { hidden: "true" } %>
+        <span class="room-header__action-label">Threads</span>
+        <span class="room-header__thread-unread" data-thread-panel-unread hidden></span>
+      <% end %>
+    <% end %>
+
     <% if !room.direct? && Huddle.configured? %>
       <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: "Join huddle" },
             data: {

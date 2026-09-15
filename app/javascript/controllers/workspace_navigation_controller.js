@@ -11,7 +11,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(",")
 
 export default class extends Controller {
-  static targets = [ "sidebar", "opener", "close", "backdrop" ]
+  static targets = [ "sidebar", "opener", "backdrop" ]
 
   connect() {
     this.mobileQuery = window.matchMedia(MOBILE_QUERY)
@@ -34,13 +34,7 @@ export default class extends Controller {
     this.sidebarTarget.classList.add("open")
     this.element.classList.add("workspace-navigation-open")
     this.#updateAccessibility()
-    requestAnimationFrame(() => {
-      if (this.hasCloseTarget) {
-        this.closeTarget.focus()
-      } else {
-        this.#focusableElements()[0]?.focus()
-      }
-    })
+    requestAnimationFrame(() => this.#focusNavigation())
   }
 
   close(event) {
@@ -51,10 +45,9 @@ export default class extends Controller {
     this.element.classList.remove("workspace-navigation-open")
     this.#updateAccessibility()
 
-    const clickedCloseButton = this.hasCloseTarget && event?.currentTarget === this.closeTarget
     const clickedBackdrop = this.hasBackdropTarget && event?.currentTarget === this.backdropTarget
 
-    if (event?.type !== "click" || clickedCloseButton || clickedBackdrop) {
+    if (event?.type !== "click" || clickedBackdrop) {
       this.previouslyFocusedElement?.focus()
     }
   }
@@ -106,7 +99,7 @@ export default class extends Controller {
     })
 
     if (this.mobileQuery.matches && this.sidebarTarget.classList.contains("open") && !this.sidebarTarget.contains(document.activeElement)) {
-      this.closeTarget.focus()
+      this.#focusNavigation()
     }
   }
 
@@ -162,5 +155,11 @@ export default class extends Controller {
     return Array.from(this.sidebarTarget.querySelectorAll(FOCUSABLE_SELECTOR)).filter((element) => {
       return !element.hidden && element.tabIndex >= 0 && element.getClientRects().length > 0
     })
+  }
+
+  #focusNavigation() {
+    const currentRoom = this.sidebarTarget.querySelector("a[aria-current='page']")
+    const target = currentRoom || this.#focusableElements()[0]
+    target?.focus()
   }
 }

@@ -11,7 +11,7 @@ class UnfurlingLinksTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     within_message messages(:third) do
       reveal_message_actions
-      click_on "Edit", exact: true
+      click_on "Edit message", exact: true
       assert_selector "trix-editor"
     end
   end

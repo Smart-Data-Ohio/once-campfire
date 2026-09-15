@@ -16,25 +16,33 @@ class RoomMessagesChannel < ApplicationCable::Channel
   include Turbo::Streams::StreamName::ClassMethods
 
   STREAM_SUFFIX = "messages"
+  GUARDED_STREAM_SUFFIXES = [ STREAM_SUFFIX, "threads" ].freeze
 
   class << self
     # True for the stream names this channel exists to guard, whoever is asking.
     def guarded_stream?(stream_name)
-      stream_name.to_s.split(":", 2).second == STREAM_SUFFIX
+      GUARDED_STREAM_SUFFIXES.include?(stream_name.to_s.split(":", 2).second)
     end
 
     def subscribable_room(user, stream_name)
       gid_param, suffix = stream_name.to_s.split(":", 2)
 
-      if suffix == STREAM_SUFFIX && room = room_from(gid_param)
-        user.rooms.find_by(id: room.id)
+      if GUARDED_STREAM_SUFFIXES.include?(suffix) && target = target_from(gid_param)
+        case target
+        when Room
+          user.rooms.find_by(id: target.id)
+        when ChannelThread
+          user.rooms.find_by(id: target.room_id)
+        end
       end
     end
 
+    alias subscribable_target subscribable_room
+
     private
-      def room_from(gid_param)
-        GlobalID::Locator.locate gid_param, only: Room
-      rescue ActiveRecord::RecordNotFound
+      def target_from(gid_param)
+        GlobalID::Locator.locate gid_param
+      rescue ActiveRecord::RecordNotFound, NameError
         nil
       end
   end
@@ -50,6 +58,6 @@ class RoomMessagesChannel < ApplicationCable::Channel
   private
     def authorized_stream_name
       stream_name = verified_stream_name_from_params
-      stream_name if stream_name.present? && self.class.subscribable_room(current_user, stream_name)
+      stream_name if stream_name.present? && self.class.subscribable_target(current_user, stream_name)
     end
 end

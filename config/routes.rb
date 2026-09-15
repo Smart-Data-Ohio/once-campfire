@@ -67,6 +67,24 @@ Rails.application.routes.draw do
   resources :rooms do
     resources :messages do
       post :preview, on: :collection
+      get :actions, on: :member
+      get :forward_source, on: :member, controller: "message_forward_sources"
+      resources :forwards, controller: "message_forwards", only: :create
+      get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+    end
+
+    resources :threads, controller: "channel_threads", only: %i[ index show create update destroy ] do
+      get :content, on: :member
+      resources :messages, controller: "channel_thread_messages", only: %i[ index show create update destroy ] do
+        get :actions, on: :member
+        get :forward_source, on: :member, controller: "message_forward_sources"
+        resources :forwards, controller: "message_forwards", only: :create
+        get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+      end
+      post :join, on: :member
+      delete :leave, on: :member
+      post :read, on: :member
+      patch :read, on: :member
     end
 
     nested do
@@ -95,6 +113,10 @@ Rails.application.routes.draw do
   end
 
   resources :messages do
+    resources :forwards, controller: "message_forwards", only: :create
+    get :forward_source, on: :member, controller: "message_forward_sources"
+    get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
+
     scope module: "messages" do
       resources :boosts
     end

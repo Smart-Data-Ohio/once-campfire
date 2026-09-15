@@ -133,10 +133,19 @@ class AdditiveSqliteMigrationVerifier
     end
 
     def preserved_foreign_keys?(before, after, table)
-      before_keys = database_rows(before, "foreign_key_list", table)
-      after_keys = database_rows(after, "foreign_key_list", table)
+      before_keys = foreign_key_signatures(before, table).tally
+      after_keys = foreign_key_signatures(after, table).tally
 
-      (before_keys - after_keys).empty?
+      before_keys.all? { |signature, count| after_keys.fetch(signature, 0) >= count }
+    end
+
+    def foreign_key_signatures(database, table)
+      # SQLite assigns new numeric IDs when a table is rebuilt to add a foreign
+      # key. Compare each complete constraint without that temporary ID, keeping
+      # its column order, target and referential actions intact.
+      database_rows(database, "foreign_key_list", table).group_by(&:first).values.map do |rows|
+        rows.sort_by { |row| row.fetch(1) }.map { |row| row.drop(1) }
+      end
     end
 
     def preserved_triggers?(before, after, table)

@@ -25,7 +25,7 @@ The VMs have no runtime GCP service account. An authorized operator supplies a s
 5. Run `bundle exec script/admin/verify-additive-sqlite-migration BEFORE.sqlite3 AFTER.sqlite3`. Require exit zero and every preexisting table's schema and row data to match. This checks all old typed values, rather than counts alone. Separately compare every uploaded file's contents.
 6. Boot the candidate against the copy with a fresh empty Redis queue and no external network. Verify app health, the configured huddle reconciler, and memory usage. Never execute copied production background jobs during the rehearsal.
 
-The feature migrations add huddle grants and cleanup records, a nullable Markdown source column, and workspace presence leases. They do not rewrite existing message bodies.
+The feature migrations add huddle grants and cleanup records, a nullable Markdown source column, workspace presence leases, channel threads, thread memberships, and nullable message conversation references. They do not rewrite existing message bodies. SQLite may renumber foreign-key IDs when adding a constraint; the verifier compares complete constraint definitions while preserving their column order and referential actions.
 
 ## Public media acceptance
 
@@ -37,7 +37,7 @@ Before cutover, replace all rehearsal media credentials with the separately gene
 
 1. Authenticate Docker for the private registry and pull the exact candidate digest before interrupting chat.
 2. Pause the Open Roles timer, wait for any current feed run to finish, and stop the existing ONCE app for a short write freeze. Take a fresh coherent backup of app storage, settings/keys, and feed delivery state. Retain the old image locally and take a fresh boot-disk snapshot while writes are stopped.
-3. Update the **existing** `chat.smartdata.net` ONCE application with the pinned image, the five production LiveKit environment values, and `--auto-update=false`. Keep the same application identity and volume. Do not deploy a fresh application or restore over the live volume as an upgrade method.
+3. Update the **existing** `chat.smartdata.net` ONCE application with the pinned image and `--auto-update=false`. For an image-only upgrade, omit `--env` to preserve its configured environment, including the five production LiveKit values and web-worker limit. ONCE 0.3.2 replaces the entire environment map when `--env` is supplied; any intentional environment change must therefore include all existing settings. Keep the same application identity and volume. Do not deploy a fresh application or restore over the live volume as an upgrade method.
 4. Check schema migration success, preserved business records and uploaded files, signing/web-push key equality, health, assets, gateway authorization, and the running huddle reconciler. Set and test an explicit web-worker count suited to the chat VM's memory; do not assume a build VM's capacity is available on the app VM.
 5. Resume the Open Roles timer only after validation. Record the exact image digest and backup paths.
 

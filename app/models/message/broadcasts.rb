@@ -1,11 +1,11 @@
 module Message::Broadcasts
   def broadcast_create
-    broadcast_append_to room, :messages, target: [ room, :messages ]
-    broadcast_unread_room
+    broadcast_append_to message_stream_target, :messages, target: [ message_stream_target, :messages ]
+    broadcast_unread_room unless thread_message?
   end
 
   def broadcast_remove
-    broadcast_remove_to room, :messages
+    broadcast_remove_to message_stream_target, :messages
   end
 
   private

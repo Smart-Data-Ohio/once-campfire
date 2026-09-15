@@ -275,10 +275,6 @@ body.sidebar {
   margin-block-start: 0.2rem;
 }
 
-.workspace-navigation__close {
-  display: none;
-}
-
 .sidebar__scroll {
   flex: 1;
   min-block-size: 0;
@@ -669,13 +665,6 @@ body.sidebar {
   transform: none;
 }
 
-.sidebar .message__options-btn {
-  --btn-border-radius: 0.4rem;
-  --btn-padding: 0.15rem 0.4rem;
-
-  block-size: 1.8rem;
-}
-
 .sidebar .message--me {
   grid-auto-columns: 2.35rem minmax(0, 1fr);
   grid-template-areas:
@@ -1054,29 +1043,6 @@ summary.member-panel__group-heading {
     transform: translateX(0);
   }
 
-  .workspace-navigation__close {
-    --btn-background: transparent;
-    --btn-border-color: transparent;
-    --btn-border-radius: 0.45rem;
-    --btn-size: 2rem;
-    --hover-color: transparent;
-
-    display: inline-grid;
-    inset-block-start: 0.85rem;
-    inset-inline-start: min(17rem, calc(100dvw - 5.35rem));
-    position: absolute;
-    z-index: 3;
-  }
-
-  .workspace-navigation__close:hover,
-  .workspace-navigation__close:focus-visible {
-    --btn-background: var(--workspace-sidebar-hover);
-  }
-
-  .workspace-identity {
-    padding-inline-end: 3.5rem;
-  }
-
   .sidebar #sidebar > .rooms {
     background: var(--workspace-sidebar);
     block-size: 100dvh;
@@ -1107,9 +1073,6 @@ summary.member-panel__group-heading {
     max-inline-size: 100%;
   }
 
-  .sidebar .message__options-btn {
-    opacity: 0.55;
-  }
 }
 
 @media (max-width: 40rem) {

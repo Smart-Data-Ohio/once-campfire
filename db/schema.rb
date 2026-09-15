@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_14_190000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -79,6 +79,23 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
     t.index ["message_id"], name: "index_boosts_on_message_id"
   end
 
+  create_table "channel_threads", force: :cascade do |t|
+    t.integer "auto_archive_after_minutes", default: 4320, null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", null: false
+    t.integer "creator_id", null: false
+    t.datetime "last_activity_at", null: false
+    t.datetime "locked_at"
+    t.string "name", null: false
+    t.integer "parent_message_id"
+    t.integer "room_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creator_id"], name: "index_channel_threads_on_creator_id"
+    t.index ["parent_message_id"], name: "index_channel_threads_on_parent_message_id", unique: true, where: "parent_message_id IS NOT NULL"
+    t.index ["room_id", "closed_at", "locked_at"], name: "index_channel_threads_on_room_id_and_closed_at_and_locked_at"
+    t.index ["room_id", "last_activity_at"], name: "index_channel_threads_on_room_id_and_last_activity_at"
+  end
+
   create_table "huddle_cleanups", force: :cascade do |t|
     t.integer "attempts", default: 0, null: false
     t.datetime "completed_at"
@@ -134,11 +151,21 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
     t.string "client_message_id", null: false
     t.datetime "created_at", null: false
     t.integer "creator_id", null: false
+    t.text "forward_note"
+    t.datetime "forwarded_at"
+    t.integer "forwarded_from_message_id"
     t.text "markdown_source"
+    t.boolean "reply_notify_author", default: true, null: false
+    t.datetime "reply_target_deleted_at"
+    t.integer "reply_to_message_id"
     t.integer "room_id", null: false
+    t.integer "thread_id"
     t.datetime "updated_at", null: false
     t.index ["creator_id"], name: "index_messages_on_creator_id"
+    t.index ["forwarded_from_message_id"], name: "index_messages_on_forwarded_from_message_id"
+    t.index ["reply_to_message_id"], name: "index_messages_on_reply_to_message_id"
     t.index ["room_id"], name: "index_messages_on_room_id"
+    t.index ["thread_id"], name: "index_messages_on_thread_id"
   end
 
   create_table "push_subscriptions", force: :cascade do |t|
@@ -181,6 +208,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
+  create_table "thread_memberships", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "involvement", default: "mentions", null: false
+    t.datetime "joined_at", null: false
+    t.integer "thread_id", null: false
+    t.datetime "unread_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["thread_id", "unread_at"], name: "index_thread_memberships_on_thread_id_and_unread_at"
+    t.index ["thread_id", "user_id"], name: "index_thread_memberships_on_thread_id_and_user_id", unique: true
+    t.index ["user_id"], name: "index_thread_memberships_on_user_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.text "bio"
     t.string "bot_token"
@@ -220,11 +260,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_14_180000) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "bans", "users"
   add_foreign_key "boosts", "messages"
+  add_foreign_key "channel_threads", "messages", column: "parent_message_id", on_delete: :nullify
+  add_foreign_key "channel_threads", "rooms"
+  add_foreign_key "channel_threads", "users", column: "creator_id"
+  add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
+  add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
+  add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify
   add_foreign_key "messages", "rooms"
   add_foreign_key "messages", "users", column: "creator_id"
   add_foreign_key "push_subscriptions", "users"
   add_foreign_key "searches", "users"
   add_foreign_key "sessions", "users"
+  add_foreign_key "thread_memberships", "channel_threads", column: "thread_id", on_delete: :cascade
+  add_foreign_key "thread_memberships", "users", on_delete: :cascade
   add_foreign_key "webhooks", "users"
   add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
   add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade

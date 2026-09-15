@@ -40,6 +40,21 @@ class Messages::Boosts::ByBotsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "create replaces the grouped reaction frame" do
+    Turbo::StreamsChannel.expects(:broadcast_replace_to).once.with do |*arguments|
+      rendering = arguments.extract_options!
+      assert_equal [ @message.room, :messages ], arguments
+      assert_equal ActionView::RecordIdentifier.dom_id(@message, :boosting), rendering[:target]
+      assert_equal "messages/boosts/boosts", rendering[:partial]
+      assert_equal({ maintain_scroll: true }, rendering[:attributes])
+      true
+    end
+
+    post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +"👍"
+
+    assert_response :created
+  end
+
   test "create without content" do
     assert_no_difference -> { Boost.count } do
       post room_bot_message_boosts_url(@room, @bot.bot_key, @message)

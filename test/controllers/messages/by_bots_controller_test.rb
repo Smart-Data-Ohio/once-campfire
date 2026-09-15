@@ -85,7 +85,7 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Bender Bot", json_message["creator"]["name"]
     assert_equal "bot", json_message["creator"]["role"]
     assert_equal @room.id, json_message["room"]["id"]
-    assert_equal room_message_url(@room, message), json_message["url"]
+    assert_equal room_at_message_url(@room, message), json_message["url"]
   end
 
   test "index includes safe rendered HTML and exact source for Markdown messages" do
@@ -176,7 +176,7 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal message.id, json["id"]
     assert_equal "Deployed.", json["body"]["plain_text"]
     assert_equal users(:bender).id, json["creator"]["id"]
-    assert_equal room_message_url(@room, message), json["url"]
+    assert_equal room_at_message_url(@room, message), json["url"]
   end
 
   test "bot body update converts a Markdown message back to legacy mode" do

@@ -1,0 +1,16 @@
+<% @page_title = @thread.name %>
+
+<main class="thread" aria-labelledby="thread-title">
+  <header>
+    <h1 id="thread-title"><%= @thread.name %></h1>
+    <p><%= @thread.status %> · <%= @thread.message_count %> messages</p>
+  </header>
+
+  <% if @thread.parent_message %>
+    <article aria-label="Thread starter"><%= render @thread.parent_message %></article>
+  <% end %>
+
+  <section aria-label="Thread messages">
+    <%= render partial: "messages/message", collection: @messages %>
+  </section>
+</main>

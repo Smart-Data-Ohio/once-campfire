@@ -170,14 +170,14 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Legacy again", message.plain_text_body
   end
 
-  test "admin updates a message belonging to another user" do
+  test "admin cannot update a message belonging to another user" do
     message = @room.messages.where(creator: users(:jason)).first
 
-    Turbo::StreamsChannel.expects(:broadcast_replace_to).once
-    put room_message_url(@room, message), params: { message: { body: "Updated body" } }
+    assert_no_changes -> { message.reload.plain_text_body } do
+      put room_message_url(@room, message), params: { message: { body: "Updated body" } }
+    end
 
-    assert_redirected_to room_message_url(@room, message)
-    assert_equal "Updated body", message.reload.plain_text_body
+    assert_response :forbidden
   end
 
   test "destroy destroys a message belonging to the user" do
@@ -253,6 +253,6 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     def assert_copy_link_button(url)
-      assert_select ".btn[title='Copy link'][data-copy-to-clipboard-content-value='#{url}']"
+      assert_select "[data-message-actions-permalink-url-value='#{url}']"
     end
 end

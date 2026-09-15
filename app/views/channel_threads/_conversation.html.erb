@@ -1,0 +1,22 @@
+<div class="thread-panel__thread-content"
+     role="log"
+     aria-live="polite"
+     aria-relevant="additions text"
+     data-thread-panel-target="messages"
+     data-controller="thread-messages"
+     data-action="turbo:before-stream-render@document->thread-messages#beforeStreamRender">
+  <%= message_area_tag(room, thread: thread, anchor_message_id: local_assigns[:anchor_message_id]) do %>
+    <%= render "messages/template" %>
+
+    <%= messages_tag(room, thread: thread, anchor_message_id: local_assigns[:anchor_message_id]) do %>
+      <%= render partial: "messages/message", collection: messages %>
+    <% end %>
+
+    <%= turbo_stream_from thread, :messages, channel: "RoomMessagesChannel" %>
+    <%= button_to_jump_to_newest_message %>
+  <% end %>
+</div>
+
+<div class="thread-panel__composer" data-thread-panel-target="composerMount">
+  <%= render "rooms/show/composer", room: room, thread: thread, inline: true %>
+</div>

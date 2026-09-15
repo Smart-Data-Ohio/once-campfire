@@ -1,3 +1,7 @@
-<div id="<%= dom_id(message, :presentation) %>" dir="auto" data-reply-target="body" data-messages-target="body">
+<div id="<%= dom_id(message, :presentation) %>" dir="auto"
+     data-reply-target="body"
+     data-messages-target="body"
+     data-message-edit-source="<%= message.markdown_source if message.markdown? %>"
+     data-message-edit-format="<%= message.markdown? ? "markdown" : "rich_text" %>">
   <%= message_presentation(message) %>
 </div>

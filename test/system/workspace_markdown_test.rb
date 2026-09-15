@@ -61,7 +61,7 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
 
     within_message(message) do
       reveal_message_actions
-      click_on "Edit", exact: true
+      click_on "Edit message", exact: true
       assert_field "Edit message", with: MARKDOWN
       fill_in_markdown "Edit message", with: MARKDOWN.sub("Design review", "Review complete")
       click_on "Save changes"
@@ -72,7 +72,7 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     within_message(message) do
       reveal_message_actions
-      click_on "Edit", exact: true
+      click_on "Edit message", exact: true
       assert_field "Edit message", with: MARKDOWN.sub("Design review", "Review complete")
     end
   end
@@ -244,20 +244,20 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_compact_composer
     opener = find_button("Open workspace navigation")
     opener.click
-    assert_button "Close workspace navigation"
-    assert_selector "button[aria-label='Close workspace navigation']:focus"
-    find_button("Close workspace navigation").send_keys [ :shift, :tab ]
+    assert_no_button "Close workspace navigation", visible: :all
+    assert_selector "#sidebar a[aria-current='page']:focus"
+    find("#sidebar a[href]", match: :first).send_keys [ :shift, :tab ]
     assert page.evaluate_script("document.querySelector('#sidebar').contains(document.activeElement)"), "focus should stay in the open navigation drawer"
     settle_visual_transitions
     assert_profile_bar_within_navigation
     page.save_screenshot Rails.root.join("tmp/screenshots/workspace-mobile-navigation.png")
     within("#sidebar") { click_link "HQ", exact: true }
     assert_selector ".room--current", text: "HQ"
-    assert_no_button "Close workspace navigation", visible: true
+    assert_no_selector "#sidebar.open"
 
     find_button("Open workspace navigation").click
     page.send_keys :escape
-    assert_no_button "Close workspace navigation", visible: true
+    assert_no_selector "#sidebar.open"
     assert_equal "Open workspace navigation", page.evaluate_script("document.activeElement.getAttribute('aria-label') || document.activeElement.textContent.trim()")
     assert_no_horizontal_overflow
 

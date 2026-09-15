@@ -1,10 +1,37 @@
-<% content_for :footer do %>
+<% thread = local_assigns[:thread] %>
+<% inline = local_assigns.fetch(:inline, false) %>
+<% reply_notify_id = dom_id(thread || room, :reply_notify) %>
+<% composer_markup = capture do %>
   <div class="composer position-relative"
-      data-controller="typing-notifications" data-typing-notifications-active-class="typing-indicator--active">
-    <turbo-frame id="composer-frame" class="composer__frame min-width">
-      <%= composer_form_tag(room) do |form| %>
+      data-controller="typing-notifications"
+      data-typing-notifications-active-class="typing-indicator--active"
+      data-typing-notifications-room-id-value="<%= room.id %>"
+      data-typing-notifications-thread-id-value="<%= thread&.id %>">
+    <turbo-frame id="<%= thread ? dom_id(thread, :composer_frame) : "composer-frame" %>" class="composer__frame min-width">
+      <%= composer_form_tag(room, thread:) do |form| %>
         <fieldset data-composer-target="fields" contents>
           <div class="composer__stack">
+            <div class="composer__context" hidden aria-live="polite" data-composer-target="context">
+              <div class="composer__context-copy min-width">
+                <span class="composer__context-label" data-composer-target="contextLabel"></span>
+                <span class="composer__context-preview overflow-ellipsis" data-composer-target="contextPreview"></span>
+                <span class="composer__feedback" role="alert" data-composer-target="feedback" hidden></span>
+              </div>
+
+              <label class="composer__reply-notify" for="<%= reply_notify_id %>" hidden data-composer-target="notifyControl">
+                <input id="<%= reply_notify_id %>" type="checkbox" name="message[reply_notify_author]" value="1" checked disabled data-composer-target="replyNotify"
+                       data-action="change->composer#notifyChanged" />
+                <span>Notify author</span>
+              </label>
+
+              <button type="button" class="btn btn--borderless composer__context-cancel"
+                      aria-label="Cancel message context" title="Cancel"
+                      data-action="composer#cancelContext">
+                <%= image_tag "remove.svg", size: 18, class: "colorize--black", aria: { hidden: "true" } %>
+              </button>
+            </div>
+
+            <%= form.hidden_field :reply_to_message_id, data: { composer_target: "replyTo" }, autocomplete: "off" %>
             <div class="composer__filelist flex flex--align-center gap flex-wrap" data-composer-target="fileList"></div>
 
             <div class="composer__surface flex align-end gap">
@@ -19,8 +46,8 @@
                       rows: 1,
                       maxlength: 50_000,
                       class: "composer__textarea input",
-                      placeholder: "Message ##{room_display_name(room)}",
-                      aria: { multiline: "true", label: "Write a message" },
+                      placeholder: thread ? "Reply in #{thread.name}" : "Message ##{room_display_name(room)}",
+                      aria: { multiline: "true", label: thread ? "Write a thread reply" : "Write a message" },
                       data: {
                         controller: "markdown-autocomplete",
                         action: "input->markdown-editor#resize input->markdown-autocomplete#search input->typing-notifications#start focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur keydown->markdown-editor#shortcut keydown->composer#submitByKeyboard",
@@ -30,10 +57,10 @@
                         suggestion_results_placement: "above" } %>
               </div>
 
-              <%= form.button name: "send", type: "submit", data: { action: "composer#submit" },
+              <%= form.button name: "send", type: "submit", data: { action: "composer#submit", composer_target: "send" },
                     class: "composer__send btn btn--reversed flex-item-no-shrink" do %>
                 <%= image_tag "arrow-up.svg", size: 17, aria: { hidden: "true" } %>
-                <span class="for-screen-reader">Send Message</span>
+                <span class="for-screen-reader"><%= thread ? "Send Reply" : "Send Message" %></span>
               <% end %>
             </div>
           </div>
@@ -47,4 +74,12 @@
       <% end %>
     </turbo-frame>
   </div>
+<% end %>
+
+<% if inline %>
+  <%= composer_markup %>
+<% else %>
+  <% content_for :footer do %>
+    <%= composer_markup %>
+  <% end %>
 <% end %>
