@@ -47,13 +47,19 @@ export default class extends Controller {
 
     window.addEventListener("huddle:join", this.join, options)
     window.addEventListener("huddle:query", this.broadcastState, options)
-    window.addEventListener("huddle:expand-screen", this.expandLatestScreen, options)
-    window.addEventListener("keydown", this.keyPressed, options)
+    window.addEventListener("huddle:expand-screen", this.viewSharedScreen, options)
     window.addEventListener("pagehide", this.pageHiding, options)
     document.addEventListener("fullscreenchange", this.fullscreenChanged, options)
     document.addEventListener("webkitfullscreenchange", this.fullscreenChanged, options)
     document.addEventListener("turbo:before-render", this.beforeRender, options)
     document.addEventListener("visibilitychange", this.visibilityChanged, options)
+
+    // A Turbo navigation carries the panel over with its expanded screen intact,
+    // but the scroll lock and the Escape handler live outside it.
+    if (this.expandedTrack) {
+      this.#lockTheaterScroll(true)
+      window.addEventListener("keydown", this.keyPressed, options)
+    }
 
     this.#startAuthenticationChecks()
     this.#updateNoiseSuppressionControl()
@@ -92,6 +98,9 @@ export default class extends Controller {
     this.roomId = requestedRoomId
     this.roomName = requestedRoomName
     this.identity = null
+    // Storage is the preference; a transient processor failure only turned it off
+    // in memory, so a fresh join gets a fresh attempt.
+    this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
     this.#setState("connecting", `Connecting to ${requestedRoomName}…`)
 
     let room
@@ -184,16 +193,19 @@ export default class extends Controller {
   }
 
   toggleNoiseSuppression = async () => {
-    if (!this.noiseSuppressionAvailable) return
+    if (!this.noiseSuppressionAvailable || this.noiseSuppressionBusy) return
 
-    this.noiseSuppressionEnabled = !this.noiseSuppressionEnabled
-    this.#storeNoiseSuppression(this.noiseSuppressionEnabled)
+    const requested = !this.noiseSuppressionEnabled
+    this.noiseSuppressionEnabled = requested
+    this.#storeNoiseSuppression(requested)
     this.#updateNoiseSuppressionControl()
 
     if (this.state === "connected") {
       await this.#applyNoiseSuppression(this.room)
-      if (this.noiseSuppressionAvailable) {
-        this.#showTemporaryStatus(this.noiseSuppressionEnabled
+
+      // A failure has already explained itself; do not talk over it.
+      if (this.noiseSuppressionAvailable && this.noiseSuppressionEnabled === requested) {
+        this.#showTemporaryStatus(requested
           ? "Noise suppression on"
           : "Noise suppression off. Your browser's basic filtering stays on.")
       }
@@ -245,9 +257,14 @@ export default class extends Controller {
     }
   }
 
-  expandLatestScreen = () => {
-    const track = this.#screenTracks().at(-1)
-    if (track) this.#expandScreen(track)
+  // With one share this simply opens it. With several it steps through them, so
+  // the banner and the room-header button stay useful once something is expanded.
+  viewSharedScreen = () => {
+    const tracks = this.#screenTracks()
+    if (!tracks.length) return
+
+    const next = tracks[(tracks.indexOf(this.expandedTrack) + 1) % tracks.length]
+    this.#expandScreen(next)
   }
 
   keyPressed = (event) => {
@@ -319,8 +336,10 @@ export default class extends Controller {
         dtx: true,
         red: true,
         // Shared code and slides have to stay readable, so keep resolution and
-        // drop frames instead when bandwidth runs short.
-        screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
+        // drop frames instead when bandwidth runs short. 1080p/15 is the SDK's
+        // own default; 1080p/30 waits on the bandwidth measurements in
+        // docs/huddle-quality.md.
+        screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
         degradationPreference: "maintain-resolution"
       }
     }
@@ -341,20 +360,36 @@ export default class extends Controller {
     const { ScreenSharePresets } = this.liveKit
     const options = {
       contentHint: "detail",
-      resolution: ScreenSharePresets.h1080fps30.resolution,
+      resolution: ScreenSharePresets.h1080fps15.resolution,
       surfaceSwitching: "include",
-      systemAudio: "include"
+      // Tab audio only. Capturing system audio while sharing a whole screen
+      // feeds the speakers back into the huddle on Windows.
+      systemAudio: "exclude"
     }
+
+    // Shared audio is usually music or a video rather than speech, and discontinuous
+    // transmission chops it, so it publishes without DTX. The option reaches both
+    // screen tracks; DTX has no meaning for the video one.
+    const publishOptions = { dtx: false }
 
     try {
-      await room.localParticipant.setScreenShareEnabled(true, { ...options, audio: true })
+      await room.localParticipant.setScreenShareEnabled(true, { ...options, audio: true }, publishOptions)
     } catch (error) {
-      if (this.#permissionWasDenied(error)) throw error
+      if (!this.#displayMediaRejectedConstraints(error)) throw error
 
-      // Browsers that cannot capture tab or system audio reject the whole
-      // request; share the picture rather than nothing.
-      await room.localParticipant.setScreenShareEnabled(true, options)
+      // Only a browser that refused to *capture* with these constraints is
+      // retried; a publishing failure would just show a second picker.
+      await room.localParticipant.setScreenShareEnabled(true, options, publishOptions)
     }
+  }
+
+  // getDisplayMedia reports unusable constraints as NotSupportedError or TypeError.
+  // Permission denials, publishing failures and transport errors arrive as other
+  // names and must not trigger a second capture attempt.
+  #displayMediaRejectedConstraints(error) {
+    if (this.#permissionWasDenied(error)) return false
+
+    return error?.name === "NotSupportedError" || error?.name === "TypeError"
   }
 
   #bindRoom(room) {
@@ -571,8 +606,9 @@ export default class extends Controller {
     return button
   }
 
-  #detachTrack(track) {
+  #detachTrack(track, { restoreFocus = true } = {}) {
     const attachment = this.attachments.get(track)
+    const heldFocus = restoreFocus && Boolean(attachment?.wrapper?.contains(document.activeElement))
 
     if (this.expandedTrack === track) this.#collapseScreen({ restoreFocus: false })
     if (this.fullscreenTrack === track) {
@@ -591,6 +627,8 @@ export default class extends Controller {
     this.attachments.delete(track)
     this.screensTarget.hidden = !this.screensTarget.children.length
     this.#renderSharingNotice()
+
+    if (heldFocus) this.#restoreFocusAfterDetach()
   }
 
   #clearMedia() {
@@ -598,7 +636,8 @@ export default class extends Controller {
     this.fullscreenTrack = null
     this.#exitFullscreen()
 
-    for (const track of [ ...this.attachments.keys() ]) this.#detachTrack(track)
+    // The whole panel is going away, so there is nowhere sensible to put focus.
+    for (const track of [ ...this.attachments.keys() ]) this.#detachTrack(track, { restoreFocus: false })
     this.screensTarget.replaceChildren()
     this.screensTarget.hidden = true
     this.#renderSharingNotice()
@@ -627,13 +666,18 @@ export default class extends Controller {
     const attachment = this.attachments.get(track)
     if (!attachment?.wrapper || this.expandedTrack === track) return
 
+    const previous = this.expandedTrack
     this.expandedTrack = track
     this.element.classList.add("huddle--theater")
-    document.body.classList.add("huddle-theater-open")
+    this.#lockTheaterScroll(true)
+    // Escape belongs to the browser at every other moment, so the handler is
+    // only bound while there is something to collapse.
+    window.addEventListener("keydown", this.keyPressed, { signal: this.abortController?.signal })
     this.#updateScreenControls()
     this.#applyScreenQuality(track)
+    if (previous) this.#applyScreenQuality(previous)
     attachment.expandButton.focus()
-    this.broadcastState()
+    this.#renderSharingNotice()
   }
 
   #collapseScreen({ restoreFocus = true } = {}) {
@@ -642,13 +686,30 @@ export default class extends Controller {
 
     this.expandedTrack = null
     this.element.classList.remove("huddle--theater")
-    document.body.classList.remove("huddle-theater-open")
+    this.#lockTheaterScroll(false)
+    window.removeEventListener("keydown", this.keyPressed)
     this.#updateScreenControls()
     this.#applyScreenQuality(track)
 
     const button = this.attachments.get(track)?.expandButton
     if (restoreFocus && button?.isConnected) button.focus()
-    this.broadcastState()
+    this.#renderSharingNotice()
+  }
+
+  // Turbo replaces <body> between pages, so the lock lives on <html>.
+  #lockTheaterScroll(locked) {
+    document.documentElement.classList.toggle("huddle-theater-open", locked)
+  }
+
+  // The share whose figure was removed cannot take the focus with it.
+  #restoreFocusAfterDetach() {
+    if (this.hasShareTarget && this.shareTarget.isConnected && !this.shareTarget.disabled) {
+      this.shareTarget.focus()
+      return
+    }
+
+    this.roomNameTarget.tabIndex = -1
+    this.roomNameTarget.focus()
   }
 
   #updateScreenControls() {
@@ -680,16 +741,20 @@ export default class extends Controller {
       this.sharingNameTarget.textContent = names.length === 1
         ? `${names[0]} is sharing a screen`
         : `${names.length} people are sharing a screen`
-      this.sharingExpandTarget.textContent = this.expandedTrack ? "Viewing" : "View"
-      this.sharingExpandTarget.disabled = Boolean(this.expandedTrack)
+      const others = sharing.length > 1
+      this.sharingExpandTarget.textContent = !this.expandedTrack ? "View" : others ? "Next screen" : "Viewing"
+      this.sharingExpandTarget.disabled = Boolean(this.expandedTrack) && !others
     }
 
     this.broadcastState()
   }
 
-  // Adaptive streaming sizes a subscription from the rendered element, so the
-  // expanded element already asks for a sharper layer. The explicit request
-  // covers the moment before the resize observer reports the new size.
+  // Adaptive streaming sizes a subscription from the rendered element and
+  // `emitTrackUpdate` takes the *smaller* of that size and any manual request, so
+  // this cannot out-argue the observer: while the element is still small the
+  // adaptive size wins. It matters once the element has actually been resized,
+  // where it asks for the full layer immediately instead of waiting for the next
+  // observer callback.
   #applyScreenQuality(track) {
     const attachment = this.attachments.get(track)
     const publication = attachment?.publication
@@ -779,7 +844,17 @@ export default class extends Controller {
     this.#applyScreenQuality(track)
   }
 
-  async #applyNoiseSuppression(room) {
+  // Every caller goes through one queue. Two overlapping runs could otherwise
+  // leave the processor attached while the button and localStorage say "off".
+  #applyNoiseSuppression(room) {
+    this.noiseOperation = Promise.resolve(this.noiseOperation)
+      .catch(() => {})
+      .then(() => this.#syncNoiseSuppression(room))
+
+    return this.noiseOperation
+  }
+
+  async #syncNoiseSuppression(room) {
     if (!room || room !== this.room) return
 
     const { Track } = this.liveKit
@@ -788,15 +863,19 @@ export default class extends Controller {
 
     const wanted = this.noiseSuppressionAvailable && this.noiseSuppressionEnabled
     const current = track.getProcessor?.()
+    if (wanted === Boolean(current)) return
+
+    this.noiseSuppressionBusy = true
+    this.#updateNoiseSuppressionControl()
 
     try {
-      if (wanted && !current) {
+      if (wanted) {
         await track.setProcessor(new HuddleNoiseSuppressor({
           workletUrl: this.noiseWorkletUrlValue,
           wasmUrl: this.noiseWasmUrlValue,
           simdWasmUrl: this.noiseSimdWasmUrlValue
         }))
-      } else if (!wanted && current) {
+      } else {
         await track.stopProcessor()
       }
     } catch (error) {
@@ -804,12 +883,29 @@ export default class extends Controller {
 
       // Falling back to the browser's own suppression is always better than
       // dropping the microphone out of the call.
-      this.noiseSuppressionAvailable = false
       await track.stopProcessor().catch(() => {})
-      this.#showTemporaryStatus("Extra noise suppression isn’t available in this browser. Basic filtering is still on.")
+
+      if (this.#noiseSuppressionUnsupported(error)) {
+        this.noiseSuppressionAvailable = false
+        this.#showTemporaryStatus("Extra noise suppression isn’t available in this browser. Basic filtering is still on.")
+      } else {
+        // A worklet or model that failed to load may well load next time, so the
+        // control stays usable and nothing about the failure is written to storage.
+        this.noiseSuppressionEnabled = false
+        this.#showTemporaryStatus("Noise suppression couldn’t start. Basic filtering is still on — try again.")
+      }
     } finally {
+      this.noiseSuppressionBusy = false
       this.#updateNoiseSuppressionControl()
     }
+  }
+
+  // Only a browser that genuinely cannot run the filter latches it off for the
+  // rest of the page. A failed fetch or a refused AudioContext is transient.
+  #noiseSuppressionUnsupported(error) {
+    return !noiseSuppressionSupported() ||
+      error?.name === "NotSupportedError" ||
+      error?.message === "noise-suppression-unsupported"
   }
 
   #storedNoiseSuppression() {
@@ -834,7 +930,7 @@ export default class extends Controller {
 
     const enabled = this.noiseSuppressionAvailable && this.noiseSuppressionEnabled
 
-    this.noiseTarget.disabled = !this.noiseSuppressionAvailable
+    this.noiseTarget.disabled = !this.noiseSuppressionAvailable || Boolean(this.noiseSuppressionBusy)
     this.noiseTarget.setAttribute("aria-pressed", String(enabled))
     this.noiseLabelTarget.textContent = this.noiseSuppressionAvailable
       ? enabled ? "Noise suppression on" : "Noise suppression off"

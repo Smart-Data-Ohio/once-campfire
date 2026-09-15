@@ -64,6 +64,9 @@ export default class HuddleNoiseSuppressor {
 
     this.source?.disconnect()
     this.node?.disconnect()
+    // LiveKit stops the track it publishes, not the one this destination owns,
+    // so stop it here rather than leaving the graph's output track live.
+    this.processedTrack?.stop()
     this.source = null
     this.node = null
     this.destination = null
@@ -79,6 +82,10 @@ export default class HuddleNoiseSuppressor {
     const context = this.#context(audioContext)
 
     if (context.state === "suspended") await context.resume().catch(() => {})
+    // A context that never starts would publish a silent track, which is worse
+    // than publishing the raw microphone. Fail so `init` unwinds to the raw track.
+    if (context.state !== "running") throw new Error("noise-suppression-context-not-running")
+
     if (!contextsWithWorklet.has(context)) {
       await context.audioWorklet.addModule(this.workletUrl)
       contextsWithWorklet.add(context)

@@ -279,19 +279,17 @@
   z-index: 30;
 }
 
-.huddle--theater .huddle__screens {
+.huddle--theater .huddle__screens:not([hidden]) {
+  display: flex;
   flex: 1 1 auto;
-  grid-template-columns: minmax(0, 1fr);
+  flex-direction: column;
   min-block-size: 0;
-}
-
-.huddle--theater .huddle__screen:not(.huddle__screen--expanded) {
-  display: none;
 }
 
 .huddle--theater .huddle__screen--expanded {
-  block-size: 100%;
+  flex: 1 1 auto;
   min-block-size: 0;
+  order: -1;
 }
 
 .huddle--theater .huddle__screen--expanded video {
@@ -301,11 +299,30 @@
   inline-size: 100%;
 }
 
+/* A second share stays a reachable thumbnail rather than disappearing, so its
+   own Expand button can still be tabbed to and clicked. */
+.huddle--theater .huddle__screen:not(.huddle__screen--expanded) {
+  block-size: 5rem;
+  flex: none;
+}
+
+.huddle--theater .huddle__screen:not(.huddle__screen--expanded) video {
+  aspect-ratio: auto;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.huddle--theater .huddle__screen:not(.huddle__screen--expanded) figcaption {
+  display: none;
+}
+
 .huddle--theater .huddle__participants {
   max-block-size: 4.5rem;
 }
 
-body.huddle-theater-open {
+/* Turbo replaces <body> between pages, so the lock is set on <html>. */
+.huddle-theater-open,
+.huddle-theater-open body {
   overflow: hidden;
 }
 
