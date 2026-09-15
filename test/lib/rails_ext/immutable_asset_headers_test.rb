@@ -2,6 +2,7 @@ require "test_helper"
 require "rack/mock"
 require "tmpdir"
 require "fileutils"
+require "open3"
 require_relative "../../../lib/rails_ext/immutable_asset_headers"
 
 class RailsExt::ImmutableAssetHeadersTest < ActiveSupport::TestCase
@@ -87,6 +88,67 @@ class RailsExt::ImmutableAssetHeadersTest < ActiveSupport::TestCase
 
     assert_same callable, headers["cache-control"]
     assert_not_kind_of String, headers["cache-control"]
+  end
+
+  # The prefix follows config.assets.prefix rather than being hardcoded.
+
+  test "the asset prefix defaults to the application's configured one" do
+    assert_equal "#{Rails.application.config.assets.prefix.chomp("/")}/",
+      RailsExt::ImmutableAssetHeaders.new(@not_found).prefix
+  end
+
+  test "a configured prefix is normalized to a leading and trailing slash" do
+    { "/static" => "/static/", "static" => "/static/", "/static/" => "/static/",
+      nil => "/assets/", "" => "/assets/" }.each do |given, expected|
+      assert_equal expected, RailsExt::ImmutableAssetHeaders.new(@not_found, prefix: given).prefix,
+        "prefix #{given.inspect} should normalize to #{expected}"
+    end
+  end
+
+  test "a path that merely starts with the prefix text is not an asset" do
+    middleware = RailsExt::ImmutableAssetHeaders.new(
+      ->(_env) { [ 200, { "cache-control" => SHORT }, [ "" ] ] }, prefix: "/assets")
+
+    _, headers = get("/assetsfoo/thing.js", stack: middleware)
+
+    assert_equal SHORT, headers["cache-control"]
+  end
+
+  test "the rewrite follows a relocated asset prefix" do
+    FileUtils.mkdir_p File.join(@root, "static")
+    File.write File.join(@root, "static", "application-abc123.js"), "console.log(1)\n"
+
+    static = ActionDispatch::Static.new(@not_found, @root, headers: { "cache-control" => SHORT })
+    stack = RailsExt::ImmutableAssetHeaders.new(static, prefix: "/static")
+
+    assert_equal IMMUTABLE, get("/static/application-abc123.js", stack: stack).last["cache-control"]
+    assert_equal SHORT, get("/assets/application-abc123.js", stack: stack).last["cache-control"]
+  end
+
+  # The tests above prove the middleware behaves; this proves the real
+  # production stack actually contains it, on the correct side of
+  # ActionDispatch::Static. Inserting it *after* Static would pass every test
+  # above while never running for a served file, because Static short-circuits
+  # on a hit and never calls downstream.
+  #
+  # Booting a second Rails process is the only faithful check: the middleware is
+  # inserted from config/environments/production.rb, so it is absent from the
+  # stack this suite runs in. Costs about 1.5s.
+  test "the production middleware stack places this before ActionDispatch::Static" do
+    printed, status = Open3.capture2e(
+      { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x" },
+      Rails.root.join("bin/rails").to_s, "middleware", chdir: Rails.root.to_s)
+
+    assert_predicate status, :success?, "bin/rails middleware failed:\n#{printed}"
+
+    entries = printed.lines.filter_map { |line| line[/\Ause (\S+)/, 1] }
+    middleware = entries.index("RailsExt::ImmutableAssetHeaders")
+    static = entries.index("ActionDispatch::Static")
+
+    assert middleware, "RailsExt::ImmutableAssetHeaders is missing from the production stack:\n#{printed}"
+    assert static, "ActionDispatch::Static is missing from the production stack:\n#{printed}"
+    assert middleware < static,
+      "expected RailsExt::ImmutableAssetHeaders before ActionDispatch::Static, got #{entries.inspect}"
   end
 
   private

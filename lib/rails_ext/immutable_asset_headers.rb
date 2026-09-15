@@ -18,19 +18,26 @@ module RailsExt
   # response on the way back out. Inserting it after would never run for a
   # served file: Static short-circuits on a hit and never calls downstream.
   class ImmutableAssetHeaders
-    ASSET_PREFIX = "/assets/"
+    DEFAULT_ASSET_PREFIX = "/assets"
     # Propshaft digest-stamps these URLs, so the bytes behind a given URL can
     # never change: a client that has one never needs to revalidate it.
     IMMUTABLE_CACHE_CONTROL = "public, immutable, max-age=#{1.year.to_i}"
     # Only a real hit from the static file server is safe to mark immutable. An
-    # unknown /assets/ path falls through to the app's 404, which must stay
+    # unknown asset path falls through to the app's 404, which must stay
     # correctable.
     CACHEABLE_STATUSES = [ 200, 304 ].freeze
 
-    def initialize(app, cache_control: IMMUTABLE_CACHE_CONTROL)
+    # The prefix is read at instantiation rather than being hardcoded, so that
+    # moving config.assets.prefix moves this policy with it. It is read here and
+    # not at load time because this file is required from the environment config,
+    # before the application's own configuration has been applied.
+    def initialize(app, prefix: nil, cache_control: IMMUTABLE_CACHE_CONTROL)
       @app = app
+      @prefix = normalize_prefix(prefix || configured_prefix)
       @cache_control = cache_control
     end
+
+    attr_reader :prefix
 
     def call(env)
       @app.call(env).tap do |status, headers, _body|
@@ -41,8 +48,24 @@ module RailsExt
     end
 
     private
+      def configured_prefix
+        Rails.application&.config&.assets&.prefix
+      rescue NoMethodError
+        # No asset pipeline configured; fall back rather than failing to boot.
+        nil
+      end
+
+      # "/assets", "assets" and "/assets/" all have to end up as "/assets/", so
+      # that the match cannot straddle a path segment and treat "/assetsfoo" as
+      # an asset.
+      def normalize_prefix(value)
+        prefix = value.to_s.presence || DEFAULT_ASSET_PREFIX
+        prefix = "/#{prefix}" unless prefix.start_with?("/")
+        prefix.end_with?("/") ? prefix : "#{prefix}/"
+      end
+
       def asset_path?(env)
-        env["PATH_INFO"].to_s.start_with?(ASSET_PREFIX)
+        env["PATH_INFO"].to_s.start_with?(@prefix)
       end
   end
 end
