@@ -14,7 +14,11 @@ class ChannelThreadMessagesController < ApplicationController
 
     respond_to do |format|
       format.html
-      format.json { render json: { messages: @messages.map { |message| message_payload(message, include_thread_summary: false) } } }
+      format.json do
+        caching_thread_payloads do
+          render json: { messages: @messages.map { |message| message_payload(message, include_thread_summary: false) } }
+        end
+      end
     end
   end
 

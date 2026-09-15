@@ -26,11 +26,13 @@ class ChannelThreadsController < ApplicationController
     respond_to do |format|
       format.html
       format.json do
-        render json: {
-          thread: thread_payload(@thread, include_work_history: true, include_work_owner_options: true),
-          parent_message: message_payload(@thread.parent_message),
-          messages: @messages.map { |message| message_payload(message, include_thread_summary: false) }
-        }
+        caching_thread_payloads do
+          render json: {
+            thread: thread_payload(@thread, include_work_history: true, include_work_owner_options: true),
+            parent_message: message_payload(@thread.parent_message),
+            messages: @messages.map { |message| message_payload(message, include_thread_summary: false) }
+          }
+        end
       end
     end
   end
