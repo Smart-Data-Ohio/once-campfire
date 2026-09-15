@@ -1,0 +1,730 @@
+name: Deploy to GCP
+
+# Automates the release procedure in deploy/README.md against the ONCE
+# single-VM deployment. The on-VM work lives in deploy/gcp/campfire-release.sh
+# and is driven one phase at a time so the runner can take a boot-disk snapshot
+# while writes are frozen.
+#
+# Ordering note: the migration is rehearsed against a copy of the frozen
+# database, inside a network-isolated throwaway container, during `freeze` and
+# therefore before the live application is touched. Everything checked after the
+# cutover is read-only, because by then the application may have accepted
+# writes that a database restore would discard.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target GitHub environment
+        type: choice
+        required: true
+        options:
+          - production
+          - validation
+        default: validation
+      git_sha:
+        description: Source revision to deploy (full or short sha)
+        type: string
+        required: true
+      image_digest:
+        description: Optional sha256:... digest that must match the resolved image
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: Stop after preflight and print the plan
+        type: boolean
+        required: false
+        default: true
+      skip_snapshot:
+        description: Skip the boot-disk snapshot taken while writes are frozen
+        type: boolean
+        required: false
+        default: false
+      release_label:
+        description: Release label (default <YYYYMMDD>-<short sha>-<run id>)
+        type: string
+        required: false
+        default: ''
+      resume:
+        description: Reuse an existing release directory's backup instead of refusing (needs release_label)
+        type: boolean
+        required: false
+        default: false
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Release ${{ inputs.git_sha }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-gcp-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    timeout-minutes: 120
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_ZONE: ${{ vars.GCP_ZONE }}
+      GCP_INSTANCE: ${{ vars.GCP_INSTANCE }}
+      GCP_APP_HOST: ${{ vars.GCP_APP_HOST }}
+      GCP_IMAGE: ${{ vars.GCP_IMAGE }}
+      GCP_IMAGE_PULLER_SA: ${{ vars.GCP_IMAGE_PULLER_SA }}
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the release plan
+        id: plan
+        timeout-minutes: 5
+        shell: bash
+        env:
+          INPUT_SHA: ${{ inputs.git_sha }}
+          INPUT_LABEL: ${{ inputs.release_label }}
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_SKIP_SNAPSHOT: ${{ inputs.skip_snapshot }}
+          INPUT_RESUME: ${{ inputs.resume }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          RUN_ID: ${{ github.run_id }}
+          SIMULATE_FAILURE_VAR: ${{ vars.CAMPFIRE_RELEASE_SIMULATE_FAILURE }}
+        run: |
+          set -euo pipefail
+
+          case "$INPUT_SHA" in
+            *[!0-9a-fA-F]*|'') echo "::error::git_sha must be hexadecimal"; exit 1 ;;
+          esac
+          if [ "${#INPUT_SHA}" -lt 7 ]; then
+            echo "::error::git_sha must be at least 7 characters"; exit 1
+          fi
+          git fetch --quiet origin +refs/heads/*:refs/remotes/origin/* || true
+          if ! sha="$(git rev-parse --verify --quiet "${INPUT_SHA}^{commit}")"; then
+            echo "::error::${INPUT_SHA} is not a commit in this repository"; exit 1
+          fi
+          short="${sha::7}"
+
+          # The run id makes the default label unique, so a retry can never pair
+          # a fresh cutover with the backup taken by an earlier attempt.
+          label="$INPUT_LABEL"
+          if [ -z "$label" ]; then
+            label="$(date -u +%Y%m%d)-${short}-${RUN_ID}"
+          fi
+          case "$label" in
+            *[!A-Za-z0-9._-]*) echo "::error::release_label may only contain A-Z a-z 0-9 . _ -"; exit 1 ;;
+          esac
+          if [ "${#label}" -gt 40 ]; then
+            echo "::error::release_label must be 40 characters or fewer"; exit 1
+          fi
+
+          resume=false
+          [ "$INPUT_RESUME" = "true" ] && resume=true
+          if [ "$resume" = "true" ] && [ -z "$INPUT_LABEL" ]; then
+            echo "::error::resume=true only makes sense with an explicit release_label"; exit 1
+          fi
+
+          # Snapshot names are RFC1035 (lowercase alphanumerics and hyphens, <=63)
+          # and must be unique per run even when release_label is reused.
+          suffix="-r${RUN_ID}"
+          budget=$(( 63 - 16 - ${#suffix} ))
+          base="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
+          base="${base:0:$budget}"
+          base="$(printf '%s' "$base" | sed 's/-*$//')"
+          snapshot="campfire-before-${base}${suffix}"
+
+          if [ -n "$INPUT_DIGEST" ]; then
+            case "$INPUT_DIGEST" in
+              sha256:*) : ;;
+              *) echo "::error::image_digest must look like sha256:<hex>"; exit 1 ;;
+            esac
+          fi
+
+          dry_run=false
+          [ "$INPUT_DRY_RUN" = "true" ] && dry_run=true
+          skip_snapshot=false
+          [ "$INPUT_SKIP_SNAPSHOT" = "true" ] && skip_snapshot=true
+
+          simulate_failure=0
+          if [ -n "${SIMULATE_FAILURE_VAR:-}" ] && [ "${SIMULATE_FAILURE_VAR}" != "0" ]; then
+            if [ "$INPUT_ENVIRONMENT" != "validation" ]; then
+              echo "::error::CAMPFIRE_RELEASE_SIMULATE_FAILURE is only allowed in the validation environment"
+              exit 1
+            fi
+            case "$SIMULATE_FAILURE_VAR" in
+              1|2) simulate_failure="$SIMULATE_FAILURE_VAR" ;;
+              *) echo "::error::CAMPFIRE_RELEASE_SIMULATE_FAILURE must be 0, 1 or 2"; exit 1 ;;
+            esac
+          fi
+
+          {
+            echo "sha=${sha}"
+            echo "short_sha=${short}"
+            echo "tag=git-${sha}"
+            echo "label=${label}"
+            echo "snapshot=${snapshot}"
+            echo "dry_run=${dry_run}"
+            echo "skip_snapshot=${skip_snapshot}"
+            echo "resume=${resume}"
+            echo "simulate_failure=${simulate_failure}"
+            echo "remote_dir=campfire-deploy-${RUN_ID}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Deploying ${sha} to ${INPUT_ENVIRONMENT} as release ${label} (dry_run=${dry_run})"
+
+      - name: Require the revision to be on main (production only)
+        if: inputs.environment == 'production'
+        timeout-minutes: 5
+        shell: bash
+        env:
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::${SHA} is not an ancestor of origin/main; production only deploys reviewed main history"
+            exit 1
+          fi
+          echo "${SHA} is an ancestor of origin/main."
+
+      - name: Require a successful CI run for the revision
+        id: ci
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          url="$(gh api --method GET "repos/${REPO}/actions/workflows/ci.yml/runs" \
+            -f head_sha="$SHA" -f status=completed \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | first | .html_url // ""')"
+          if [ -n "$url" ]; then
+            echo "Found a successful CI run for ${SHA}: ${url}"
+          elif [ "$ENVIRONMENT" = "production" ]; then
+            echo "::error::no successful CI workflow run found for ${SHA}"
+            gh api --method GET "repos/${REPO}/actions/workflows/ci.yml/runs" \
+              -f head_sha="$SHA" --jq '.workflow_runs[] | "\(.status) \(.conclusion) \(.html_url)"' || true
+            exit 1
+          else
+            echo "::warning::no successful CI run for ${SHA}; continuing because this is ${ENVIRONMENT}"
+            url="none"
+          fi
+          echo "run_url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        timeout-minutes: 5
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        timeout-minutes: 10
+
+      - name: Resolve the image digest
+        id: image
+        timeout-minutes: 5
+        shell: bash
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          EXPECTED_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          test -n "$GCP_IMAGE" || { echo "::error::GCP_IMAGE is not set"; exit 1; }
+          if ! digest="$(gcloud artifacts docker images describe "${GCP_IMAGE}:${TAG}" \
+                           --format='value(image_summary.digest)' 2>/dev/null)" || [ -z "$digest" ]; then
+            echo "::error::no image published for tag ${TAG}; run the Publish image to Artifact Registry workflow first"
+            exit 1
+          fi
+          # Never interpolate an unvalidated registry response into a remote command.
+          if ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::resolved digest is not a well-formed sha256 reference"
+            exit 1
+          fi
+          if [ -n "$EXPECTED_DIGEST" ] && [ "$EXPECTED_DIGEST" != "$digest" ]; then
+            echo "::error::image_digest ${EXPECTED_DIGEST} does not match ${TAG} (${digest})"
+            exit 1
+          fi
+          {
+            echo "digest=${digest}"
+            echo "reference=${GCP_IMAGE}@${digest}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved ${GCP_IMAGE}:${TAG} -> ${digest}"
+
+      - name: Copy the release scripts to the VM
+        id: copy
+        timeout-minutes: 10
+        shell: bash
+        env:
+          REMOTE_DIR: ${{ steps.plan.outputs.remote_dir }}
+        run: |
+          set -euo pipefail
+          gcloud compute scp --recurse --quiet \
+            --zone "$GCP_ZONE" --tunnel-through-iap \
+            deploy/gcp "${GCP_INSTANCE}:${REMOTE_DIR}"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/campfire-release.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+
+      - name: Preflight on the VM
+        id: preflight
+        timeout-minutes: 20
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          test -n "$GCP_IMAGE_PULLER_SA" || { echo "::error::GCP_IMAGE_PULLER_SA is not set"; exit 1; }
+          remote="sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' EXPECTED_APP_HOST='${GCP_APP_HOST}' /opt/campfire-deploy/campfire-release.sh preflight"
+          # The VM receives a read-only Artifact Registry token, not the deployer's
+          # own credential, and it arrives only on the SSH session's standard
+          # input: never in argv or a file. It is registered as a secret first so
+          # that nothing downstream can print it, deliberately or by accident.
+          token="$(gcloud auth print-access-token --impersonate-service-account="$GCP_IMAGE_PULLER_SA")"
+          echo "::add-mask::${token}"
+          printf '%s\n' "$token" \
+            | gcloud compute ssh "$GCP_INSTANCE" \
+                --zone "$GCP_ZONE" --tunnel-through-iap --quiet --command "$remote"
+
+      - name: Dry run summary
+        if: steps.plan.outputs.dry_run == 'true'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh logout"
+          {
+            echo "## Dry run — no changes were made"
+            echo
+            echo "Preflight discovered the application, verified capacity, authenticated to Artifact Registry,"
+            echo "pulled the target digest and then dropped the registry credentials."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Environment | \`${ENVIRONMENT}\` |"
+            echo "| Instance | \`${GCP_INSTANCE}\` (\`${GCP_ZONE}\`) |"
+            echo "| App host | \`${GCP_APP_HOST}\` |"
+            echo "| Source sha | \`${SHA}\` |"
+            echo "| Image tag | \`${TAG}\` |"
+            echo "| Image | \`${REFERENCE}\` |"
+            echo "| Release label | \`${LABEL}\` |"
+            echo "| Would snapshot | \`${SNAPSHOT}\` |"
+            echo
+            echo "Re-run with \`dry_run=false\` to perform the release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Freeze writes, back up, and rehearse the migration
+        id: freeze
+        if: steps.plan.outputs.dry_run != 'true'
+        timeout-minutes: 30
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+          RESUME: ${{ steps.plan.outputs.resume == 'true' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' RESUME='${RESUME}' /opt/campfire-deploy/campfire-release.sh freeze"
+
+      - name: Snapshot the boot disk while writes are frozen
+        id: snapshot
+        if: steps.plan.outputs.dry_run != 'true' && steps.plan.outputs.skip_snapshot != 'true'
+        timeout-minutes: 30
+        shell: bash
+        env:
+          SNAPSHOT: ${{ steps.plan.outputs.snapshot }}
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          # This snapshots the boot disk only. The ONCE storage volume lives under
+          # /var/lib/docker on that same disk; an instance with additional data
+          # disks would need them snapshotted too.
+          mapfile -t disks < <(gcloud compute instances describe "$GCP_INSTANCE" --zone "$GCP_ZONE" \
+            --format=json | jq -r '.disks[] | select(.boot == true) | .source')
+          if [ "${#disks[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one boot disk, found ${#disks[@]}"; exit 1
+          fi
+          attached="$(gcloud compute instances describe "$GCP_INSTANCE" --zone "$GCP_ZONE" \
+            --format=json | jq -r '[.disks[] | select(.boot != true)] | length')"
+          if [ "$attached" -gt 0 ]; then
+            echo "::warning::${attached} non-boot disk(s) attached; they are NOT included in ${SNAPSHOT}"
+          fi
+          disk_name="${disks[0]##*/}"
+          echo "Snapshotting boot disk ${disk_name} as ${SNAPSHOT}"
+          gcloud compute disks snapshot "$disk_name" --zone "$GCP_ZONE" \
+            --snapshot-names "$SNAPSHOT" --labels "campfire-release=$(printf '%s' "$LABEL" | tr '[:upper:]' '[:lower:]')" --quiet
+          for _attempt in $(seq 1 60); do
+            status="$(gcloud compute snapshots describe "$SNAPSHOT" --format='value(status)')"
+            echo "snapshot status: ${status}"
+            [ "$status" = "READY" ] && break
+            [ "$status" = "FAILED" ] && { echo "::error::snapshot ${SNAPSHOT} failed"; exit 1; }
+            sleep 10
+          done
+          status="$(gcloud compute snapshots describe "$SNAPSHOT" --format='value(status)')"
+          [ "$status" = "READY" ] || { echo "::error::snapshot ${SNAPSHOT} is ${status}, not READY"; exit 1; }
+          echo "name=${SNAPSHOT}" >> "$GITHUB_OUTPUT"
+
+      - name: Cut over to the new image and verify
+        id: cutover
+        if: steps.plan.outputs.dry_run != 'true'
+        timeout-minutes: 25
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+          SIMULATE_FAILURE: ${{ steps.plan.outputs.simulate_failure }}
+        run: |
+          set -uo pipefail
+          # The remote exit code is the whole signal here: 10 means it never
+          # became healthy, 20 means it is healthy but a read-only check failed.
+          # Recovery must not touch a healthy application, so the code is
+          # published as a step output before this step fails.
+          set +e
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' CAMPFIRE_RELEASE_SIMULATE_FAILURE='${SIMULATE_FAILURE}' /opt/campfire-deploy/campfire-release.sh cutover"
+          rc=$?
+          set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 20 ]; then
+            echo "::error::the application is HEALTHY on the new image but a read-only check failed (exit 20). It has been left running; no rollback was attempted."
+          fi
+          exit "$rc"
+
+      # Runs on failure, cancellation and timeout alike: anything that leaves the
+      # write freeze without a successful cutover needs the host dealt with.
+      #
+      # Exit 20 is the exception. The application is up and serving on the new
+      # image; a read-only check disagreed with it. Recovery starts by stopping
+      # the app, so running it here would turn a reporting failure into an
+      # outage. The job still fails, loudly, and an operator decides.
+      - name: Recover after a failed or interrupted cutover
+        id: rollback
+        if: >-
+          always() && steps.freeze.conclusion == 'success'
+          && steps.cutover.conclusion != 'success'
+          && steps.cutover.outputs.rc != '20'
+        timeout-minutes: 30
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          IMAGE_REF: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          echo "::error::the release did not complete while writes were frozen; running the recovery phase"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' IMAGE_REF='${IMAGE_REF}' /opt/campfire-deploy/campfire-release.sh rollback"
+
+      - name: Finish the release
+        id: finish
+        if: success() && steps.plan.outputs.dry_run != 'true'
+        timeout-minutes: 15
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh finish"
+
+      - name: Drop registry credentials from the VM
+        if: always() && steps.preflight.conclusion == 'success' && steps.finish.conclusion != 'success'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh logout" || true
+
+      - name: Remove the copied scripts from the VM
+        if: always() && steps.copy.conclusion == 'success'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          REMOTE_DIR: ${{ steps.plan.outputs.remote_dir }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "rm -rf \"\$HOME/${REMOTE_DIR}\"" || true
+
+      - name: Report the feed timer state
+        if: always() && steps.preflight.conclusion == 'success'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+        run: |
+          set -euo pipefail
+          state="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' /opt/campfire-deploy/campfire-release.sh timer-state" 2>/dev/null | tr -d '\r')"
+          jq -e . <<<"$state" >/dev/null 2>&1 || state='{}'
+          timer="$(jq -r '.feed_timer // "unknown"' <<<"$state")"
+          enabled="$(jq -r '.enabled // "unknown"' <<<"$state")"
+          active="$(jq -r '.active // "unknown"' <<<"$state")"
+          recorded="$(jq -r '.recorded_before_release // "unknown"' <<<"$state")"
+          {
+            echo "## Open Roles feed timer"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Unit | \`${timer}\` |"
+            echo "| Before the release | \`${recorded}\` |"
+            echo "| Now | \`enabled=${enabled} active=${active}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$active" != "active" ] && [[ "$recorded" == *"active=active"* ]]; then
+            echo "::warning::${timer} was active before the release and is '${active}' now; it needs an operator"
+            echo "> :warning: The timer was active before this release and is **${active}** now. Resume it once the host has been reviewed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # The timer was already paused when this release started. `finish`
+          # faithfully restores that, which means the feed stays stopped — but it
+          # usually means an earlier release paused it and nobody resumed it.
+          if [[ "$recorded" == *"enabled=enabled"* ]] && [[ "$recorded" == *"active=inactive"* ]]; then
+            echo "::warning::${timer} was already enabled-but-inactive before this release; the feed was not running to begin with"
+            echo "> :warning: The timer was **enabled but inactive before this release started**, so it was restored to that state and the feed is still not running. That is usually the residue of an earlier interrupted release — check whether it should be resumed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Exit 20: healthy, but a read-only check disagreed. Nothing was rolled
+      # back on purpose. This step exists to make that decision visible.
+      - name: Report a healthy application that failed its checks
+        if: always() && steps.cutover.outputs.rc == '20'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          state_dir="/var/backups/campfire-${LABEL}"
+          deploy="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo cat '${state_dir}/deploy-result.json' 2>/dev/null || echo '{}'" 2>/dev/null | tr -d '\r')"
+          jq -e . <<<"$deploy" >/dev/null 2>&1 || deploy='{}'
+          failures="$(jq -r '.failed_checks // "unknown"' <<<"$deploy")"
+          files_ok="$(jq -r '.uploaded_files_identical // "unknown"' <<<"$deploy")"
+          {
+            echo "# :warning: RELEASE FAILED ITS CHECKS — THE APPLICATION IS STILL RUNNING"
+            echo
+            echo "The new image became healthy and is serving on \`${GCP_INSTANCE}\`, then"
+            echo "${failures} read-only check(s) failed. Because the application is up and may"
+            echo "have accepted writes, **no rollback was attempted and the database was not"
+            echo "touched**. The job fails so a human looks at it; the site is not down."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Running image | \`${REFERENCE}\` |"
+            echo "| Failed checks | \`${failures}\` |"
+            echo "| Uploaded files unchanged | \`${files_ok}\` |"
+            echo "| Release directory | \`${state_dir}\` |"
+            echo
+            echo "Review the checks in the cutover step's log. If the release must be undone,"
+            echo "do it by hand — the retained image tag and the frozen checkpoint are both in"
+            echo "the release directory, and the feed timer is still paused."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the recovery outcome
+        if: always() && steps.rollback.conclusion != 'skipped' && steps.rollback.conclusion != ''
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          SNAPSHOT: ${{ steps.snapshot.outputs.name }}
+          CUTOVER: ${{ steps.cutover.conclusion }}
+          ROLLBACK: ${{ steps.rollback.conclusion }}
+        run: |
+          set -euo pipefail
+          state_dir="/var/backups/campfire-${LABEL}"
+          fetch() {
+            gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+              --command "sudo cat '${state_dir}/$1' 2>/dev/null || echo '{}'" 2>/dev/null | tr -d '\r'
+          }
+          fetch rollback-result.json > rollback.json || echo '{}' > rollback.json
+          fetch freeze-result.json > freeze.json || echo '{}' > freeze.json
+          jq -e . rollback.json >/dev/null 2>&1 || echo '{}' > rollback.json
+          jq -e . freeze.json >/dev/null 2>&1 || echo '{}' > freeze.json
+
+          action="$(jq -r '.action // "unknown"' rollback.json)"
+          reason="$(jq -r '.reason // "no reason recorded"' rollback.json)"
+          app_host="$(jq -r '.app_host // "unknown"' rollback.json)"
+          restored_image="$(jq -r '.restored_image // "not restored"' rollback.json)"
+          health="$(jq -r '.health // "unknown"' rollback.json)"
+          rollback_tag="$(jq -r '.rollback_tag // "unknown"' freeze.json)"
+
+          {
+            echo "# :rotating_light: RELEASE DID NOT COMPLETE :rotating_light:"
+            echo
+            echo "Cutover outcome: \`${CUTOVER}\`. Recovery step outcome: \`${ROLLBACK}\`."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$action" = "refused-application-healthy" ]; then
+            healthy_at="$(jq -r '.cutover_healthy_at // "unknown"' rollback.json)"
+            {
+              echo "## :white_check_mark: The application is healthy and was left alone"
+              echo
+              echo "The cutover succeeded at \`${healthy_at}\` and \`https://${app_host}/up\` still"
+              echo "returns 200. The release was interrupted after that — a cancellation, a"
+              echo "timeout or a dropped connection — so the recovery phase declined to stop and"
+              echo "downgrade a working deployment. Nothing was stopped, restored or changed."
+              echo
+              echo "**Bookkeeping is still outstanding on \`${GCP_INSTANCE}\`:** the feed timer is"
+              echo "paused and the temporary registry credentials are still present. Re-run this"
+              echo "workflow's \`finish\` phase, or do both by hand."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$action" = "refused-database-changed" ]; then
+            {
+              echo "## :no_entry: The database was NOT restored"
+              echo
+              echo "${reason}."
+              echo
+              echo "The live database changed after the write freeze — the new image runs"
+              echo "\`db:prepare\` before puma, so it migrates on boot — and restoring the frozen"
+              echo "copy would have discarded that along with anything written since. The"
+              echo "database was therefore left untouched."
+              echo
+              echo "The application **was** returned to the previous image, which the pre-cutover"
+              echo "rehearsal proved can read the migrated schema."
+              echo
+              echo "| Field | Value |"
+              echo "| --- | --- |"
+              echo "| App host | \`${app_host}\` |"
+              echo "| Running image | \`${restored_image}\` |"
+              echo "| Health | \`${health}\` |"
+              echo "| Database | left as it was, **not** restored |"
+              echo
+              echo "**This still needs an operator on \`${GCP_INSTANCE}\`:**"
+              echo
+              echo "- Confirm the previous code is behaving correctly against the migrated schema, or"
+              echo "- put the new image back and continue the release, or"
+              echo "- restore \`${state_dir}/before.once.tar.gz\` and accept losing everything written after the freeze."
+              echo
+              echo "The feed timer is deliberately left paused."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Rolled back"
+              echo
+              echo "${reason}."
+              echo
+              echo "| Field | Value |"
+              echo "| --- | --- |"
+              echo "| App host | \`${app_host}\` |"
+              echo "| Restored image | \`${restored_image}\` |"
+              echo "| Health after rollback | \`${health}\` |"
+              echo
+              echo "The feed timer is deliberately left paused for operator review."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo
+            echo "### Recovery material"
+            echo
+            echo "- Frozen checkpoint: \`${state_dir}\`"
+            echo "- Boot-disk snapshot: \`${SNAPSHOT:-not taken}\`"
+            echo "- Retained image tag: \`${rollback_tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Paste-ready release record
+        if: always() && steps.cutover.conclusion == 'success' && steps.finish.conclusion == 'success'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          LABEL: ${{ steps.plan.outputs.label }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          SNAPSHOT: ${{ steps.snapshot.outputs.name }}
+          SKIP_SNAPSHOT: ${{ steps.plan.outputs.skip_snapshot }}
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          CI_RUN_URL: ${{ steps.ci.outputs.run_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          state_dir="/var/backups/campfire-${LABEL}"
+          fetch() {
+            gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+              --command "sudo cat '${state_dir}/$1' 2>/dev/null || echo '{}'" 2>/dev/null | tr -d '\r'
+          }
+          for f in freeze deploy finish; do
+            fetch "${f}-result.json" > "${f}.json" || echo '{}' > "${f}.json"
+            jq -e . "${f}.json" >/dev/null 2>&1 || echo '{}' > "${f}.json"
+          done
+
+          previous_image="$(jq -r '.previous_image // "unknown"' freeze.json)"
+          previous_revision="$(jq -r '.previous_revision // "unknown"' freeze.json)"
+          rollback_tag="$(jq -r '.rollback_tag // "unknown"' freeze.json)"
+          app_sha="$(jq -r '.app_archive_sha256 // "unknown"' freeze.json)"
+          host_sha="$(jq -r '.host_archive_sha256 // "unknown"' freeze.json)"
+          app_host="$(jq -r '.app_host // "unknown"' freeze.json)"
+          frozen_at="$(jq -r '.writes_frozen_at // "unknown"' freeze.json)"
+          preserved="$(jq -r '.rehearsal.preserved // "unknown"' freeze.json)"
+          additive="$(jq -r '.rehearsal.additive // "unknown"' freeze.json)"
+          files_ok="$(jq -r '.uploaded_files_identical // false' deploy.json)"
+          file_count="$(jq -r '.uploaded_file_count // 0' freeze.json)"
+          env_keys="$(jq -r '(.env_keys // []) | join(", ")' deploy.json)"
+          reopened="$(jq -r '.writes_reopened_at // "unknown"' finish.json)"
+          health_status="$(jq -r '.health_status // "unknown"' finish.json)"
+          timer_state="$(jq -r '"enabled=" + (.feed_timer_enabled // "unknown") + " active=" + (.feed_timer_active // "unknown")' finish.json)"
+          logged_out="$(jq -r '.registry_logged_out // false' finish.json)"
+          snapshot_line="${SNAPSHOT:-unknown}"
+          [ "$SKIP_SNAPSHOT" = "true" ] && snapshot_line="skipped (skip_snapshot=true)"
+          # Only render a link when there is a URL to link to; a sentinel inside
+          # markdown link syntax produces a broken link in the pasted record.
+          if [ -z "$CI_RUN_URL" ] || [ "$CI_RUN_URL" = "none" ]; then
+            ci_line="- CI: no successful \`CI\` run was recorded for this revision."
+          else
+            ci_line="- [CI on the application revision](${CI_RUN_URL})."
+          fi
+
+          {
+            echo "## Paste-ready release record"
+            echo
+            echo '```markdown'
+            echo "# Campfire release — ${LABEL}"
+            echo
+            echo "## Release identity"
+            echo
+            echo "- Application source: \`${SHA}\`."
+            echo "- Image: \`${REFERENCE}\`."
+            echo "- Previous application source: \`${previous_revision}\`."
+            echo "- Previous image: \`${previous_image}\`."
+            echo "- Environment: \`${ENVIRONMENT}\` (\`${GCP_INSTANCE}\`, \`${GCP_ZONE}\`, host \`${app_host}\`)."
+            echo "- The existing ONCE application and storage volume were upgraded in place with \`once update --image ... --auto-update=false\`. Automatic upstream updates remain disabled. The image-only update preserved the full existing environment (\`${env_keys}\`), session-signing and web-push keys."
+            echo
+            echo "## Validation"
+            echo
+            echo "${ci_line}"
+            echo "- Before the cutover, the candidate image migrated a copy of the frozen database in a network-isolated throwaway container: ${preserved}; additive ${additive}."
+            echo "- Writes were frozen at \`${frozen_at}\` and reopened at \`${reopened}\`."
+            echo "- After the cutover, health \`GET https://${app_host}/up\` returned \`${health_status}\`, the running digest, storage volume and environment key names matched, and all ${file_count} pre-existing uploaded files were unchanged (\`${files_ok}\`)."
+            echo "- Open Roles timer restored to \`${timer_state}\`; temporary registry credentials removed: \`${logged_out}\`."
+            echo "- [Deployment run](${RUN_URL})."
+            echo
+            echo "## Recovery checkpoints"
+            echo
+            echo "- Protected coherent app and feed checkpoint on the app VM: \`${state_dir}\`."
+            echo "- Boot-disk snapshot: \`${snapshot_line}\`, verified \`READY\` while writes were paused."
+            echo "- Retained old image tag: \`${rollback_tag}\`."
+            echo "- Coherent app archive SHA-256: \`${app_sha}\`."
+            echo "- Coherent host/feed archive SHA-256: \`${host_sha}\`."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

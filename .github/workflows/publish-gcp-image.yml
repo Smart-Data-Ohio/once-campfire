@@ -1,0 +1,244 @@
+name: Publish image to Artifact Registry
+
+# Builds the deployable linux/amd64 image and pushes it to the private GCP
+# Artifact Registry repository that `deploy-gcp.yml` pulls from. Repository tags
+# are immutable, so a rebuild of an already-published revision resolves the
+# existing digest instead of failing.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-gcp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  IMAGE_DESCRIPTION: Campfire is a web-based chat application with multiple rooms, direct messages, file attachments with previews, search, web push notifications, @mentions, and bot integrations. Single-tenant; production-ready image with web app, background jobs, caching, file serving, and SSL.
+  SOURCE_URL: https://github.com/${{ github.repository }}
+  REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  publish:
+    name: Build and push linux/amd64 image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    timeout-minutes: 60
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+      tag: ${{ steps.plan.outputs.tag }}
+      digest: ${{ steps.digest.outputs.digest }}
+      reference: ${{ steps.digest.outputs.reference }}
+      reused: ${{ steps.existing.outputs.exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_IMAGE_PUBLISHER_SA }}
+          token_format: access_token
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Plan tags and version
+        id: plan
+        shell: bash
+        env:
+          IMAGE: ${{ vars.GCP_IMAGE }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE" || { echo "::error::repository variable GCP_IMAGE is not set"; exit 1; }
+          tag="git-${SHA}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            version="${REF#refs/tags/v}"
+            version_tag="${REF#refs/tags/}"
+          else
+            version="${SHA::7}"
+            version_tag=""
+          fi
+          {
+            echo "image=${IMAGE}"
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "version_tag=${version_tag}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Source revision ${SHA} -> ${IMAGE}:${tag}"
+
+      - name: Check whether the immutable tag already exists
+        id: existing
+        shell: bash
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          status=0
+          digest="$(gcloud artifacts docker images describe "${IMAGE}:${TAG}" \
+                     --format='value(image_summary.digest)' 2>err.log)" || status=$?
+          if [ "$status" -eq 0 ] && printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already published as ${digest}; the build will be skipped."
+            rm -f err.log
+            exit 0
+          fi
+          # Only a genuine "not found" means we should build. An auth, network or
+          # permission error must fail loudly rather than silently rebuild and
+          # then collide with the immutable tag.
+          if grep -Eqi 'not found|does not exist|NOT_FOUND' err.log; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "digest=" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} is not published yet."
+            rm -f err.log
+            exit 0
+          fi
+          echo "::error::could not determine whether ${IMAGE}:${TAG} exists"
+          cat err.log
+          rm -f err.log
+          exit 1
+
+      - name: Set up Docker Buildx
+        if: steps.existing.outputs.exists != 'true'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to Artifact Registry
+        if: steps.existing.outputs.exists != 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Extract Docker metadata (labels)
+        if: steps.existing.outputs.exists != 'true'
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.plan.outputs.image }}
+          tags: |
+            type=raw,value=${{ steps.plan.outputs.tag }}
+            type=raw,value=${{ steps.plan.outputs.version_tag }},enable=${{ steps.plan.outputs.version_tag != '' }}
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.source=${{ env.SOURCE_URL }}
+
+      - name: Build and push (linux/amd64)
+        if: steps.existing.outputs.exists != 'true'
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          build-args: |
+            OCI_SOURCE=${{ env.SOURCE_URL }}
+            OCI_DESCRIPTION=${{ env.IMAGE_DESCRIPTION }}
+            APP_VERSION=${{ steps.plan.outputs.version }}
+            GIT_REVISION=${{ github.sha }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=linux/amd64
+          cache-to: type=gha,scope=linux/amd64,mode=max
+          sbom: false
+          provenance: false
+
+      - name: Resolve the published digest
+        id: digest
+        shell: bash
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION_TAG: ${{ steps.plan.outputs.version_tag }}
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest="${BUILT_DIGEST:-$EXISTING_DIGEST}"
+          if [ -z "$digest" ]; then
+            digest="$(gcloud artifacts docker images describe "${IMAGE}:${TAG}" \
+                        --format='value(image_summary.digest)')"
+          fi
+          case "$digest" in
+            sha256:*) : ;;
+            *) echo "::error::could not resolve a sha256 digest for ${IMAGE}:${TAG}"; exit 1 ;;
+          esac
+          # A version tag on an already-published revision is added to the
+          # existing digest; immutable tags forbid rewriting git-<sha>.
+          if [ -n "$VERSION_TAG" ] && [ -z "${BUILT_DIGEST:-}" ]; then
+            gcloud artifacts docker tags add "${IMAGE}@${digest}" "${IMAGE}:${VERSION_TAG}" \
+              || echo "::warning::could not add version tag ${VERSION_TAG} (it may already exist)"
+          fi
+          {
+            echo "digest=${digest}"
+            echo "reference=${IMAGE}@${digest}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest image provenance
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.plan.outputs.image }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: false
+
+      - name: Job summary
+        shell: bash
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION_TAG: ${{ steps.plan.outputs.version_tag }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          REFERENCE: ${{ steps.digest.outputs.reference }}
+          REUSED: ${{ steps.existing.outputs.exists }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REUSED" = "true" ]; then
+            action="reused the existing immutable tag (no rebuild)"
+          else
+            action="built and pushed a new linux/amd64 image"
+          fi
+          {
+            echo "## Artifact Registry image"
+            echo
+            echo "This run $action."
+            echo
+            echo '```text'
+            echo "${REFERENCE}"
+            echo '```'
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Tag | \`${TAG}\` |"
+            if [ -n "$VERSION_TAG" ]; then
+              echo "| Version tag | \`${VERSION_TAG}\` |"
+            fi
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Source sha | \`${SHA}\` |"
+            echo "| Source ref | \`${REF}\` |"
+            echo "| Platform | \`linux/amd64\` |"
+            echo
+            echo "Deploy it with the **Deploy to GCP** workflow using \`git_sha=${SHA}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
