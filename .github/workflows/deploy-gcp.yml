@@ -565,7 +565,6 @@ jobs:
           action="$(jq -r '.action // "unknown"' rollback.json)"
           reason="$(jq -r '.reason // "no reason recorded"' rollback.json)"
           app_host="$(jq -r '.app_host // "unknown"' rollback.json)"
-          previous_image="$(jq -r '.previous_image // "unknown"' rollback.json)"
           restored_image="$(jq -r '.restored_image // "not restored"' rollback.json)"
           health="$(jq -r '.health // "unknown"' rollback.json)"
           rollback_tag="$(jq -r '.rollback_tag // "unknown"' freeze.json)"
