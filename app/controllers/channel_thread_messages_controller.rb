@@ -112,7 +112,7 @@ class ChannelThreadMessagesController < ApplicationController
     end
 
     def find_paged_messages
-      messages = @thread.messages.with_creator.with_attachment_details.with_boosts
+      messages = @thread.messages.with_rendering_details
       case
       when params[:before].present?
         messages.page_before(@thread.messages.find(params[:before]))

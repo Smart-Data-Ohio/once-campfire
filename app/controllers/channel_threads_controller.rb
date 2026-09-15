@@ -20,7 +20,7 @@ class ChannelThreadsController < ApplicationController
   end
 
   def show
-    @messages = @thread.messages.with_creator.with_attachment_details.with_boosts.last_page
+    @messages = @thread.messages.with_rendering_details.last_page
     no_store_response! if request.format.json?
 
     respond_to do |format|
@@ -284,7 +284,7 @@ class ChannelThreadsController < ApplicationController
     end
 
     def find_content_messages
-      messages = @thread.messages.with_creator.with_attachment_details.with_boosts
+      messages = @thread.messages.with_rendering_details
       return [ messages.last_page, nil ] if params[:message_id].blank?
 
       anchor = @thread.messages.find(params[:message_id])

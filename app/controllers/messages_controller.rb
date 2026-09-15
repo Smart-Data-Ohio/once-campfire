@@ -91,11 +91,11 @@ class MessagesController < ApplicationController
     def find_paged_messages
       case
       when params[:before].present?
-        @room.root_messages.with_creator.page_before(@room.root_messages.find(params[:before]))
+        @room.root_messages.with_rendering_details.page_before(@room.root_messages.find(params[:before]))
       when params[:after].present?
-        @room.root_messages.with_creator.page_after(@room.root_messages.find(params[:after]))
+        @room.root_messages.with_rendering_details.page_after(@room.root_messages.find(params[:after]))
       else
-        @room.root_messages.with_creator.last_page
+        @room.root_messages.with_rendering_details.last_page
       end
     end
 

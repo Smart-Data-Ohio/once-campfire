@@ -38,6 +38,17 @@ class Message < ApplicationRecord
       .includes(attachment_blob: :variant_records)
   }
   scope :with_boosts, -> { includes(boosts: :booster) }
+  # Everything messages/_message and its partials touch, so rendering a page of
+  # messages costs a fixed number of queries instead of a set per message.
+  # messages/_context reads the reply source's author and body, and search
+  # results span rooms, so neither :room nor the reply source can be assumed
+  # already loaded.
+  scope :with_rendering_details, -> {
+    with_creator
+      .with_attachment_details
+      .with_boosts
+      .preload(:room, reply_to_message: [ :rich_text_body, { creator: :avatar_attachment } ])
+  }
 
   # Sorting in Ruby rather than with the `ordered` scope, because applying a
   # scope to an association builds a fresh relation and so ignores the rows
