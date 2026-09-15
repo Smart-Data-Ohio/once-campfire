@@ -208,12 +208,19 @@ module MessagePayloadHelper
       }
     end
 
+    # Reads the boosts association in memory. A GROUP BY plus a pluck meant two
+    # round trips even when the rows were already loaded.
     def reaction_payload(message)
-      counts = message.boosts.group(:content).distinct.count(:booster_id)
-      active = message.boosts.where(booster: Current.user).pluck(:content).to_set
+      by_content = message.boosts.group_by(&:content)
+      current_user_id = Current.user&.id
 
       EmojiHelper::REACTIONS.to_h do |character, title|
-        [ character, { title:, count: counts.fetch(character, 0), active: active.include?(character) } ]
+        boosts = by_content[character] || []
+        [ character, {
+          title:,
+          count: boosts.map(&:booster_id).compact.uniq.size,
+          active: boosts.any? { |boost| boost.booster_id == current_user_id }
+        } ]
       end
     end
 end
