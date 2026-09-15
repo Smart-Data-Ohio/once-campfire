@@ -90,17 +90,30 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          digest=""
-          if digest="$(gcloud artifacts docker images describe "${IMAGE}:${TAG}" \
-                        --format='value(image_summary.digest)' 2>/dev/null)" && [ -n "$digest" ]; then
+          status=0
+          digest="$(gcloud artifacts docker images describe "${IMAGE}:${TAG}" \
+                     --format='value(image_summary.digest)' 2>err.log)" || status=$?
+          if [ "$status" -eq 0 ] && printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "digest=${digest}" >> "$GITHUB_OUTPUT"
             echo "Tag ${TAG} already published as ${digest}; the build will be skipped."
-          else
+            rm -f err.log
+            exit 0
+          fi
+          # Only a genuine "not found" means we should build. An auth, network or
+          # permission error must fail loudly rather than silently rebuild and
+          # then collide with the immutable tag.
+          if grep -Eqi 'not found|does not exist|NOT_FOUND' err.log; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "digest=" >> "$GITHUB_OUTPUT"
             echo "Tag ${TAG} is not published yet."
+            rm -f err.log
+            exit 0
           fi
+          echo "::error::could not determine whether ${IMAGE}:${TAG} exists"
+          cat err.log
+          rm -f err.log
+          exit 1
 
       - name: Set up Docker Buildx
         if: steps.existing.outputs.exists != 'true'
