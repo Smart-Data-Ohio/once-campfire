@@ -1,5 +1,5 @@
 class Current < ActiveSupport::CurrentAttributes
-  attribute :session, :user, :request
+  attribute :session, :user, :request, :agent
 
   delegate :host, :protocol, to: :request, prefix: true, allow_nil: true
 

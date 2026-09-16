@@ -5,9 +5,10 @@ module Authentication
   included do
     before_action :require_authentication
     before_action :deny_bots
+    before_action :deny_agent_tokens
     helper_method :signed_in?
 
-    protect_from_forgery with: :exception, unless: -> { authenticated_by.bot_key? }
+    protect_from_forgery with: :exception, unless: -> { authenticated_by.bot_key? || authenticated_by.agent_token? }
   end
 
   class_methods do
@@ -17,6 +18,10 @@ module Authentication
 
     def allow_bot_access(**options)
       skip_before_action :deny_bots, **options
+    end
+
+    def allow_agent_access(**options)
+      skip_before_action :deny_agent_tokens, **options
     end
 
     def require_unauthenticated_access(**options)
@@ -31,7 +36,7 @@ module Authentication
     end
 
     def require_authentication
-      restore_authentication || bot_authentication || request_authentication
+      restore_authentication || bot_authentication || agent_authentication || request_authentication
     end
 
     def restore_authentication
@@ -44,6 +49,31 @@ module Authentication
       if params[:bot_key].present? && bot = User.authenticate_bot(params[:bot_key].strip)
         Current.user = bot
         set_authenticated_by(:bot_key)
+      end
+    end
+
+    def agent_authentication
+      return unless agent_bearer_secret
+
+      credential = AgentCredential.authenticate(agent_bearer_secret)
+
+      if credential&.agent&.active?
+        Current.agent = credential.agent
+        Current.user = credential.agent.user
+        credential.record_use!(request.remote_ip)
+        set_authenticated_by(:agent_token)
+      else
+        head :unauthorized
+        true
+      end
+    end
+
+    def agent_bearer_secret
+      return @agent_bearer_secret if defined?(@agent_bearer_secret)
+
+      scheme, token = request.authorization.to_s.split(" ", 2)
+      @agent_bearer_secret = if scheme&.casecmp?("Bearer") && token.present?
+        token.strip.presence
       end
     end
 
@@ -100,6 +130,10 @@ module Authentication
 
     def deny_bots
       head :forbidden if authenticated_by.bot_key?
+    end
+
+    def deny_agent_tokens
+      head :forbidden if authenticated_by.agent_token?
     end
 
     def set_authenticated_by(method)

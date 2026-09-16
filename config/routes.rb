@@ -21,6 +21,7 @@ Rails.application.routes.draw do
       resources :bots do
         scope module: "bots" do
           resource :key, only: :update
+          resources :credentials, only: %i[ index create destroy ]
         end
       end
 
@@ -59,6 +60,8 @@ Rails.application.routes.draw do
   namespace :autocompletable do
     resources :users, only: :index
   end
+
+  get "agents/me", to: "agents#me", defaults: { format: :json }
 
   direct :fresh_user_avatar do |user, options|
     route_for :user_avatar, user.avatar_token, v: user.updated_at.to_fs(:number)

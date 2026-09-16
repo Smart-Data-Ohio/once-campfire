@@ -55,4 +55,21 @@ class AgentTest < ActiveSupport::TestCase
 
     assert_not Agent.exists?(user_id: users(:bender).id)
   end
+
+  test "active when not suspended and user is active" do
+    assert agents(:bender_agent).active?
+  end
+
+  test "inactive when suspended" do
+    agent = agents(:bender_agent)
+    agent.update!(suspended_at: Time.current)
+
+    assert_not agent.active?
+  end
+
+  test "inactive when user is deactivated" do
+    users(:bender).update!(status: :deactivated)
+
+    assert_not agents(:bender_agent).reload.active?
+  end
 end
