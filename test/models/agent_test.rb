@@ -72,4 +72,68 @@ class AgentTest < ActiveSupport::TestCase
 
     assert_not agents(:bender_agent).reload.active?
   end
+
+  test "legacy capabilities when no grants have ever existed" do
+    assert agents(:bender_agent).legacy_capabilities?
+  end
+
+  test "no legacy capabilities once any grant exists" do
+    AgentGrant.create!(agent: agents(:bender_agent), granted_by: users(:david), capability: "post_messages")
+
+    assert_not agents(:bender_agent).legacy_capabilities?
+  end
+
+  test "revoking the last grant does not restore the legacy fallback" do
+    AgentGrant.create!(agent: agents(:bender_agent), granted_by: users(:david), capability: "post_messages").revoke!
+
+    agent = agents(:bender_agent)
+    assert_not agent.legacy_capabilities?
+    assert_not agent.can?(:post_messages, rooms(:watercooler))
+  end
+
+  test "legacy agent keeps read, post, and react but nothing else" do
+    agent = agents(:bender_agent)
+
+    assert agent.can?(:read_messages, rooms(:watercooler))
+    assert agent.can?(:post_messages, rooms(:watercooler))
+    assert agent.can?(:react, rooms(:watercooler))
+    assert_not agent.can?(:manage_threads, rooms(:watercooler))
+    assert_not agent.can?(:external_action, rooms(:watercooler))
+  end
+
+  test "room grant authorizes only that room" do
+    agent = agents(:bender_agent)
+    AgentGrant.create!(agent: agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
+
+    assert agent.can?(:post_messages, rooms(:watercooler))
+    assert_not agent.can?(:post_messages, rooms(:designers))
+    assert_not agent.can?(:react, rooms(:watercooler))
+  end
+
+  test "workspace-wide grant authorizes every room" do
+    agent = agents(:bender_agent)
+    AgentGrant.create!(agent: agent, granted_by: users(:david), capability: "post_messages")
+
+    assert agent.can?(:post_messages, rooms(:watercooler))
+    assert agent.can?(:post_messages, rooms(:designers))
+  end
+
+  test "revoked grants do not authorize" do
+    agent = agents(:bender_agent)
+    AgentGrant.create!(agent: agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages").revoke!
+
+    assert_not agent.can?(:post_messages, rooms(:watercooler))
+  end
+
+  test "suspended agent cannot do anything, even with legacy fallback" do
+    agent = agents(:bender_agent)
+    agent.suspend!
+
+    assert_not agent.can?(:post_messages, rooms(:watercooler))
+    assert_not agent.can?(:read_messages, rooms(:watercooler))
+  end
+
+  test "unknown capabilities are denied" do
+    assert_not agents(:bender_agent).can?(:launch_missiles, rooms(:watercooler))
+  end
 end
