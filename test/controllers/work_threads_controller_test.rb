@@ -39,6 +39,28 @@ class WorkThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, @hidden_thread.name
   end
 
+  test "work page explains what work threads are and how to start one" do
+    sign_in :jz
+
+    get work_threads_url
+    assert_response :success
+    assert_select "details.work-threads__guide:not([open])" do
+      assert_select "summary", text: "How to start a work thread"
+      assert_select "li", text: /Track as work/
+    end
+    assert_select ".work-threads__empty", count: 0
+
+    ChannelThread.where(room: @room).update_all(work_status: nil, work_owner_id: nil)
+
+    get work_threads_url
+    assert_response :success
+    assert_select "details.work-threads__guide[open]"
+    assert_select ".work-threads__empty", text: /No open work yet/
+
+    get work_threads_url(state: "done")
+    assert_select ".work-threads__empty", text: /No completed work yet/
+  end
+
   test "global work access requires an active human room member" do
     inactive = @creator.dup
     inactive.status = :deactivated
