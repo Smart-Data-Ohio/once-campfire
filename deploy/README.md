@@ -54,6 +54,8 @@ Before cutover, replace all rehearsal media credentials with the separately gene
 4. Check schema migration success, preserved business records and uploaded files, signing/web-push key equality, health, assets, gateway authorization, and the running huddle reconciler. Set and test an explicit web-worker count suited to the chat VM's memory; do not assume a build VM's capacity is available on the app VM.
 5. Resume the Open Roles timer only after validation. Record the exact image digest and backup paths.
 
+The app VM carries a 1 GB swap file with `vm.swappiness=10`, applied idempotently by the pipeline's `prepare-host` phase (and on demand by the **Configure GCP host** workflow), so a memory spike during the overlap costs latency on a 2 GB host instead of an OOM kill.
+
 ONCE starts a replacement container before retiring the prior one. The explicit write freeze prevents two app versions from writing the same SQLite database during migrations. Disable automatic upstream image updates because this is a maintained fork.
 
 If rollback is needed before accepting new writes, stop the app and restore the coherent checkpoint with its original image and keys. After new writes have been accepted, first preserve them: restoring an older checkpoint by itself would discard those messages and could make the feed repost alerts. Keep the feed's delivery state consistent with the restored message history.

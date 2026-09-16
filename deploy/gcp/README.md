@@ -90,6 +90,7 @@ moment writes are frozen. Every invocation takes `flock` on
 
 | Phase | Effect |
 | --- | --- |
+| `prepare-host` | Makes sure the host itself can survive the release: an idempotent `/swapfile` of `SWAP_SIZE_MB` (default 1024), built beside the live file and moved into place whole, with a `findmnt`-verified `/etc/fstab` entry and `vm.swappiness=10` persisted in `/etc/sysctl.d/90-campfire.conf`. **Never resizes an existing swap file and only ever runs `mkswap` on a file it built itself**; under `HOST_PREP_STRICT=false` that drift is a warning recorded as `skipped_reason` rather than a failure. Needs no other phase's state, touches neither the application nor the registry, and honours `DRY_RUN=true`. |
 | `preflight` | Discovers the ONCE app, container, storage volume and current digest; **records the feed timer state once** (a retry never overwrites it); checks free disk against the real volume and image sizes; refuses to run on top of an in-flight ONCE backup or inside the nightly backup window; authenticates to the registry from stdin; pulls the exact digest and asserts it is `linux/amd64`. A dry run stops here. |
 | `freeze` | **Refuses a release directory that already has `freeze-result.json` unless `RESUME=1`.** Pauses the feed timer and waits for the current feed run to finish; snapshots the database through the SQLite backup API; stops the app and **asserts no application container is still running**; fingerprints the live database; hashes every uploaded file; tags `campfire-rollback:before-<label>`; archives the ONCE application and the host feed state; then **rehearses the migration** on a copy. Any failure here restores the feed timer through a trap. |
 | `cutover` | `once update <host> --image IMAGE@DIGEST --auto-update=false` (no `--env`, so ONCE keeps the whole existing environment map), waits for `/up` to return 200, then runs read-only checks: running digest, environment key names, volume identity, pre-existing uploaded file hashes, and required processes. Exits `10` if it never became healthy and `20` if it became healthy but a check failed. |
@@ -125,6 +126,13 @@ moment writes are frozen. Every invocation takes `flock` on
 | `MIN_FREE_DISK_MB` | `3072` | Floor checked before the image is pulled. |
 | `RELEASE_KEEP` | `3` | Release directories kept when pruning. |
 | `ALLOW_BACKUP_WINDOW` | `0` | `1` overrides the nightly ONCE backup window guard. |
+| `DRY_RUN` | `false` | Exactly `true` or `false`; anything else is an error. `true` makes `prepare-host` report what it would change and change nothing else. It still writes its result file. |
+| `HOST_PREP_STRICT` | `true` | `false` downgrades a wrong-sized swap file and a disk-floor violation from a failure to a warning recorded as `skipped_reason`. `deploy-gcp.yml` passes `false`, `configure-gcp-host.yml` passes `true`. |
+| `SWAP_PATH` | `/swapfile` | The one swap file `prepare-host` manages. No other swap device is ever touched. |
+| `SWAP_SIZE_MB` | `1024` | Size of that swap file. A positive integer; an existing file of another size is refused, never resized. |
+| `SWAPPINESS` | `10` | `vm.swappiness` persisted in `SYSCTL_FILE`. |
+| `SYSCTL_FILE` | `/etc/sysctl.d/90-campfire.conf` | The sysctl drop-in `prepare-host` owns and rewrites. |
+| `MIN_FREE_AFTER_SWAP_MB` | `5120` | Free space that must remain on the swap file's filesystem after it exists. |
 | `LOCK_FILE` | `/var/lock/campfire-release.lock` | The per-host release lock. |
 | `CAMPFIRE_RELEASE_SIMULATE_FAILURE` | `0` | Validation only. `1` aborts the cutover before `once update`, so the database is provably untouched and the rollback completes. `2` lets the app go healthy and then forces a read-only check to fail, which is the case where the rollback must refuse. The deploy workflow rejects either outside the `validation` environment. |
 
@@ -135,6 +143,100 @@ moment writes are frozen. Every invocation takes `flock` on
 `du -sm` of the storage volume × 2 (one archive plus one rehearsal copy) + 512 MB on
 the `STATE_ROOT` filesystem, and the image size + 512 MB on `/var/lib/docker`. When
 both paths are on the same filesystem the two are summed and checked once.
+
+### Host preparation
+
+The app VM is an `e2-small`: 2 GB of RAM and, until this phase existed, no swap at
+all. A release is the worst moment on that host — a migration, a rehearsal container
+and two application containers briefly overlap — and with no swap the kernel's only
+answer to a spike is the OOM killer. 1 GB of swap turns that into slowness, which a
+release can survive; `vm.swappiness=10` keeps the kernel from using it for anything
+less urgent, so the steady state stays in RAM and the disk stays quiet.
+
+`prepare-host` is therefore part of the release path: `deploy-gcp.yml` runs it on
+every run, dry or real, **before preflight** — preflight's capacity arithmetic has to
+be the last word, and a swap file created after it would quietly eat a gigabyte of
+the budget it had just approved. On a prepared host the phase is a no-op that reports
+what is already there, and `swap_created` in `prepare-host-result.json` says whether
+this run made the file. `swap_size_mb` reports the size of the file that is actually
+on the host — `0` when there is none — and `swap_requested_mb` what was asked for;
+the two differ exactly when the phase decided to leave the host alone, in which case
+`skipped_reason` names the condition and `skipped_message` says it in words.
+
+It is deliberately unwilling to do the interesting thing:
+
+- A swap file already at **a different size** is never resized. Resizing means
+  `swapoff` on a host that may be leaning on it, so the remedy is an operator's:
+  `swapoff /swapfile`, remove the file, run the phase again. The message reports both
+  sizes in exact bytes.
+- A file at `SWAP_PATH` carrying a **signature that is not swap** — a filesystem
+  image, an archive — is refused outright. `mkswap` over it would destroy data.
+- A file at `SWAP_PATH` carrying **no signature at all** is refused for the same
+  reason. Nothing distinguishes a swap file nobody formatted from a file somebody
+  left there, and an absent signature is not evidence of an empty file, so `mkswap`
+  only ever runs on a file this phase built itself. A pre-existing swap file that is
+  merely inactive is simply `swapon`'d.
+- It refuses to create a swap file that would leave the root filesystem under 5 GB
+  free, and it never touches a swap device other than `SWAP_PATH`.
+
+`HOST_PREP_STRICT` decides what all of that *means*. The on-demand workflow runs
+strict (`true`): fixing the host is the point of the run, so drift fails it. A release
+runs non-strict (`false`): the condition is logged as a warning, the swap file and
+`/etc/fstab` are left untouched — `vm.swappiness` is still applied, since it is
+independent of the swap file — and the reason is recorded in the result file as
+`skipped_reason` and surfaced in the job summary. A release must never be blocked by
+a swap file somebody else sized. The recorded reasons are `wrong-size`,
+`non-swap-signature`, `unsigned-file`, `not-a-regular-file`,
+`preexisting-file-refused`, `insufficient-free-space` and `fstab-preexisting-errors`,
+each with the operator-facing sentence in `skipped_message`.
+
+Drift is not the same as a fault. A missing tool, a `mkswap` that fails on a file
+this run just built, or an `/etc/fstab` that only this phase's own line broke are
+bugs in the phase or in the host's basics, and they fail in either mode. As a second
+line of defence the release workflow marks the step `continue-on-error`, so even
+those cannot stop a release; the step's outcome is reported in the job summary and
+the release record instead. The on-demand workflow deliberately does not, because
+there a failure is the answer the run exists to give.
+
+Two failure modes get specific care, because both are the kind that only show up
+later:
+
+- **Creation is never partial.** The file is built at `/swapfile.new`, filled,
+  `mkswap`'d and only then moved into place, with an `EXIT` trap that removes the
+  partial file and a sweep that removes a stale one at the start of the next run. A
+  step timeout, a cancelled job or a dropped IAP tunnel therefore leaves nothing that
+  the next release would refuse as wrong-sized.
+- **`/etc/fstab` is never appended to blindly.** The phase verifies the existing
+  file with `findmnt --verify` *before anything else happens*: an `/etc/fstab` that
+  was already broken is the host's problem, but adding a swap entry to it — or
+  activating swap this phase could then not record — would make it ours, so it stops
+  there (`fstab-preexisting-errors`). Otherwise it builds the candidate beside the
+  original, terminates it with a newline if the original lacked one (a last line
+  without one would fuse with the swap entry and send the next reboot into emergency
+  mode), verifies the candidate, keeps the previous copy as `/etc/fstab.campfire.bak`,
+  and only then moves it into place with the original's mode and owner. A dry run
+  builds and verifies that candidate too, then throws it away, so a green dry run
+  means the real append verifies.
+
+Whether `fallocate` can be used is settled by asking it for one megabyte first, not
+by letting a real allocation fail halfway, so the code that builds the file runs
+under `errexit` and a failing `mkswap` is reported as a failing `mkswap`. If `swapon`
+then refuses a file this run just created with `fallocate` — the "swapfile has holes"
+case on some filesystems — the phase rebuilds that same file with `dd` and retries
+once. A file it did not create is never removed or rewritten. It also warns, without
+failing, when `/etc/sysctl.conf` sets `vm.swappiness`, because systemd applies that
+file after everything in `/etc/sysctl.d` and it would win at every boot.
+
+**Configure GCP host** (`.github/workflows/configure-gcp-host.yml`) applies the same
+phase on demand: `workflow_dispatch`, one `dry_run` input, the `production`
+environment, and the same concurrency group `deploy-gcp.yml` uses for production, so
+a host change and a production release can never overlap on that VM. It writes into a
+fixed `/var/backups/campfire-host-prep/`, overwritten each run, so on-demand runs do
+not accumulate directories. It copies the release script, runs `prepare-host`,
+removes only its own copy from the deployer's home directory — the installed
+`/opt/campfire-deploy/campfire-release.sh` stays, exactly as a release leaves it —
+and writes the result to the job summary. It touches nothing else: not the app, the
+registry, the feed timer or a snapshot.
 
 ### Retention
 
@@ -157,6 +259,7 @@ before.once.tar.gz          ONCE application archive (settings, keys, storage)
 before-host.tar.gz          Open Roles feed state from host paths
 before-settings.json        filtered ONCE settings; environment KEY NAMES only
 before-timer-state.txt      the feed timer's prior enabled/active state (write-once)
+prepare-host-result.json    swap file, fstab and vm.swappiness state after prepare-host
 attachment-hashes.json      per-file SHA-256 of storage/files before and after
 attachment-hashes-before.json / attachment-hashes-after.json
 migration-verification.txt  full output of the isolated rehearsal

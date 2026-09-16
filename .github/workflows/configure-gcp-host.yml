@@ -1,0 +1,145 @@
+name: Configure GCP host
+
+# Applies the host-level configuration the production VM needs — today a swap
+# file and vm.swappiness — without waiting for a release. `deploy-gcp.yml` runs
+# the same `prepare-host` phase on every run, so this workflow exists for
+# applying it now, or after an operator has had to undo it.
+#
+# It shares the concurrency group `deploy-gcp.yml` uses for the production
+# environment, so a host change and a production release can never be in flight
+# on the same VM at once. A validation release uses a different group and is
+# unaffected, which is correct: it is a different VM.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what would change; the only thing written is the result file
+        type: boolean
+        required: false
+        default: true
+
+permissions: {}
+
+jobs:
+  configure:
+    name: Prepare the production host
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-gcp-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    timeout-minutes: 30
+    env:
+      GCP_ZONE: ${{ vars.GCP_ZONE }}
+      GCP_INSTANCE: ${{ vars.GCP_INSTANCE }}
+      REMOTE_DIR: campfire-host-${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 10
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        timeout-minutes: 5
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        timeout-minutes: 10
+
+      - name: Verify the deployer identity
+        timeout-minutes: 2
+        shell: bash
+        env:
+          GCP_DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+        run: |
+          set -euo pipefail
+          # Authenticating only writes a credential file; this is the first
+          # proof that the Workload Identity binding can actually impersonate
+          # the deployer, and it is cheap.
+          err="$(mktemp)"
+          trap 'rm -f "$err"' EXIT
+          if ! gcloud auth print-access-token >/dev/null 2>"$err"; then
+            cat "$err"
+            echo "::error::could not obtain an access token as ${GCP_DEPLOYER_SA}; check the Workload Identity binding for this environment"
+            exit 1
+          fi
+          echo "Obtained an access token as ${GCP_DEPLOYER_SA}."
+
+      - name: Copy the release script to the VM
+        id: copy
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute scp --quiet --zone "$GCP_ZONE" --tunnel-through-iap \
+            deploy/gcp/campfire-release.sh "${GCP_INSTANCE}:${REMOTE_DIR}.sh"
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+
+      - name: Prepare the host (swap)
+        id: prepare_host
+        timeout-minutes: 15
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          # A fixed label, not one per run: this phase keeps no checkpoint worth
+          # retaining, and a directory per run would pile up under /var/backups.
+          # Each run overwrites the previous result file.
+          LABEL: host-prep
+        run: |
+          set -euo pipefail
+          # HOST_PREP_STRICT=true: here, unlike during a release, fixing the host
+          # is the whole point, so a swap file of the wrong size or a disk too
+          # full is a failure rather than something to step around.
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo env RELEASE_LABEL='${LABEL}' DRY_RUN='${DRY_RUN}' HOST_PREP_STRICT=true /opt/campfire-deploy/campfire-release.sh prepare-host"
+          # Reporting must not be able to fail the run that already succeeded: a
+          # dropped tunnel here degrades every field to "unknown".
+          json="$(gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "sudo cat '/var/backups/campfire-${LABEL}/prepare-host-result.json'" 2>/dev/null | tr -d '\r')" || true
+          # `//` in jq treats `false` as absent, and `false` is exactly the
+          # interesting answer here, so ask whether the key is there instead.
+          field() {
+            jq -e 'type == "object"' >/dev/null 2>&1 <<<"$json" || { echo unknown; return 0; }
+            jq -r --arg k "$1" 'if has($k) and .[$k] != null then (.[$k] | tostring) else "unknown" end' <<<"$json"
+          }
+          {
+            echo "## Host preparation"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Instance | \`${GCP_INSTANCE}\` (\`${GCP_ZONE}\`) |"
+            echo "| Dry run | \`${DRY_RUN}\` |"
+            echo "| Swap file | \`$(field swap_path)\` |"
+            echo "| Swap size | \`$(field swap_size_mb) MB\` on the host, \`$(field swap_requested_mb) MB\` requested |"
+            echo "| Swap active | \`$(field swap_active)\` |"
+            echo "| Created by this run | \`$(field swap_created)\` |"
+            echo "| Persisted in /etc/fstab | \`$(field fstab_entry)\` |"
+            echo "| vm.swappiness | \`$(field swappiness)\` |"
+            skipped="$(field skipped_reason)"
+            if [ "$skipped" != "unknown" ]; then
+              echo "| Skipped | \`${skipped}\` |"
+              echo "| Why | $(field skipped_message) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the copied script from the home directory
+        if: always() && steps.copy.conclusion == 'success'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the copy in the deployer's home directory. The installed
+          # /opt/campfire-deploy/campfire-release.sh stays, exactly as a release
+          # leaves it.
+          gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+            --command "rm -f \"\$HOME/${REMOTE_DIR}.sh\"" || true
