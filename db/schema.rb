@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_16_000000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -72,6 +72,22 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_000000) do
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+  end
+
+  create_table "agent_credentials", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "created_by_id", null: false
+    t.datetime "expires_at"
+    t.datetime "last_used_at"
+    t.string "last_used_ip"
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.string "token_last_four", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "revoked_at"], name: "index_agent_credentials_on_agent_id_and_revoked_at"
+    t.index ["token_digest"], name: "index_agent_credentials_on_token_digest", unique: true
   end
 
   create_table "agents", force: :cascade do |t|
