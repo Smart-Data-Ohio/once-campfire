@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_15_170100) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_16_000000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -72,6 +72,20 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_15_170100) do
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+  end
+
+  create_table "agents", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "description"
+    t.string "kind", default: "personal", null: false
+    t.integer "owner_id"
+    t.string "provider"
+    t.string "runtime"
+    t.datetime "suspended_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["owner_id", "kind"], name: "index_agents_on_owner_id_and_kind"
+    t.index ["user_id"], name: "index_agents_on_user_id", unique: true
   end
 
   create_table "bans", force: :cascade do |t|

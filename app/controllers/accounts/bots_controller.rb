@@ -3,7 +3,7 @@ class Accounts::BotsController < ApplicationController
   before_action :set_bot, only: %i[ edit update destroy ]
 
   def index
-    @bots = User.active_bots.ordered
+    @bots = User.active_bots.ordered.includes(agent: :owner)
   end
 
   def new
@@ -11,7 +11,8 @@ class Accounts::BotsController < ApplicationController
   end
 
   def create
-    User.create_bot! bot_params
+    bot = User.create_bot! bot_params
+    bot.create_agent!(kind: :workspace, owner: Current.user)
     redirect_to account_bots_url
   end
 
