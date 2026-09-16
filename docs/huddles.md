@@ -98,3 +98,11 @@ See LiveKit's official [ports and firewall reference](https://docs.livekit.io/tr
 The checked-in [production media-host package](../deploy/huddles/README.md) supplies the separate-host container, fail-closed supervisor, TLS routing, exact network boundary, and operator checks for `chat.smartdata.net`.
 
 The [audio and video quality assessment](huddle-quality.md) records the next pilot and product decisions.
+
+## Invitations and missed huddles
+
+Starting a huddle in a one-to-one DM rings the other participant. A huddle "starts" when a `HuddleGrant` is issued for a `Rooms::Direct` room with exactly two human users while the other participant has no active grant in that room; channel huddles send no invitations. The starter's grant becomes the source of a `huddle_started` activity item for the recipient, visible only while they can access the room. No second invitation is created for the room while an unhandled one from the last two minutes exists, so reconnects and rejoins stay silent.
+
+The recipient's banner arrives over the same per-user `ActivityChannel` broadcast as other activity, with an invitation payload naming the caller and room. Join dispatches the same `huddle:join` window event with `{ roomId, roomName }` that the room header's join control uses, navigating to the DM first when the recipient is elsewhere; Dismiss marks the item read. Disconnected recipients also get a Web Push "<name> started a huddle" notification linking to the DM, limited to opted-in memberships like message push.
+
+Forty-five seconds after the start, a follow-up job resolves the invitation: a recipient who obtained a grant since the start has the item marked handled automatically, while an unanswered invitation, including one whose starter already left, becomes an unread `huddle_missed` item. Both event types appear in the activity inbox with a link to the DM. There is no audible ringtone in this version.
