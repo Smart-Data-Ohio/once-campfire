@@ -28,7 +28,7 @@ class AgentCredential < ApplicationRecord
         created_by: created_by,
         expires_at: expires_at,
         token_digest: digest(secret),
-        token_last_four: secret[-4..]
+        token_last_four: digest(secret)[0, 4]
       )
 
       [ credential, secret ]
