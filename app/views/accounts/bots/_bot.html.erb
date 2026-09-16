@@ -6,6 +6,13 @@
 
     <div class="min-width">
       <div class="overflow-ellipsis txt-large"><strong><%= bot.name %></strong></div>
+      <div class="overflow-ellipsis txt-small">
+        <% if bot.agent.present? %>
+          <%= bot.agent.kind.titleize %> agent · <%= bot.agent.owner ? "Owned by #{bot.agent.owner.name}" : "no owner recorded" %>
+        <% else %>
+          no owner recorded
+        <% end %>
+      </div>
     </div>
 
     <%= link_to edit_account_bot_path(bot), class: "btn flex-item-justify-end", style: "view-transition-name: chat-bot-#{ bot.id }" do %>

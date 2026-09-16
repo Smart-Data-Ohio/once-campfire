@@ -1,0 +1,4 @@
+bender_agent:
+  user: bender
+  owner: david
+  kind: workspace

@@ -5,6 +5,7 @@ module User::Bot
     scope :active_bots, -> { active.where(role: :bot) }
     scope :without_bots, -> { where.not(role: :bot) }
     has_one :webhook, dependent: :delete
+    has_one :agent, dependent: :delete
   end
 
   module ClassMethods
