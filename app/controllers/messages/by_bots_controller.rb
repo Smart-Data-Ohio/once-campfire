@@ -1,5 +1,5 @@
 class Messages::ByBotsController < MessagesController
-  include RawRequestBody
+  include AgentAuthorization, RawRequestBody
 
   allow_bot_access only: %i[ index create update destroy ]
   skip_before_action :ensure_can_edit, :ensure_can_delete
@@ -7,6 +7,7 @@ class Messages::ByBotsController < MessagesController
   before_action :set_room
   before_action :set_message, only: %i[ update destroy ]
   before_action :ensure_can_manage_bot_message, only: %i[ update destroy ]
+  require_agent_capability :post_messages, only: %i[ create update destroy ]
   before_action :ensure_body_or_attachment_present, only: :create
 
   def index
