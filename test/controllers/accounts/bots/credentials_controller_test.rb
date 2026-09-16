@@ -11,7 +11,7 @@ class Accounts::Bots::CredentialsControllerTest < ActionDispatch::IntegrationTes
 
     assert_response :ok
     assert_match "Main", response.body
-    assert_match "1234", response.body
+    assert_match "f4f0", response.body
     assert_no_match "bender-test-secret-1234", response.body
   end
 
@@ -30,7 +30,7 @@ class Accounts::Bots::CredentialsControllerTest < ActionDispatch::IntegrationTes
     secret = response.body[/value="([^"]+)"/, 1]
     assert secret.present?
     assert_equal Digest::SHA256.hexdigest(secret), credential.token_digest
-    assert_equal secret[-4..], credential.token_last_four
+    assert_equal Digest::SHA256.hexdigest(secret)[0, 4], credential.token_last_four
   end
 
   test "created secret authenticates on /agents/me but is never shown again" do

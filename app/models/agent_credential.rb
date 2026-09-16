@@ -28,6 +28,7 @@ class AgentCredential < ApplicationRecord
         created_by: created_by,
         expires_at: expires_at,
         token_digest: digest(secret),
+        # Display identifier only: derived from the digest so no secret substring is stored.
         token_last_four: digest(secret)[0, 4]
       )
 

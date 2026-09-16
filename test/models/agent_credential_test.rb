@@ -11,7 +11,7 @@ class AgentCredentialTest < ActiveSupport::TestCase
     assert secret.present?
     assert_equal 64, secret.length
     assert_equal Digest::SHA256.hexdigest(secret), credential.token_digest
-    assert_equal secret[-4..], credential.token_last_four
+    assert_equal Digest::SHA256.hexdigest(secret)[0, 4], credential.token_last_four
     assert credential.active?
   end
 
