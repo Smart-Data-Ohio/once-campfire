@@ -256,10 +256,10 @@ export default class extends Controller {
     const enabling = !room.localParticipant.isCameraEnabled
 
     try {
-      await room.localParticipant.setCameraEnabled(enabling)
+      await this.#setCameraEnabled(room, enabling)
 
       if (room !== this.room) {
-        await room.localParticipant.setCameraEnabled(false).catch(() => {})
+        await this.#setCameraEnabled(room, false).catch(() => {})
         return
       }
 
@@ -276,6 +276,23 @@ export default class extends Controller {
       }
     } finally {
       if (room === this.room) this.cameraTarget.disabled = false
+    }
+  }
+
+  // Unlike screen share, `setCameraEnabled(false)` only mutes: the track stays
+  // published and keeps the device claimed. Turning the camera off unpublishes
+  // instead, which releases the camera and removes the tile on both sides.
+  async #setCameraEnabled(room, enabling) {
+    if (enabling) {
+      await room.localParticipant.setCameraEnabled(true)
+      return
+    }
+
+    const publication = room.localParticipant.getTrackPublication(this.liveKit.Track.Source.Camera)
+    if (publication?.track) {
+      await room.localParticipant.unpublishTrack(publication.track)
+    } else {
+      await room.localParticipant.setCameraEnabled(false)
     }
   }
 
