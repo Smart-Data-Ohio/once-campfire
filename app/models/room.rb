@@ -25,6 +25,7 @@ class Room < ApplicationRecord
   belongs_to :creator, class_name: "User", default: -> { Current.user }
 
   before_destroy -> { HuddleGrant.revoke_for_room!(self) }
+  before_destroy -> { AgentGrant.revoke_for_room!(self) }
   validate :direct_rooms_keep_their_type, on: :update
 
   scope :opens,           -> { where(type: "Rooms::Open") }

@@ -5,6 +5,7 @@ class Membership < ApplicationRecord
   belongs_to :user
 
   before_destroy -> { HuddleGrant.revoke_for_membership!(self) }
+  before_destroy -> { AgentGrant.revoke_for_membership!(self) }
   after_destroy_commit :reset_user_remote_connections
   after_destroy_commit :remove_thread_membership
 

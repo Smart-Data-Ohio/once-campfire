@@ -23,6 +23,8 @@ class User < ApplicationRecord
 
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
+  before_update -> { AgentGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
+  before_destroy -> { AgentGrant.revoke_for_user!(self) }, prepend: true
 
   has_secure_password validations: false
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_16_020000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -88,6 +88,18 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
     t.datetime "updated_at", null: false
     t.index ["agent_id", "revoked_at"], name: "index_agent_credentials_on_agent_id_and_revoked_at"
     t.index ["token_digest"], name: "index_agent_credentials_on_token_digest", unique: true
+  end
+
+  create_table "agent_grants", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.string "capability", null: false
+    t.datetime "created_at", null: false
+    t.integer "granted_by_id", null: false
+    t.datetime "revoked_at"
+    t.integer "room_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "revoked_at"], name: "index_agent_grants_on_agent_id_and_revoked_at"
+    t.index ["agent_id", "room_id", "capability"], name: "index_agent_grants_on_agent_room_capability_active", unique: true, where: "revoked_at IS NULL"
   end
 
   create_table "agents", force: :cascade do |t|
