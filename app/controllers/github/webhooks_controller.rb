@@ -1,8 +1,9 @@
 class Github::WebhooksController < ActionController::Base
   skip_forgery_protection
 
-  HANDLED_EVENTS = %w[ pull_request pull_request_review check_suite check_run status ].freeze
-
+  # Handles pull_request, pull_request_review, check_suite, check_run, and
+  # status events for referenced PRs; everything else is acknowledged and
+  # ignored (see #referenced_pull_requests).
   def create
     secret = ENV["GITHUB_WEBHOOK_SECRET"].presence
     return head(:service_unavailable) unless secret
