@@ -17,9 +17,22 @@ Agent approvals, GitHub review requests, and event invitations will become addit
 
 ## Work threads
 
-Open a channel thread and turn on work tracking to give the conversation a status and optional owner. Ordinary threads continue to work as discussions.
+A work thread is a channel thread with a status and an optional owner. Turn on work tracking when a conversation has become something someone needs to finish, so it stays findable after the discussion quiets down. Ordinary threads continue to work as discussions.
 
-Work can be **Planned**, **In progress**, **Blocked**, or **Done**. The thread creator and channel managers can enable tracking and assign an active person from the channel. The assigned owner can update progress. Ownership and status changes are recorded in the thread's work history.
+### Starting a work thread
+
+1. Open a channel and choose **Threads** in the channel header.
+2. Open an existing thread, or choose **New thread** to start one from scratch or from a message.
+3. In the thread, open **Manage** and choose **Track as work**. The thread starts as **Planned** and unassigned.
+4. Choose **Update work** to assign an owner from the channel's members and to change the status.
+
+The person who started the thread, the channel's creator, or an administrator can turn tracking on, turn it off, and assign an owner. **Manage** only appears for those people. The assigned owner can update the status but cannot reassign the work.
+
+### Tracking progress
+
+Work can be **Planned**, **In progress**, **Blocked**, or **Done**. **Complete work** sets the status to Done and **Reopen work** returns it to Planned. Ownership and status changes are recorded in the thread's **Work history**.
+
+Inside a channel, the thread browser's **Show** filter lists that channel's **Open work** and **Completed work**. **Stop tracking work** in **Manage** turns the thread back into an ordinary discussion and keeps its messages and history.
 
 Use **Work threads** in the sidebar to find open, completed, or all work across your accessible channels. Completing or reopening work preserves its messages. Discussion archival and work completion are separate: unfinished work remains discoverable even if the conversation is archived.
 
