@@ -4,7 +4,7 @@ Assessed September 14, 2026 against the checked-in LiveKit client 2.22.3 and cur
 
 ## Starting point
 
-The current huddle implements microphone audio and screen video. Camera publishing is intentionally absent from both the interface and authorization grants.
+The huddle implements microphone audio, screen video, and — since the [Camera](#camera) slice below — camera video. Camera publishing used to be intentionally absent from both the interface and authorization grants; the grant change, controls, and authorization tests from step 5 have now landed, and only the codec comparison there remains future work.
 
 Campfire explicitly enables adaptive streams and dynacast. The pinned SDK supplies browser echo cancellation, automatic gain control, noise suppression, supported voice isolation, audio redundant encoding (RED), and simulcast defaults. Its default audio preset caps bitrate at 48 kbps. Its default screen encoder uses the 1080p/15 fps preset, capped at 2.5 Mbps. These are requested capture/encoding settings, not measured output quality or guaranteed frame rates. Sources: the installed SDK's `src/room/defaults.ts` and `src/room/track/options.ts`, rebuilt according to the [SDK guide](../script/livekit-client/README.md).
 
@@ -16,7 +16,7 @@ Local tests establish actual media transport and decoded video. They do not esta
 2. **Measure quality before changing defaults.** Collect per-call RTT, packet loss, jitter, received bitrate, decoded resolution/frame rate, freezes, and direct-versus-relayed transport. Add a simple connection indicator and a details panel. Do not log join tokens, screen contents, or microphone recordings. Use a repeatable test call to compare changes.
 3. **Make ordinary conversation reliable.** Keep echo cancellation and RED on for voice. Add microphone/output selection, a microphone meter, and a pre-call device check. Evaluate background-noise handling with headsets, laptop speakers, and representative browsers. Browser processing support varies. [Noise and echo cancellation](https://docs.livekit.io/transport/media/noise-cancellation/)
 4. **Offer screen profiles for the content.** Start with a text/slides profile targeting 1080p at 15 fps and a motion profile targeting 1080p at 30 fps. Let bandwidth adaptation reduce quality. Test actual code readability at the receiving window's size; resolution alone does not prove readability. These profiles are proposals based on the pinned SDK presets. [Screen sharing](https://docs.livekit.io/transport/media/screenshare/)
-5. **Evaluate camera video separately.** Begin with a proposed 720p/30 fps target and adaptive lower layers. Compare VP8/H.264 compatibility with VP9/AV1 efficiency on the team's actual devices before selecting a default. Camera support also needs an explicit grant change, controls, and authorization tests. [Codecs and quality controls](https://docs.livekit.io/transport/media/advanced/)
+5. **Evaluate camera video separately.** Begin with a proposed 720p/30 fps target and adaptive lower layers. Compare VP8/H.264 compatibility with VP9/AV1 efficiency on the team's actual devices before selecting a default. The 720p/30 target, the explicit grant change, the controls, and the authorization tests have landed (see [Camera](#camera)); the codec comparison is still open. [Codecs and quality controls](https://docs.livekit.io/transport/media/advanced/)
 
 High-fidelity stereo should be an optional music/media mode. Its higher bitrate and reduced speech processing can help that use case, but it should not replace the conversation preset without listening tests. LiveKit documents separate hi-fi settings and recommends testing them under real conditions. [Hi-fi audio and RED](https://docs.livekit.io/transport/media/advanced/#hi-fi-audio)
 
@@ -57,6 +57,24 @@ Publishing uses `ScreenSharePresets.h1080fps15.encoding` (1920×1080, up to 2.5 
 
 **1080p/30 is the candidate to test, not the current setting.** `ScreenSharePresets.h1080fps30` would raise the top layer to 5 Mbps and the simulcast layer to 960×540/30 at 1.25 Mbps, about **6.25 Mbps** of publisher uplink — roughly double. That is a real network decision for an office link shared by several people, so it waits for the measurement work above rather than shipping on the strength of "sharper is better".
 
+### Camera
+
+Joining stays audio-only. The camera is off on every join, is turned on explicitly with the **Camera** toggle after Share screen, and the choice is deliberately not remembered in `localStorage`. The button reads "Camera off"/"Camera on" with `aria-pressed`, matching the Mute and Share screen styling. One captioned tile appears per published camera track — the local preview (muted, mirrored with CSS) plus each remote camera — and tiles disappear on unpublish or leave. Camera and screen share may be on at the same time; mute never touches the camera; leaving stops the camera track with the rest of local media. A denied or failed camera shows "Camera wasn’t started. Allow camera access to try again." in the status line, leaves the microphone and the huddle connected, and leaves the button retryable.
+
+**Requested.** `app/javascript/controllers/huddle_controller.js` `#roomOptions` now spells out the step 5 proposal:
+
+- Capture: `videoCaptureDefaults` with `deviceId: { ideal: "default" }` and `resolution: VideoPresets.h720.resolution` (1280×720 at 30 fps). This is the pinned SDK's own `videoDefaults` written out (`src/room/defaults.ts`), so it pins behavior against upgrades rather than changing it.
+- Encoding: `publishDefaults.videoEncoding` is `VideoPresets.h720.encoding` — a top layer of up to 1.7 Mbps at 30 fps. With capture already constrained to 720p this matches what the SDK would derive from the captured dimensions on its own.
+- Layers: `simulcast: true`, the SDK default. With no explicit `videoSimulcastLayers`, the publisher adds the default 640×360 (450 kbps, 20 fps) and 320×180 (160 kbps, 20 fps) layers, so `adaptiveStream` can size each subscription from its rendered element.
+- Codec: unchanged. Campfire sets no `videoCodec`, so the SDK default VP8 (with backup-codec negotiation) applies. Codec comparison remains future measurement work.
+- Degradation: the camera currently inherits the shared `degradationPreference: "maintain-resolution"` from the room's `publishDefaults` rather than the SDK's camera-specific `"maintain-framerate"` default. Whether a talking-head tile should instead trade resolution for smoothness is an open measurement question, not a settled choice.
+
+Camera tiles have no expand or full-screen control in this slice. When a shared screen is expanded into theater mode the tiles shrink to a small thumbnail strip so they never cover the screen; the [overlap check](#how-to-verify) pins that down.
+
+**Measured.** `test/system/huddles_test.rb` runs two headless browsers with a synthetic camera: each side turns its camera on and the other side asserts received video bytes plus a decoded remote frame (`videoWidth > 0`, `readyState >= 2`), turning a camera off removes the tile on both sides, leaving ends every local track including the camera, a camera that fails to start keeps the huddle connected with the button retryable, a rejoin comes back audio-only, mute leaves the camera decoding, and a camera tile survives channel navigation on the same peer connection. Theater mode with cameras on asserts the tiles stay visible without overlapping the expanded screen.
+
+**Not measured.** No codec comparison (VP8 vs H.264/VP9/AV1 on the team's devices), no degradation-preference comparison, no multi-user capacity numbers, no per-call statistics panel — those belong to the measurement work in steps 1–2. The synthetic headless camera proves transport and decode, not real-device capture quality, and `chrome://webrtc-internals` remains the hand-check tool for which simulcast layer is actually being received.
+
 ### Viewing a shared screen
 
 Every shared screen now carries an always-visible **Expand** and **Full screen** control, and the video itself responds to a click (expand) and a double-click (full screen).
@@ -84,8 +102,10 @@ Every shared screen now carries an always-visible **Expand** and **Full screen**
 6. Toggle it back on mid-call and confirm the processor reattaches, then mute and unmute and confirm it is still attached afterwards.
 7. Listen with a noise source running — a fan, typing, a nearby conversation — and compare the toggle on and off. RNNoise removes steady broadband noise well and keyboard clicks partially; it is not a replacement for a headset in a loud room.
 8. Share an "Entire screen" on Windows with the huddle audio playing through speakers and confirm there is no feedback loop. Then share a browser tab playing a video and confirm its audio reaches the other participant.
+9. Join audio-only in two browsers and confirm no camera tiles render. Turn both cameras on and confirm each side sees its own mirrored preview plus the other side's captioned tile. In `chrome://webrtc-internals` the publishers should show three outbound camera layers (720p plus the 360p/180p simulcast layers) and each subscriber should receive the layer matching its rendered tile size.
+10. With both cameras on, share a screen and expand it on the other side: the camera tiles should shrink to a thumbnail strip without covering the screen. Deny camera access in a third browser (or revoke it mid-call), confirm the huddle stays connected with "Camera wasn’t started…", allow it again, and confirm the toggle retries cleanly.
 
-`test/system/huddles_test.rb` covers expand and collapse, the full-screen request chain and its fallback, the header indicator, two simultaneous shares each staying reachable from theater mode, the toggle switching off, back on, and surviving a rejoin, the processor surviving mute and unmute, and a processor that fails to start. Real full screen and the Windows audio behavior are hand checks; headless Chrome cannot produce them.
+`test/system/huddles_test.rb` covers expand and collapse, the full-screen request chain and its fallback, the header indicator, two simultaneous shares each staying reachable from theater mode, the toggle switching off, back on, and surviving a rejoin, the processor surviving mute and unmute, a processor that fails to start, and the camera exchange above: two-way decoded video, toggle-off removal on both sides, leave cleanup, failure retry, audio-only rejoin, mute independence, navigation survival, and the theater-mode overlap check. Real full screen and the Windows audio behavior are hand checks; headless Chrome cannot produce them.
 
 ## Acceptance exercise
 
