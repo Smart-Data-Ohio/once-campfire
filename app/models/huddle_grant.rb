@@ -1,14 +1,20 @@
 class HuddleGrant < ApplicationRecord
   class Ineligible < StandardError; end
 
+  INVITATION_DEDUP_WINDOW = 2.minutes
+  MISSED_INVITATION_WAIT = 45.seconds
+
   belongs_to :session, optional: true
   belongs_to :user, optional: true
   belongs_to :membership, optional: true
   belongs_to :room, optional: true
 
   has_many :huddle_cleanups, dependent: :restrict_with_exception
+  has_many :activity_items, as: :source, dependent: :destroy, inverse_of: :source
 
   scope :active, -> { where(revoked_at: nil) }
+
+  after_create_commit :invite_direct_participant
 
   validates :identity, :room_name, presence: true
   validates :identity, uniqueness: true
@@ -108,4 +114,48 @@ class HuddleGrant < ApplicationRecord
   def authorization_payload
     { grant_id: id, room_name: room_name, identity: identity }
   end
+
+  # Contract consumed by ActivityItems::Recorder. Only the other human in a
+  # one-to-one DM can receive a huddle invitation from this grant.
+  def activity_recipient_ids
+    [ direct_huddle_recipient&.id ].compact
+  end
+
+  private
+    # A huddle "starts" for a DM when a grant is issued while the other
+    # participant has no active grant in the room. Rejoins reuse their grant
+    # and never reach this callback; separate sessions are covered by the
+    # invitation dedup window instead.
+    def invite_direct_participant
+      recipient = direct_huddle_recipient
+      return unless recipient
+      return if HuddleGrant.active.where(room_id: room_id, user_id: recipient.id).exists?
+      return if recent_unhandled_invitation?(recipient)
+
+      item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
+      return unless item
+
+      Huddle::MissedHuddleJob.set(wait: MISSED_INVITATION_WAIT).perform_later(item.id)
+      Huddle::PushInvitationJob.perform_later(item.id)
+    end
+
+    def direct_huddle_recipient
+      return unless room.is_a?(Rooms::Direct)
+
+      member_ids = room.memberships.pluck(:user_id)
+      return unless member_ids.size == 2
+      return unless User.active.without_bots.where(id: member_ids).count == 2
+
+      other_id = (member_ids - [ user_id ]).first
+      User.active.without_bots.find_by(id: other_id) if other_id
+    end
+
+    def recent_unhandled_invitation?(recipient)
+      ActivityItem
+        .where(user_id: recipient.id, source_type: HuddleGrant.polymorphic_name, event_type: "huddle_started", handled_at: nil)
+        .joins("INNER JOIN huddle_grants AS invitation_grants ON invitation_grants.id = activity_items.source_id")
+        .where(invitation_grants: { room_id: room_id })
+        .where(activity_items: { created_at: INVITATION_DEDUP_WINDOW.ago.. })
+        .exists?
+    end
 end
