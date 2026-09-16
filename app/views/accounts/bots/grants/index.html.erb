@@ -1,0 +1,63 @@
+<% @page_title = "Capability grants" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to edit_account_bot_path(@bot) %>
+  </div>
+<% end %>
+
+<section class="panel panel--wide txt-align-center flex flex-column gap">
+  <div class="pad-inline-double center">
+    <h1 class="margin-none">Grants for <%= @bot.name %></h1>
+    <p class="margin-none-block-start">
+      Room-scoped or workspace-wide capabilities. Revocation takes effect immediately.
+      Only posting and reacting are enforced so far; the other capabilities are stored for later slices.
+    </p>
+    <% if @agent.legacy_capabilities? %>
+      <p class="txt-small">Legacy access: with no grants ever created, this agent can read and post in rooms it belongs to.</p>
+    <% end %>
+  </div>
+
+  <div class="pad-inline pad-block-start txt-align-start">
+    <h2 class="txt-large margin-none">New grant</h2>
+
+    <%= form_with model: @grant, url: account_bot_grants_path(@bot), class: "flex flex-column gap margin-block-start" do |form| %>
+      <% if @grant.errors.any? %>
+        <div class="txt-small" style="color: var(--color-negative)">
+          <%= @grant.errors.full_messages.to_sentence %>
+        </div>
+      <% end %>
+
+      <div class="flex align-center gap">
+        <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+          <%= form.select :capability, AgentGrant::CAPABILITIES.map { |capability|
+                [ "#{capability}#{' (not yet enforced)' unless AgentGrant::ENFORCED_CAPABILITIES.include?(capability)}", capability ]
+              }, { prompt: "Capability" }, { required: true, class: "input" } %>
+        </label>
+      </div>
+
+      <div class="flex align-center gap">
+        <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+          <%= form.select :room_id,
+                options_from_collection_for_select(@bot.rooms.without_directs.ordered, :id, :name),
+                { prompt: "Workspace-wide (all rooms)" }, { class: "input" } %>
+        </label>
+        <span class="txt-small">Room membership still applies</span>
+      </div>
+
+      <div>
+        <%= form.submit "Grant capability", class: "btn btn--reversed" %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="pad-inline pad-block-start">
+    <menu class="flex flex-column gap margin-none pad txt-align-start">
+      <% if @grants.any? %>
+        <%= render partial: "accounts/bots/grants/grant", collection: @grants, as: :grant %>
+      <% else %>
+        <li class="txt-small">No grants yet.</li>
+      <% end %>
+    </menu>
+  </div>
+</section>

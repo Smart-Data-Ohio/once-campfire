@@ -1,0 +1,22 @@
+<li class="flex flex-column gap flush fill-shade border-radius pad-block pad-inline-double">
+  <div class="flex align-center gap">
+    <div class="min-width flex-item-grow">
+      <div class="overflow-ellipsis txt-large"><strong><%= grant.capability %></strong></div>
+      <div class="overflow-ellipsis txt-small">
+        <%= grant.workspace_wide? ? "Workspace-wide" : grant.room.name %>
+        · granted by <%= grant.granted_by.name %>
+        · <%= grant.created_at.to_fs(:short) %>
+        · <%= AgentGrant::ENFORCED_CAPABILITIES.include?(grant.capability) ? "enforced" : "not yet enforced" %>
+      </div>
+    </div>
+
+    <% if grant.revoked? %>
+      <span class="txt-small">Revoked</span>
+    <% else %>
+      <%= button_to account_bot_grant_path(grant.agent.user, grant), method: :delete, class: "btn txt--small btn--negative",
+            data: { turbo_confirm: "Revoke #{grant.capability}? This takes effect immediately." } do %>
+        Revoke
+      <% end %>
+    <% end %>
+  </div>
+</li>
