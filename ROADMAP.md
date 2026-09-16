@@ -25,6 +25,8 @@ The first activity inbox, human-owned work threads, one-to-one DM Huddles, and n
 
 The first DM Huddle slice uses a shared join control with audio and screen sharing. Ringing, invitations, and missed-call notifications follow separately. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
 
+GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
+
 ## Planned
 
 ### 1. Make the fork the durable home
