@@ -25,6 +25,8 @@ The first activity inbox, human-owned work threads, one-to-one DM Huddles, and n
 
 The first DM Huddle slice uses a shared join control with audio and screen sharing. Ringing, invitations, and missed-call notifications follow separately. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
 
+The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`post_messages` and `react` enforced; the rest stored for later) with immediate cascade revocation. See [AI agents](docs/agents.md). Event delivery, activity ledger, and approvals follow separately.
+
 ## Planned
 
 ### 1. Make the fork the durable home
