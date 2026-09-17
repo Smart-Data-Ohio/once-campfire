@@ -1,13 +1,13 @@
 # Huddle authorization boundary
 
-The browser's LiveKit token is necessary but is not sufficient to enter a huddle. Campfire's current authorization record must also allow the connection. This covers both the original join token and tokens refreshed by LiveKit.
+The browser's LiveKit token is necessary but is not sufficient to enter a huddle. Smartfire's current authorization record must also allow the connection. This covers both the original join token and tokens refreshed by LiveKit.
 
 ## Connection path
 
 ```mermaid
 flowchart LR
   Browser -->|Join or reconnect|Gateway[Signal gateway]
-  Gateway -->|Check current grant|Campfire
+  Gateway -->|Check current grant|Smartfire
   Gateway -->|Private signaling connection|LiveKit
   Browser <-->|Authorized WebRTC media|LiveKit
 ```
@@ -16,13 +16,13 @@ The public gateway accepts only the supported LiveKit signaling and validation r
 
 The gateway checks authorization before contacting LiveKit. It holds the first upstream signal, checks authorization again, and only then exposes the connection to the browser. This second check covers a grant revoked while the upstream join was being established.
 
-Each admitted grant is checked against Campfire's current state once per second, including after its signaling socket disappears. A denied or failed check closes signaling and requests `RemoveParticipant` against LiveKit's private API. Closing a WebSocket by itself is insufficient evidence that audio or video has stopped.
+Each admitted grant is checked against Smartfire's current state once per second, including after its signaling socket disappears. A denied or failed check closes signaling and requests `RemoveParticipant` against LiveKit's private API. Closing a WebSocket by itself is insufficient evidence that audio or video has stopped.
 
 A dropped signaling socket gets a three-second reconnect grace period. A valid replacement connection cancels that pending cleanup. If removal has already started, admission waits for it to complete; an uncertain removal cannot race a newly admitted connection with the same identity.
 
 ## Authorization records
 
-Each grant binds a random, unique participant identity to a specific Campfire session, user, membership, and room. Authorization checks validate those current database relationships, including active human status. The signed token's identity and room must match the grant. An expired token cannot initiate a connection, but expiry of the initial token does not terminate an otherwise authorized active call.
+Each grant binds a random, unique participant identity to a specific Smartfire session, user, membership, and room. Authorization checks validate those current database relationships, including active human status. The signed token's identity and room must match the grant. An expired token cannot initiate a connection, but expiry of the initial token does not terminate an otherwise authorized active call.
 
 Revoked grants are never reactivated. If membership is later granted again, a new authorization receives a new participant identity. Previously captured tokens remain denied even though the user can join with the new authorization.
 

@@ -186,7 +186,7 @@ return 401). Only `status` and `status_note` are assignable; anything else
 in the body is ignored. An unknown status returns 422 with a JSON error.
 
 ```sh
-curl -X PATCH https://campfire.example.com/agents/me \
+curl -X PATCH https://smartfire.example.com/agents/me \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status":"working","status_note":"reviewing the thread"}'
@@ -245,7 +245,7 @@ decisions additionally require `read_messages`, like other event rows.
   once decided or expired.
 
 ```sh
-curl -X POST https://campfire.example.com/agents/approvals \
+curl -X POST https://smartfire.example.com/agents/approvals \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"approval":{"action":"deploy","summary":"Ship the release","room_id":1,"external_id":"deploy-123"}}'
@@ -366,7 +366,7 @@ and `read_messages` like message delivery. `ack` works on these rows.
   tracking.
 
 ```sh
-curl -X PATCH https://campfire.example.com/agents/work/7 \
+curl -X PATCH https://smartfire.example.com/agents/work/7 \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"work_status":"in_progress","note":"Reproducing the bug"}'

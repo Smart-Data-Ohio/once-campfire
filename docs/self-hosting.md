@@ -1,32 +1,21 @@
-## Self-hosting Campfire
+## Self-hosting Smartfire
 
-Campfire's Docker image contains everything needed for a fully-functional, single-machine deployment.
+Smartfire's Docker image contains everything needed for a fully-functional, single-machine deployment.
 This includes the web app, background jobs, caching, file serving, and SSL.
+This guide covers running the Docker image by hand.
 
-> [!TIP]
-> The easiest way to self-host Campfire is with [ONCE](https://github.com/basecamp/once), which handles installation, updates, and backups for you. See the [README](../README.md#deploying-with-once) for details. This guide covers running the Docker image by hand.
+We recommend using `ghcr.io/smart-data-ohio/smartfire:main`, which tracks the default branch.
+It changes with every merged pull request, so it's the newest - but least battle-tested - version of Smartfire.
 
-We recommend using `ghcr.io/basecamp/once-campfire:latest`, which always points to the most recent tagged release - the most stable and battle-tested version of Campfire.
-
-We provide a tagged release for every major, minor and patch version of Campfire, so you can also pin your deployment to a specific version if you want to avoid unexpected changes. For example:
+Every push to the default branch also publishes a `sha-<short-sha>` tag for that exact commit,
+so you can pin your deployment to a specific version if you want to avoid unexpected changes:
 
 ```bash
-# exactly version 1.4.4
-ghcr.io/basecamp/once-campfire:1.4.4
-
-# any 1.4.x version
-# e.g. 1.4.4 or 1.4.5
-# the last number is usually changed for bug fixes
-ghcr.io/basecamp/once-campfire:1.4
-
-# any 1.x version
-# e.g. 1.4.4 or 1.5.0
-# the middle number is usually changed for changes to, or addition of, features
-ghcr.io/basecamp/once-campfire:1
+# exactly one commit
+ghcr.io/smart-data-ohio/smartfire:sha-1a2b3c4
 ```
 
-If you want to live on the bleeding edge, the `main` tag tracks the main release branch instead.
-It changes with every merged pull request, so it's the newest - but least battle-tested - version of Campfire.
+Version tags (`v*`) additionally publish semver tags and `latest`.
 
 To run it you'll need three things:
 1. a machine that runs Docker
@@ -36,21 +25,21 @@ To run it you'll need three things:
 If you'd rather build the image yourself from your own copy of the source, you can do that too:
 
 ```sh
-docker build -t campfire .
+docker build -t smartfire .
 ```
 
 ### Mounting a storage volume
 
-Campfire keeps all of its storage - the database and uploaded file attachments - inside the path `/rails/storage`.
+Smartfire keeps all of its storage - the database and uploaded file attachments - inside the path `/rails/storage`.
 By default Docker containers don't persist storage between runs, so you'll want to mount a persistent volume into that location.
 
 The simplest way to do this is with the `--volume` flag with `docker run`. For example:
 
 ```sh
-docker run --volume campfire:/rails/storage ghcr.io/basecamp/once-campfire:latest
+docker run --volume smartfire:/rails/storage ghcr.io/smart-data-ohio/smartfire:main
 ```
 
-That will create a named volume (called `campfire`) and mount it into the correct path.
+That will create a named volume (called `smartfire`) and mount it into the correct path.
 Docker will manage where that volume is actually stored on your server.
 
 You can also specify the data location yourself, mount a network drive, and more.
@@ -58,12 +47,12 @@ Check the Docker documentation to find out more about what's available.
 
 ### Configuring with environment variables
 
-To configure your Campfire installation, you can use environment variables.
+To configure your Smartfire installation, you can use environment variables.
 At a minimum you'll want to configure your secret key and your SSL domain.
 
 #### Secrets
 
-Campfire needs a few secret values that are specific to your instance:
+Smartfire needs a few secret values that are specific to your instance:
 
 - `SECRET_KEY_BASE` - the basis for cryptographic features like signed cookies. This should be a long, unguessable random string.
 - `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY` - a key pair used for sending Web Push notifications.
@@ -71,7 +60,7 @@ Campfire needs a few secret values that are specific to your instance:
 You can generate them by running:
 
 ```sh
-docker run --rm ghcr.io/basecamp/once-campfire:latest script/admin/generate-secrets
+docker run --rm ghcr.io/smart-data-ohio/smartfire:main script/admin/generate-secrets
 ```
 
 It prints a fresh set of values ready to set as environment variables:
@@ -86,7 +75,7 @@ Keep them safe and reuse the same values across restarts and upgrades - changing
 
 #### SSL
 
-If you want the Campfire container to handle its own SSL (HTTPS) automatically (via Let's Encrypt), you just need to specify the domain name that you're running it on.
+If you want the Smartfire container to handle its own SSL (HTTPS) automatically (via Let's Encrypt), you just need to specify the domain name that you're running it on.
 You can do that with the `TLS_DOMAIN` environment variable.
 
 > [!NOTE]
@@ -98,7 +87,7 @@ So if you were running on `chat.example.com` you could enable SSL like this:
 docker run --publish 80:80 --publish 443:443 --env TLS_DOMAIN=chat.example.com ...
 ```
 
-If you are terminating SSL in some other proxy in front of Campfire, or aren't using SSL at all (for example, if you want to run it locally on your laptop), then you should set `DISABLE_SSL=true` instead and just publish port 80:
+If you are terminating SSL in some other proxy in front of Smartfire, or aren't using SSL at all (for example, if you want to run it locally on your laptop), then you should set `DISABLE_SSL=true` instead and just publish port 80:
 
 ```sh
 docker run --publish 80:80 --env DISABLE_SSL=true ...
@@ -115,23 +104,23 @@ Putting it all together, here's a complete `docker run` invocation:
 
 ```sh
 docker run \
-  --name campfire \
+  --name smartfire \
   --publish 80:80 --publish 443:443 \
   --restart unless-stopped \
-  --volume campfire:/rails/storage \
+  --volume smartfire:/rails/storage \
   --env SECRET_KEY_BASE=$YOUR_SECRET_KEY_BASE \
   --env VAPID_PUBLIC_KEY=$YOUR_PUBLIC_KEY \
   --env VAPID_PRIVATE_KEY=$YOUR_PRIVATE_KEY \
   --env TLS_DOMAIN=chat.example.com \
-  ghcr.io/basecamp/once-campfire:latest
+  ghcr.io/smart-data-ohio/smartfire:main
 ```
 
-And here's an equivalent `docker-compose.yml` that you could use to run Campfire via `docker compose up`:
+And here's an equivalent `docker-compose.yml` that you could use to run Smartfire via `docker compose up`:
 
 ```yaml
 services:
   web:
-    image: ghcr.io/basecamp/once-campfire:latest
+    image: ghcr.io/smart-data-ohio/smartfire:main
     restart: unless-stopped
     ports:
       - "80:80"
@@ -142,29 +131,29 @@ services:
       - VAPID_PRIVATE_KEY=myvapidprivatekey
       - VAPID_PUBLIC_KEY=myvapidpublickey
     volumes:
-      - campfire:/rails/storage
+      - smartfire:/rails/storage
 
 volumes:
-  campfire:
+  smartfire:
 ```
 
 ### First run
 
-When you start Campfire for the first time, you'll be guided through creating an admin account.
+When you start Smartfire for the first time, you'll be guided through creating an admin account.
 
 > [!TIP]
 > The email address of this admin account will be shown on the login page so that people who forget their password know who to contact for help.
 > (You can change this email later in the settings.)
 
-Campfire is single-tenant: any rooms designated "public" will be accessible by all users in the system.
+Smartfire is single-tenant: any rooms designated "public" will be accessible by all users in the system.
 To support entirely distinct groups of customers, you would deploy multiple instances of the application.
 
 ### Upgrading
 
-All of Campfire's state lives in the mounted volume, so upgrading is a matter of pulling a newer image and recreating the container:
+All of Smartfire's state lives in the mounted volume, so upgrading is a matter of pulling a newer image and recreating the container:
 
 ```sh
-docker pull ghcr.io/basecamp/once-campfire:latest
+docker pull ghcr.io/smart-data-ohio/smartfire:main
 ```
 
 Any pending database migrations run automatically when the container boots.
@@ -173,27 +162,27 @@ Any pending database migrations run automatically when the container boots.
 
 To back up your instance, back up the contents of the `/rails/storage` volume.
 
-Because the SQLite database may be written to at any moment, you shouldn't copy its files directly while Campfire is running.
+Because the SQLite database may be written to at any moment, you shouldn't copy its files directly while Smartfire is running.
 Instead, first run `script/admin/prepare-backup` inside the running container to produce a consistent snapshot of the database (it's written to `storage/backups/` inside the volume):
 
 ```sh
-docker exec campfire script/admin/prepare-backup
+docker exec smartfire script/admin/prepare-backup
 ```
 
-(If you're using Docker Compose, replace `docker exec campfire` with `docker compose exec web`)
+(If you're using Docker Compose, replace `docker exec smartfire` with `docker compose exec web`)
 
 Then archive the whole storage volume to a file on the host:
 
 ```sh
 docker run --rm \
   --user root \
-  --volume campfire:/rails/storage \
+  --volume smartfire:/rails/storage \
   --volume "$PWD":/backup \
-  ghcr.io/basecamp/once-campfire:latest \
-  tar czf "/backup/campfire-backup.tar.gz" -C /rails storage
+  ghcr.io/smart-data-ohio/smartfire:main \
+  tar czf "/backup/smartfire-backup.tar.gz" -C /rails storage
 ```
 
-This gives you a `campfire-backup.tar.gz` in your current directory containing the database snapshot and all uploaded files.
+This gives you a `smartfire-backup.tar.gz` in your current directory containing the database snapshot and all uploaded files.
 Copy it somewhere safe, ideally off the machine.
 
 To restore, extract the archive back into a (stopped) instance's volume, and replace the live database with the snapshot:
@@ -201,13 +190,13 @@ To restore, extract the archive back into a (stopped) instance's volume, and rep
 ```sh
 docker run --rm \
   --user root \
-  --volume campfire:/rails/storage \
+  --volume smartfire:/rails/storage \
   --volume "$PWD":/backup \
-  ghcr.io/basecamp/once-campfire:latest \
-  bash -c "tar xzf /backup/campfire-backup.tar.gz -C /rails &&
+  ghcr.io/smart-data-ohio/smartfire:main \
+  bash -c "tar xzf /backup/smartfire-backup.tar.gz -C /rails &&
            cp /rails/storage/backups/production.sqlite3 /rails/storage/db/production.sqlite3 &&
            rm -f /rails/storage/db/production.sqlite3-wal /rails/storage/db/production.sqlite3-shm &&
            chown -R rails:rails /rails/storage"
 ```
 
-Then start Campfire again.
+Then start Smartfire again.

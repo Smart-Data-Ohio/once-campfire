@@ -3,7 +3,7 @@
 Members can connect their Google account from their profile. Once connected,
 every [native event](events.md) they are **going** or **maybe** to appears
 on their primary Google Calendar as a private copy. Publishing is one way,
-Campfire to Google: edits made in Google are never read back, and the app
+Smartfire to Google: edits made in Google are never read back, and the app
 never reads the calendar, free/busy data, or attendees.
 
 A later time change (or title/description edit) updates that same calendar
@@ -15,7 +15,7 @@ shows "Added to your Google Calendar" while a copy exists for the viewer.
 1. Create (or reuse) a project and configure an **OAuth client** of type
    **Web application**.
 2. Add an authorized redirect URI: `<app root URL>/google/callback`
-   (for example `https://campfire.example.com/google/callback`).
+   (for example `https://smartfire.example.com/google/callback`).
 3. No extra APIs to enable beyond Google Calendar; the app requests
    `openid email https://www.googleapis.com/auth/calendar.events`.
    The `openid email` part is only used to read the account email from
@@ -34,7 +34,7 @@ configured for this workspace" and the connect routes answer 404.
 
 Connecting is the explicit opt-in: nothing is published for members who
 have not connected. Each published entry carries the event title, the
-description plus a "From Campfire" link back to the event, the start/end
+description plus a "From Smartfire" link back to the event, the start/end
 in the event's time zone (events without an end default to one hour), and
 Google's default reminders. No Google attendees are added.
 

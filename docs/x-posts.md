@@ -24,7 +24,7 @@ retrying forever.
 The fetch client talks only to the fixed host `api.fxtwitter.com` — the
 request path is built from the numeric post id and the validated handle,
 never from a user-controlled host — with 5 s open / 10 s read timeouts, a
-2 MB body cap, and a `Campfire-X-Post-Cards` user agent. Only
+2 MB body cap, and a `Smartfire-X-Post-Cards` user agent. Only
 `https://pbs.twimg.com/…` and `https://video.twimg.com/…` URLs are kept
 for avatars, media, and thumbnails; anything else is dropped and the card
 renders without that media. Everything from the API is treated as

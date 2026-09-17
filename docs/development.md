@@ -8,7 +8,7 @@ First, get everything installed and configured with:
 bin/setup
 ```
 
-This installs the system packages Campfire needs (SQLite, ffmpeg), the right Ruby version (via [mise](https://mise.jdx.dev)), and the app's gems; prepares the database; and starts Redis (in a Docker container called `campfire-redis`, if it isn't already running locally).
+This installs the system packages Smartfire needs (SQLite, ffmpeg), the right Ruby version (via [mise](https://mise.jdx.dev)), and the app's gems; prepares the database; and starts Redis (in a Docker container called `campfire-redis`, if it isn't already running locally).
 
 If you want to start over at any point, run:
 
@@ -28,11 +28,11 @@ You'll be able to access the app at http://localhost:3000.
 
 On first run you'll be guided through creating your admin account, and you can sign in with that account from then on.
 
-Note that Campfire needs Redis (for Action Cable, caching, and background jobs), so if you've restarted your machine or stopped the container, `docker start campfire-redis` will bring it back.
+Note that Smartfire needs Redis (for Action Cable, caching, and background jobs), so if you've restarted your machine or stopped the container, `docker start campfire-redis` will bring it back.
 
 ### Web Push notifications
 
-Campfire uses VAPID (Voluntary Application Server Identification) keys to send browser push notifications. For notifications to work in development you'll need to generate a key pair and set these environment variables:
+Smartfire uses VAPID (Voluntary Application Server Identification) keys to send browser push notifications. For notifications to work in development you'll need to generate a key pair and set these environment variables:
 
 - `VAPID_PRIVATE_KEY`
 - `VAPID_PUBLIC_KEY`
@@ -65,5 +65,5 @@ bin/ci
 
 ### Contributing
 
-You are welcome - and encouraged - to modify Campfire to your liking.
+You are welcome - and encouraged - to modify Smartfire to your liking.
 If you'd like to contribute your changes back, please read our [contributing guide](../CONTRIBUTING.md) first.
