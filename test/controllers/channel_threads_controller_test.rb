@@ -173,7 +173,7 @@ class ChannelThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_equal message.id, @thread.messages.find_by!(client_message_id: "work-history").id
   end
 
-  test "work owner must be an active human parent-room member and a revoked owner stays visible as unavailable" do
+  test "work owner must be an eligible parent-room member and a revoked owner stays visible as unavailable" do
     sign_in :jz
     patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "planned", work_owner_id: users(:kevin).id } }
     assert_response :success
@@ -182,7 +182,7 @@ class ChannelThreadsControllerTest < ActionDispatch::IntegrationTest
       patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: users(:bender).id } }
     end
     assert_response :unprocessable_content
-    assert_includes response.parsed_body.fetch("error"), "active human member"
+    assert_includes response.parsed_body.fetch("error"), "active agent member"
     assert_equal users(:kevin).id, @thread.reload.work_owner_id
 
     users(:kevin).deactivate
@@ -253,6 +253,89 @@ class ChannelThreadsControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal "blocked", @thread.reload.work_status
     assert_equal [ "blocked", "in_progress" ], @thread.work_thread_events.ordered.limit(2).pluck(:to_status)
+  end
+
+  test "a manager can assign an eligible agent and the agent is notified" do
+    bot = User.create_bot!(name: "Owner Agent")
+    agent = bot.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(bot)
+    AgentGrant.create!(agent: agent, room: @room, granted_by: users(:david), capability: "post_messages")
+
+    sign_in :jz
+    patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_status: "planned" } }
+    assert_response :success
+
+    assert_difference -> { agent.agent_events.where(event_type: "work_assigned").count }, 1 do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: bot.id } }
+    end
+
+    assert_response :success
+    assert_equal bot.id, response.parsed_body.dig("thread", "work_owner", "id")
+    assert_equal true, response.parsed_body.dig("thread", "work_owner", "agent")
+    assert_equal bot.id, @thread.reload.work_owner_id
+  end
+
+  test "the owner picker lists eligible agents with profiles and excludes ineligible ones" do
+    eligible = User.create_bot!(name: "Eligible Owner Agent")
+    eligible_agent = eligible.create_agent!(kind: :workspace, owner: users(:david))
+    eligible_agent.update!(provider: "TestLab", description: "Does the work")
+    @room.memberships.grant_to(eligible)
+    AgentGrant.create!(agent: eligible_agent, room: @room, granted_by: users(:david), capability: "post_messages")
+
+    suspended = User.create_bot!(name: "Suspended Owner Agent")
+    suspended_agent = suspended.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(suspended)
+    AgentGrant.create!(agent: suspended_agent, room: @room, granted_by: users(:david), capability: "post_messages")
+    suspended_agent.suspend!
+
+    stranger = User.create_bot!(name: "Outside Owner Agent")
+    stranger_agent = stranger.create_agent!(kind: :workspace, owner: users(:david))
+    AgentGrant.create!(agent: stranger_agent, granted_by: users(:david), capability: "post_messages")
+
+    reader = User.create_bot!(name: "Reader Owner Agent")
+    reader_agent = reader.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(reader)
+    AgentGrant.create!(agent: reader_agent, room: @room, granted_by: users(:david), capability: "read_messages")
+
+    botless = User.create_bot!(name: "Botless Owner Bot")
+    @room.memberships.grant_to(botless)
+
+    @thread.update!(work_status: "planned")
+
+    sign_in :jz
+    get room_thread_url(@room, @thread, format: :json)
+
+    assert_response :success
+    options = response.parsed_body.dig("thread", "work_owner_options")
+    assert_includes options.map { |option| option["name"] }, "Kevin"
+
+    entry = options.find { |option| option["id"] == eligible.id }
+    assert entry, "expected the eligible agent in #{options.inspect}"
+    assert_equal true, entry["agent"]
+    assert_equal "TestLab", entry["provider"]
+    assert_equal "Does the work", entry["description"]
+
+    ids = options.map { |option| option["id"] }
+    assert_not_includes ids, suspended.id
+    assert_not_includes ids, stranger.id
+    assert_not_includes ids, reader.id
+    assert_not_includes ids, botless.id
+  end
+
+  test "a member who cannot manage the thread cannot assign an agent" do
+    bot = User.create_bot!(name: "Forbidden Owner Agent")
+    agent = bot.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(bot)
+    AgentGrant.create!(agent: agent, room: @room, granted_by: users(:david), capability: "post_messages")
+    @thread.update!(work_status: "planned")
+
+    sign_in :kevin
+    assert_no_difference -> { agent.agent_events.where(event_type: "work_assigned").count } do
+      patch room_thread_url(@room, @thread, format: :json), params: { thread: { work_owner_id: bot.id } }
+    end
+
+    assert_response :forbidden
+    assert_nil @thread.reload.work_owner_id
   end
 
   test "ordinary thread fields remain separate from work tracking" do

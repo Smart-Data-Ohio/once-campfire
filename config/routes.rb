@@ -75,6 +75,9 @@ Rails.application.routes.draw do
   delete "agents/approvals/:id", to: "agents/approvals#destroy", defaults: { format: :json }
   get "agents/:id/approvals", to: "agents/approvals#for_agent", as: :agent_approvals
   patch "agent_approvals/:id", to: "agent_approvals#update", as: :agent_approval
+  get "agents/work", to: "agents/work#index", defaults: { format: :json }, as: :agents_work
+  get "agents/work/:id", to: "agents/work#show", defaults: { format: :json }, as: :agents_work_thread
+  patch "agents/work/:id", to: "agents/work#update", defaults: { format: :json }
   post "rooms/:room_id/agents/messages", to: "agents/messages#create", defaults: { format: :json }, as: :room_agent_messages
 
   direct :fresh_user_avatar do |user, options|
