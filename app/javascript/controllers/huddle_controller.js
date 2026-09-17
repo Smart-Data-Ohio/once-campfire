@@ -168,6 +168,7 @@ export default class extends Controller {
     this.roomId = null
     this.roomName = null
     this.identity = null
+    this.#clearConnectedNotice()
     this.#setState("idle", "Not in a huddle")
   }
 
@@ -265,13 +266,21 @@ export default class extends Controller {
 
       this.#syncLocalCamera(room)
       this.#updateMediaControls()
+      if (enabling) this.#clearConnectedNotice()
       this.#showTemporaryStatus(enabling ? "Your camera is on" : "Camera off")
     } catch (error) {
       if (room === this.room) {
         const message = this.#permissionWasDenied(error)
           ? "Camera wasn’t started. Allow camera access to try again."
           : "Camera could not be changed. Try again."
-        this.#showTemporaryStatus(message)
+        // A camera that fails to start leaves the huddle connected, so the
+        // failure stays in the notice target instead of fading with the
+        // four-second status line.
+        if (enabling) {
+          this.#showConnectedNotice(message)
+        } else {
+          this.#showTemporaryStatus(message)
+        }
         this.#updateMediaControls()
       }
     } finally {
@@ -284,7 +293,10 @@ export default class extends Controller {
   // instead, which releases the camera and removes the tile on both sides.
   async #setCameraEnabled(room, enabling) {
     if (enabling) {
-      await room.localParticipant.setCameraEnabled(true)
+      // The camera keeps frame rate under constrained bandwidth: the SDK's
+      // own default for a camera track, spelled out so the camera does not
+      // inherit the room's screen-share "maintain-resolution" preference.
+      await room.localParticipant.setCameraEnabled(true, undefined, { degradationPreference: "maintain-framerate" })
       return
     }
 
@@ -404,10 +416,10 @@ export default class extends Controller {
         // with it on, the publisher also sends 640×360 and 320×180 layers so
         // adaptiveStream can size each subscription from its rendered element.
         // The codec stays the SDK default (VP8); codec comparison is future
-        // measurement work. Note the camera inherits the shared
-        // "maintain-resolution" preference above rather than the SDK's
-        // camera-specific "maintain-framerate" default; that trade-off also
-        // waits on the measurement work.
+        // measurement work. The shared "maintain-resolution" preference above
+        // is the screen-share setting; the camera passes the SDK's
+        // camera-specific "maintain-framerate" default in its own publish
+        // options (see #setCameraEnabled), so each track keeps its own default.
         videoEncoding: VideoPresets.h720.encoding,
         simulcast: true
       }
@@ -1174,6 +1186,19 @@ export default class extends Controller {
       this.element.hidden = false
       this.broadcastState()
     }
+  }
+
+  // A failure that leaves the huddle connected — a camera that would not
+  // start — stays in the notice target until the camera starts or the huddle
+  // is left, instead of fading with the four-second status line.
+  #showConnectedNotice(message) {
+    this.noticeTarget.textContent = message
+    this.noticeTarget.hidden = false
+  }
+
+  #clearConnectedNotice() {
+    this.noticeTarget.textContent = ""
+    this.noticeTarget.hidden = true
   }
 
   #showTemporaryStatus(message) {

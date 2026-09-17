@@ -231,7 +231,7 @@ class HuddlesTest < ApplicationSystemTestCase
     click_button "Camera off", exact: true
 
     assert_selector "#channel-huddle[data-state='connected']"
-    assert_selector "[data-huddle-target='status']", text: /Camera wasn’t started/
+    assert_selector "[data-huddle-target='notice']", text: /Camera wasn’t started/
     assert_selector "[data-huddle-target='camera']:not([disabled])", text: "Camera off"
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
@@ -244,6 +244,7 @@ class HuddlesTest < ApplicationSystemTestCase
     page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
     click_button "Camera off", exact: true
     assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    assert_no_selector "[data-huddle-target='notice']:not([hidden])"
     assert_selector ".huddle__camera--local video"
     using_session("Kevin") do
       assert_selector ".huddle__camera video"
