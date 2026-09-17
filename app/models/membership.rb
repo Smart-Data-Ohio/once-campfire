@@ -8,6 +8,7 @@ class Membership < ApplicationRecord
   before_destroy -> { AgentGrant.revoke_for_membership!(self) }
   after_destroy_commit :reset_user_remote_connections
   after_destroy_commit :remove_thread_membership
+  after_destroy_commit :sync_removed_room_calendar_entries
 
   enum :involvement, %w[ invisible nothing mentions everything ].index_by(&:itself), prefix: :involved_in
 
@@ -35,5 +36,11 @@ class Membership < ApplicationRecord
         .joins(:thread)
         .where(user_id: user_id, channel_threads: { room_id: room_id })
         .delete_all
+    end
+
+    def sync_removed_room_calendar_entries
+      EventCalendarEntry.where(user_id: user_id).joins(:event)
+        .where(events: { room_id: room_id }).pluck(:event_id)
+        .each { |event_id| Calendar::SyncEntryJob.perform_later(event_id, user_id) }
     end
 end

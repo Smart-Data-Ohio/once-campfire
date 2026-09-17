@@ -7,6 +7,7 @@ class Event < ApplicationRecord
 
   has_many :attendances, class_name: "EventAttendance", dependent: :destroy, inverse_of: :event
   has_many :attendees, through: :attendances, source: :user
+  has_many :calendar_entries, class_name: "EventCalendarEntry", dependent: :destroy
   has_many :activity_items, as: :source, dependent: :destroy, inverse_of: :source
 
   validates :title, presence: true
@@ -68,6 +69,7 @@ class Event < ApplicationRecord
       self.reminded_at = nil if time_changed
       save!
       announce_time_change!(actor:) if time_changed
+      sync_calendar_entries! if Calendar::EntrySync::SYNCED_ATTRIBUTES.any? { |attribute| saved_change_to_attribute?(attribute) }
     end
 
     time_changed
@@ -82,6 +84,7 @@ class Event < ApplicationRecord
       notification_recipients.where.not(id: actor&.id).find_each do |attendee|
         transition_activity_item!(attendee, "event_cancelled")
       end
+      calendar_entries.pluck(:user_id).each { |user_id| Calendar::SyncEntryJob.perform_later(id, user_id) }
     end
 
     true
@@ -129,6 +132,12 @@ class Event < ApplicationRecord
       notification_recipients.where.not(id: actor&.id).find_each do |attendee|
         transition_activity_item!(attendee, "event_update")
       end
+    end
+
+    def sync_calendar_entries!
+      attendances.where(response: NOTIFYING_RESPONSES).joins(user: :google_account)
+        .where(google_accounts: { disconnected_reason: nil }).pluck(:user_id)
+        .each { |user_id| Calendar::SyncEntryJob.perform_later(id, user_id) }
     end
 
     def invitation_recipients
