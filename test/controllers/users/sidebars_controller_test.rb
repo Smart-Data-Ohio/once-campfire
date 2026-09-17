@@ -61,6 +61,25 @@ class Users::SidebarsControllerTest < ActionDispatch::IntegrationTest
       "[data-huddle-presence-room-id='#{room.id}']"
   end
 
+  test "board row shows the live huddle stack with names and count" do
+    board = Rooms::Board.create_for({ name: "Launch", creator: users(:david) }, users: [ users(:david), users(:jz) ])
+    issue_in_call_grant!(user: users(:david), room: board)
+    issue_in_call_grant!(user: users(:jz), room: board)
+
+    get user_sidebar_url
+
+    assert_response :success
+    assert_select "##{dom_id(board, :list)} .voice-room__trailing .voice-stack--live.voice-stack--huddle" do
+      assert_select ".voice-stack__count", text: "2"
+      assert_select "img.voice-stack__avatar[data-user-id='#{users(:david).id}'][title='David']"
+      assert_select "img.voice-stack__avatar[data-user-id='#{users(:jz).id}'][title='JZ']"
+    end
+    assert_select "##{dom_id(board, :list)} .voice-stack" +
+      "[aria-label='2 in huddle: David and JZ'][title='2 in huddle: David and JZ']" +
+      "[data-huddle-participants-interval-value='0'][data-huddle-participants-label-value='in huddle']" +
+      "[data-huddle-presence-room-id='#{board.id}']"
+  end
+
   test "direct row shows the live huddle stack when the peer is in the call" do
     room = rooms(:david_and_jason)
     issue_in_call_grant!(user: users(:jason), room: room)
