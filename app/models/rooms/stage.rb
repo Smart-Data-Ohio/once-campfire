@@ -5,13 +5,15 @@
 # role. The room creator becomes the first host.
 class Rooms::Stage < Room
   has_many :streams, foreign_key: :room_id, dependent: :destroy
+  has_many :live_streams, -> { live }, class_name: "Stream", foreign_key: :room_id
 
   # The room's current live stream, if any. Queried fresh unless the caller
-  # preloaded streams, in which case the preloaded records are read so list
-  # pages can render the live dot without a query per room.
+  # preloaded `live_streams` (at most one row per room), in which case the
+  # preloaded record is read so list pages render the live dot without a
+  # query per room. Ended rows are history and are never loaded for this.
   def live_stream
-    if association(:streams).loaded?
-      streams.detect(&:live?)
+    if association(:live_streams).loaded?
+      live_streams.first
     else
       streams.live.first
     end

@@ -62,12 +62,13 @@ class Rooms::EventsController < ApplicationController
   end
 
   private
-    # Preloads the live streams behind stage venues so rows read
+    # Preloads the live stream behind stage venues so rows read
     # `venue.live_stream` without a query each. Nested `includes` cannot
     # express this: venues preload as Room, which has no streams association.
+    # Only the live row is loaded, never the venue's stream history.
     def preload_venue_streams(events)
       venues = events.filter_map(&:venue).select(&:stage?)
-      ActiveRecord::Associations::Preloader.new(records: venues, associations: :streams).call
+      ActiveRecord::Associations::Preloader.new(records: venues, associations: :live_streams).call
     end
 
     def set_event
