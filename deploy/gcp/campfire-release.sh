@@ -1006,6 +1006,8 @@ phase_preflight() {
 
 FREEZE_MOUNTPOINT=""
 REHEARSAL_CONTAINER=""
+FREEZE_APP_HOST=""
+FREEZE_STOPPED_APP=0
 
 freeze_cleanup() {
   local status=$?
@@ -1021,7 +1023,20 @@ freeze_cleanup() {
   if [ "$status" -ne 0 ]; then
     warn "freeze failed with exit ${status}; restoring the feed timer so the feed does not stay paused unattended"
     restore_feed_timer || warn "freeze: could not restore the feed timer, it needs an operator"
-    warn "freeze: the application may be stopped. Check '$STATE_DIR' and the host before retrying."
+    # Nothing in this phase touches the live database or ONCE's settings after
+    # the stop (the rehearsal runs on copies), so the previous container can
+    # simply come back. Leaving it down turned a refused release into an outage.
+    if [ "$FREEZE_STOPPED_APP" = "1" ] && [ -n "$FREEZE_APP_HOST" ]; then
+      warn "freeze: restarting $FREEZE_APP_HOST on the previous image"
+      once start "$FREEZE_APP_HOST" || warn "freeze: once start reported an error"
+      if wait_for_health "$FREEZE_APP_HOST" "$HEALTH_TIMEOUT"; then
+        log "freeze: $FREEZE_APP_HOST is serving again on the previous image"
+      else
+        warn "freeze: $FREEZE_APP_HOST did not become healthy after the restart, it needs an operator"
+      fi
+    else
+      warn "freeze: the application may be stopped. Check '$STATE_DIR' and the host before retrying."
+    fi
   fi
 }
 
@@ -1061,7 +1076,9 @@ phase_freeze() {
   image_id="$(docker inspect --format '{{.Image}}' "$container")"
 
   log "freeze: stopping $app_host"
+  FREEZE_APP_HOST="$app_host"
   once stop "$app_host"
+  FREEZE_STOPPED_APP=1
   assert_app_stopped
 
   # With the application stopped, the volume is quiescent. Everything below is a
