@@ -1,3 +1,6 @@
+<%# Post links render as first-class X cards under the message; skip the
+    generic OpenGraph box so they don't render twice. %>
+<% unless Twitter::PostUrl.post_url?(opengraph_embed.href) %>
 <figure class="attachment attachment--content attachment--og">
   <actiontext-opengraph-embed>
     <div class="og-embed gap">
@@ -15,3 +18,4 @@
     </div>
   </actiontext-opengraph-embed>
 </figure>
+<% end %>

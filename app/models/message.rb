@@ -21,6 +21,10 @@ class Message < ApplicationRecord
   has_many :github_pull_requests, through: :github_pull_request_references,
     source: :pull_request, class_name: "Github::PullRequest"
 
+  has_many :twitter_post_references, class_name: "Twitter::PostReference", dependent: :destroy
+  has_many :twitter_posts, through: :twitter_post_references,
+    source: :post, class_name: "Twitter::Post"
+
   has_many :event_references, dependent: :destroy
   has_many :events, through: :event_references
 
@@ -43,6 +47,8 @@ class Message < ApplicationRecord
   # method twice on the commit chain keeps only one registration.
   after_create_commit :sync_github_pull_request_references
   after_update_commit :resync_github_pull_request_references
+  after_create_commit :sync_twitter_post_references
+  after_update_commit :resync_twitter_post_references
   after_create_commit :sync_event_references
   after_update_commit :resync_event_references
 
@@ -187,6 +193,14 @@ class Message < ApplicationRecord
 
     def resync_github_pull_request_references
       Github::PullRequestReferenceSync.call(self) if saved_change_to_markdown_source?
+    end
+
+    def sync_twitter_post_references
+      Twitter::PostReferenceSync.call(self)
+    end
+
+    def resync_twitter_post_references
+      Twitter::PostReferenceSync.call(self) if saved_change_to_markdown_source?
     end
 
     def sync_event_references

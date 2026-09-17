@@ -1,0 +1,17 @@
+<%# Without a message (messages/_template) this renders nothing: a pending
+    message carries no references yet and the server broadcast appends the
+    real block. %>
+<% if (message = local_assigns[:message]) %>
+  <%# Sorting in Ruby rather than with an `order` scope, because applying a
+      scope to an association builds a fresh relation and so ignores already
+      loaded rows — one extra query per message rendered. (Same reason
+      `ordered_boosts` exists.) %>
+  <% posts = message.twitter_posts.sort_by { |post| post.post_id.to_i } %>
+  <% if posts.any? %>
+    <div id="<%= dom_id(message, :twitter_cards) %>" class="x-post-cards">
+      <% posts.each do |post| %>
+        <%= render "twitter/posts/card", post: post %>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>
