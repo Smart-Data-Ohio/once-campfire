@@ -130,6 +130,18 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert event.valid?, event.errors.full_messages.to_sentence
   end
 
+  test "the occurrence cap and one-year range run on head updates too" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      head.update!(recurrence_until: 3.years.from_now.to_date)
+    end
+    assert_match(/at most one year/, error.record.errors[:recurrence_until].join)
+    assert_equal Date.new(2026, 10, 19), head.reload.recurrence_until
+  end
+
   test "the end date is required when a rule is set" do
     event = @room.events.build(
       organizer: @organizer, title: "No end", starts_at: 2.days.from_now, time_zone: "UTC",
@@ -184,6 +196,30 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     )
     assert_nil single.recurrence_rule
     assert_not single.series?
+  end
+
+  test "recurrence fields cannot be changed through plain update" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      head.update!(recurrence_rule: "daily")
+    end
+    assert_match(/first event/, error.record.errors[:recurrence_rule].join)
+    assert_equal "weekly", head.reload.recurrence_rule
+
+    assert_raises(ActiveRecord::RecordInvalid) do
+      head.update!(series_id: nil)
+    end
+    assert_equal head.id, head.reload.series_id
+
+    single = @room.events.create!(organizer: @organizer, title: "Single", starts_at: 2.days.from_now, time_zone: "UTC")
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      single.update!(recurrence_rule: "daily", recurrence_until: Date.current + 7)
+    end
+    assert_match(/scheduling a new event/, error.record.errors[:recurrence_rule].join)
+    assert_nil single.reload.recurrence_rule
   end
 
   test "a series sends one invitation per invitee, attached to the first event" do
@@ -317,6 +353,42 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     end
   end
 
+  test "moving an occurrence later shifts every original follower by the same offset" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 4, occurrences.size
+
+    occurrences.second.update_with_scope!(
+      { starts_at: utc(2027, 1, 20, 9, 0), ends_at: utc(2027, 1, 20, 10, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal utc(2027, 1, 1, 9, 0), occurrences.first.reload.starts_at
+    assert_equal utc(2027, 1, 20, 9, 0), occurrences.second.reload.starts_at
+    assert_equal utc(2027, 1, 27, 9, 0), occurrences.third.reload.starts_at
+    assert_equal utc(2027, 2, 3, 9, 0), occurrences.fourth.reload.starts_at
+  end
+
+  test "moving an occurrence earlier never touches previous occurrences" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 4, occurrences.size
+
+    occurrences.second.update_with_scope!(
+      { starts_at: utc(2026, 12, 28, 9, 0), ends_at: utc(2026, 12, 28, 10, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal utc(2027, 1, 1, 9, 0), occurrences.first.reload.starts_at
+    assert_equal utc(2026, 12, 28, 9, 0), occurrences.second.reload.starts_at
+    assert_equal utc(2027, 1, 4, 9, 0), occurrences.third.reload.starts_at
+    assert_equal utc(2027, 1, 11, 9, 0), occurrences.fourth.reload.starts_at
+  end
+
   test "a starts-only change preserves later durations and an ends-only change extends them" do
     head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
     occurrences = head.series_events.to_a
@@ -369,6 +441,37 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     end
     assert_predicate ActivityItem.find_by!(user: users(:jz), source: occurrences.second), :handled?
     assert_not ActivityItem.exists?(user: @organizer, source: occurrences)
+  end
+
+  test "a series update replaces read-but-unhandled updates on other occurrences" do
+    head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
+    occurrences = head.series_events.to_a
+    head.respond!(users(:jason), "going")
+    occurrences.second.update_with_scope!(
+      {
+        starts_at: occurrences.second.starts_at + 1.hour,
+        ends_at: occurrences.second.ends_at + 1.hour
+      },
+      scope: "this_event", actor: @organizer
+    )
+    item = ActivityItem.find_by!(user: users(:jason), source: occurrences.second)
+    assert_equal "event_update", item.event_type
+    item.mark_read!
+    assert_predicate item.reload, :read?
+
+    occurrences.first.update_with_scope!(
+      {
+        starts_at: occurrences.first.starts_at + 2.hours,
+        ends_at: occurrences.first.ends_at + 2.hours
+      },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_predicate item.reload, :handled?
+    unhandled = ActivityItem.where(user: users(:jason), source: occurrences, handled_at: nil)
+    assert_equal 1, unhandled.count
+    assert_equal "event_update", unhandled.first.event_type
+    assert_equal occurrences.first.id, unhandled.first.source_id
   end
 
   test "a following title-only edit is silent but still copies the title" do
@@ -431,7 +534,7 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     end
   end
 
-  test "a rule change keeps occurrences with distinct responses and retimes regenerable ones" do
+  test "a rule change moves occurrences with distinct responses onto the new pattern's slots" do
     head = create_series!(
       starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 26)
     )
@@ -446,13 +549,43 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     )
 
     current = head.reload.series_events.to_a
-    assert_equal 3, current.size
-    kept = Event.find(occurrences.third.id)
-    assert_equal utc(2026, 10, 19, 9, 0), kept.starts_at
-    assert_equal "declined", kept.response_for(users(:jason))
-    moved = Event.find(occurrences.second.id)
+    assert_equal 2, current.size
+    moved = Event.find(occurrences.third.id)
     assert_equal utc(2026, 10, 6, 9, 0), moved.starts_at
-    assert_equal "going", moved.response_for(users(:jason))
+    assert_equal utc(2026, 10, 6, 10, 0), moved.ends_at
+    assert_equal "declined", moved.response_for(users(:jason))
+    assert_equal "going", moved.response_for(@organizer)
+    assert_not Event.exists?(occurrences.second.id)
+    assert_not Event.exists?(occurrences.fourth.id)
+    assert current.all? { |occurrence| occurrence.starts_at.to_date <= Date.new(2026, 10, 6) }
+  end
+
+  test "shortening weekly to daily cancels distinct occurrences beyond the new slots" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 26)
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 4, occurrences.size
+    head.respond!(users(:jason), "going")
+    occurrences.second.respond!(users(:jason), "declined")
+    occurrences.third.respond!(users(:jz), "going")
+
+    occurrences.first.update_with_scope!(
+      { recurrence_rule: "daily", recurrence_until: Date.new(2026, 10, 6) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    moved = Event.find(occurrences.second.id)
+    assert_not_predicate moved, :cancelled?
+    assert_equal utc(2026, 10, 6, 9, 0), moved.starts_at
+    assert_equal "declined", moved.response_for(users(:jason))
+
+    excess = Event.find(occurrences.third.id)
+    assert_predicate excess, :cancelled?
+    assert_equal "event_cancelled", ActivityItem.find_by!(user: users(:jason), source: excess).event_type
+    assert_equal "event_cancelled", ActivityItem.find_by!(user: users(:jz), source: excess).event_type
+
+    assert_equal [ head.id, moved.id ].sort, head.reload.series_events.active.ids.sort
     assert_not Event.exists?(occurrences.fourth.id)
   end
 
@@ -478,7 +611,7 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_equal "declined", kept.response_for(users(:jason))
   end
 
-  test "shrinking the series removes regenerable occurrences but keeps distinct and cancelled ones" do
+  test "shrinking the series moves distinct occurrences onto the remaining slots and leaves cancelled ones" do
     head = create_series!(
       starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 26)
     )
@@ -491,11 +624,14 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
       { recurrence_until: Date.new(2026, 10, 12) }, scope: "this_and_following", actor: @organizer
     )
 
-    current = head.reload.series_events.to_a
-    assert_equal [ occurrences.first.id, occurrences.second.id, occurrences.third.id, occurrences.fourth.id ].sort,
-      current.map(&:id).sort
+    moved = Event.find(occurrences.fourth.id)
+    assert_not_predicate moved, :cancelled?
+    assert_equal utc(2026, 10, 12, 9, 0), moved.starts_at
+    assert_equal "declined", moved.response_for(users(:jason))
     assert_predicate Event.find(occurrences.third.id), :cancelled?
-    assert_equal "declined", Event.find(occurrences.fourth.id).response_for(users(:jason))
+    assert_not Event.exists?(occurrences.second.id)
+    assert_equal [ occurrences.first.id, occurrences.third.id, occurrences.fourth.id ].sort,
+      head.reload.series_events.ids.sort
   end
 
   test "shrinking the series destroys regenerable occurrences beyond the new end" do
