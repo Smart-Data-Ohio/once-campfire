@@ -15,7 +15,7 @@ class Agents::WorkController < ApplicationController
     agent = Current.agent
     threads = ChannelThread.work.where(work_owner_id: agent.user_id)
       .where(room_id: Membership.where(user_id: agent.user_id).select(:room_id))
-      .includes(:room, work_thread_links: %i[ github_pull_request event ]).order(updated_at: :desc, id: :desc).to_a
+      .includes(:room, :work_owner, :tags, work_thread_links: %i[ github_pull_request event ]).order(updated_at: :desc, id: :desc).to_a
     threads.select! { |thread| agent.can?(:read_messages, thread.room) }
 
     render json: threads.first(LIST_MAX_LIMIT).map { |thread| work_thread_payload(thread) }
@@ -67,19 +67,11 @@ class Agents::WorkController < ApplicationController
     # endpoint, a room the agent's user no longer belongs to answers 404.
     def set_owned_thread
       @thread = ChannelThread.work.where(work_owner_id: Current.agent.user_id)
-        .includes(:room, work_thread_links: %i[ github_pull_request event ]).find_by(id: params[:id])
+        .includes(:room, :work_owner, :tags, work_thread_links: %i[ github_pull_request event ]).find_by(id: params[:id])
       head :not_found unless @thread && @thread.room.memberships.exists?(user_id: Current.agent.user_id)
     end
 
     def work_thread_payload(thread)
-      {
-        id: thread.id,
-        room_id: thread.room_id,
-        title: thread.name,
-        work_status: thread.work_status,
-        url: room_path(thread.room, thread: thread.id),
-        updated_at: thread.updated_at&.utc,
-        links: WorkThreadLink.agent_payloads_for(thread)
-      }
+      Agents::WorkPayload.for(thread)
     end
 end
