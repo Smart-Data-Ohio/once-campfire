@@ -508,14 +508,19 @@ class ChannelThread < ApplicationRecord
     self
   end
 
-  # Status update by the owning agent through the Bearer agent token API. The agent must
-  # already own this work; reassignment, conversion, and untracking stay
-  # human operations. Records a WorkThreadEvent with the agent's user as
-  # actor, so the inbox path is identical to a human owner's update. The
+  # Work update by the owning agent through the agent token API. The agent
+  # must already own this work; reassignment, conversion, and untracking
+  # stay human operations. work_status records a WorkThreadEvent with the
+  # agent's user as actor (so the inbox path is identical to a human
+  # owner's update) and carries the optional note; tags replaces the full
+  # tag set (an array or comma-separated string, blank clears); run_url
+  # must be https (blank clears). Each field updates only when its key
+  # was given, and an update with no field at all is invalid. The
   # manage_threads grant is checked by the controller, which owns the 403.
-  def update_work_status_by_agent!(agent:, work_status:, note: nil)
-    normalized_status = work_status.to_s.presence
-    unless WORK_STATUSES.include?(normalized_status)
+  def update_work_by_agent!(agent:, work_status: UNSET_WORK_VALUE, note: nil, tags: UNSET_WORK_VALUE, run_url: UNSET_WORK_VALUE)
+    status_given = !work_status.equal?(UNSET_WORK_VALUE)
+    normalized_status = status_given ? work_status.to_s.presence : nil
+    if status_given && !WORK_STATUSES.include?(normalized_status)
       errors.add(:work_status, "is invalid")
       raise ActiveRecord::RecordInvalid.new(self)
     end
@@ -526,6 +531,14 @@ class ChannelThread < ApplicationRecord
       raise ActiveRecord::RecordInvalid.new(self)
     end
 
+    tags_given = !tags.equal?(UNSET_WORK_VALUE)
+    run_url_given = !run_url.equal?(UNSET_WORK_VALUE)
+
+    unless status_given || tags_given || run_url_given
+      errors.add(:work_status, "is invalid")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
     self.class.transaction(requires_new: true) do
       with_lock do
         reload
@@ -533,19 +546,63 @@ class ChannelThread < ApplicationRecord
           raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
         end
 
-        before_status = self.work_status
-        if before_status != normalized_status
-          update!(work_status: normalized_status)
-          WorkThreadEvent.create_for_change!(
-            thread: self,
-            actor: agent.user,
-            from_status: before_status,
-            to_status: normalized_status,
-            from_owner: work_owner,
-            to_owner: work_owner,
-            note: normalized_note
-          )
+        self.tag_names = tags if tags_given
+        self.run_url = run_url.to_s.presence if run_url_given
+        save! if tags_given || run_url_given
+
+        if status_given
+          before_status = self.work_status
+          if before_status != normalized_status
+            update!(work_status: normalized_status)
+            WorkThreadEvent.create_for_change!(
+              thread: self,
+              actor: agent.user,
+              from_status: before_status,
+              to_status: normalized_status,
+              from_owner: work_owner,
+              to_owner: work_owner,
+              note: normalized_note
+            )
+          end
         end
+      end
+    end
+
+    self
+  end
+
+  # Result replacement by the owning agent through the agent token API.
+  # Mirrors update_result! with the ownership check in place of the human
+  # status rule: blank clears the result, an unchanged value writes
+  # nothing, and every write records a result_updated event with the
+  # agent's user as actor. The manage_threads grant is checked by the
+  # controller, which owns the 403.
+  def update_result_by_agent!(agent:, markdown:)
+    unless work? && work_owner_id == agent.user_id
+      raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
+    end
+
+    normalized = markdown.to_s.presence
+    return self if normalized == result_markdown
+
+    if normalized && normalized.length > RESULT_LIMIT
+      errors.add(:result_markdown, "is too long (maximum is #{RESULT_LIMIT} characters)")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    self.class.transaction(requires_new: true) do
+      with_lock do
+        reload
+        unless work? && work_owner_id == agent.user_id
+          raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
+        end
+
+        update!(
+          result_markdown: normalized,
+          result_updated_at: Time.current,
+          result_updated_by_id: agent.user_id
+        )
+        WorkThreadEvent.create_for_result!(thread: self, actor: agent.user, excerpt: normalized.to_s.first(200))
       end
     end
 

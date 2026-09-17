@@ -244,7 +244,7 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     grant!(@agent, "post_messages")
     @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
 
-    @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress", note: "Digging in")
+    @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress", note: "Digging in")
 
     assert_equal "in_progress", @thread.reload.work_status
     event = @thread.work_thread_events.ordered.first
@@ -270,7 +270,7 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     ThreadMembership.join!(thread, recipient).update!(involvement: "everything")
     thread.update_work!(actor: creator, work_status: "planned", work_owner_id: bot.id)
 
-    thread.update_work_status_by_agent!(agent: agent, work_status: "in_progress", note: "On it")
+    thread.update_work_by_agent!(agent: agent, work_status: "in_progress", note: "On it")
 
     event = thread.work_thread_events.ordered.first
     assert_equal "work_update", ActivityItem.find_by!(user: recipient, source: event).event_type
@@ -283,7 +283,7 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     @thread.update_work!(actor: @manager, work_owner_id: users(:jason).id)
 
     assert_raises(ActiveRecord::RecordNotFound) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress")
+      @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress")
     end
 
     assert_equal "planned", @thread.reload.work_status
@@ -294,12 +294,12 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
 
     error = assert_raises(ActiveRecord::RecordInvalid) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "shipped")
+      @thread.update_work_by_agent!(agent: @agent, work_status: "shipped")
     end
     assert_match "is invalid", error.record.errors.full_messages.to_sentence
 
     error = assert_raises(ActiveRecord::RecordInvalid) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress", note: "x" * 501)
+      @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress", note: "x" * 501)
     end
     assert_match "too long", error.record.errors.full_messages.to_sentence
 
