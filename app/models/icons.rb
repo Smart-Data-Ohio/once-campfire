@@ -90,7 +90,7 @@ module Icons
       def match_rank(key, query)
         return 0 if key == query
         return 1 if key.start_with?(query)
-        return 2 if key.include?(query)
+        2 if key.include?(query)
       end
 
       def brands_by_key
