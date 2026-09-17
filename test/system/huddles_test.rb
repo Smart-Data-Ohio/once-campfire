@@ -514,6 +514,35 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_nil microphone_processor_name
   end
 
+  test "denied microphone leaves no ghost participant and can be retried" do
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    prepare_browser
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+    page.execute_script <<~JS
+      window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Test permission denial', 'NotAllowedError'));
+    JS
+    credentials_before = huddle_credentials_count
+
+    click_button "Join huddle"
+
+    # A returning user skips the device check, so this denial lands after
+    # credentials were issued; the failed join must leave nobody behind.
+    assert_selector "#channel-huddle[data-state='failed']"
+    assert_selector "[data-huddle-target='notice']", text: /Microphone access was denied/
+    assert_operator huddle_credentials_count, :>, credentials_before
+    # A failed join can close signaling before LiveKit processes the leave packet.
+    # Allow the gateway's three-second reconnect grace plus its cleanup request.
+    using_session("Kevin") { assert_selector ".huddle__participant", count: 1, wait: 5 }
+
+    page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
+    click_button "Try again"
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+  end
+
   test "denied microphone stops the device check before anything is published and can be retried" do
     prepare_browser
     sign_in "jz@37signals.com"
