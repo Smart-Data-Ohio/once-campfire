@@ -149,6 +149,40 @@ class ChannelThread < ApplicationRecord
       WorkThreadLink.where(channel_thread_id: ids).group(:channel_thread_id).count
     end
 
+    # The one board-post creation path behind the human new-post form and
+    # the agent posts API, so inbox items, the assignment event, the
+    # ledger rows, broadcasts, and delivery limits behave identically no
+    # matter who creates the post. A post is tracked work from creation;
+    # work_status arrives resolved with the caller's default. A present
+    # owner_id must be an eligible member or agent (RecordInvalid
+    # otherwise); tags accept an array or a comma-separated string;
+    # first_message is Markdown for the opening message, or blank for
+    # none. Raises RecordNotFound when the creator is not a room member.
+    def create_board_post!(room:, creator:, name:, work_status:, owner_id: nil, tags: nil, run_url: nil, first_message: nil)
+      thread = nil
+
+      transaction do
+        thread = room.channel_threads.new(
+          name: name,
+          work_status: work_status,
+          creator: creator,
+          run_url: run_url.presence
+        )
+        thread.tag_names = tags unless tags.nil?
+        thread.work_owner_id = normalize_board_post_owner_id!(thread, owner_id)
+        thread.save!
+        ThreadMembership.join!(thread, creator)
+
+        message = if first_message.to_s.strip.present?
+          thread.post_message!(creator: creator, attributes: { markdown_source: first_message })
+        end
+        thread.write_creation_assignment!(actor: creator) if thread.work_owner_id.present?
+        notify_board_post_created!(thread, message) if message
+      end
+
+      thread
+    end
+
     # Whether each post's owner counts as available, computed once per board
     # page instead of once per row. Mirrors work_owner_active? exactly:
     # humans need an active account plus board membership, while agents
@@ -186,6 +220,42 @@ class ChannelThread < ApplicationRecord
     end
 
     private
+      # Mirrors update_work!'s owner normalization: blank clears, anything
+      # that is not an integer id is invalid. Eligibility itself is
+      # validated on save, the same check an owner change goes through.
+      def normalize_board_post_owner_id!(thread, owner_id)
+        return if owner_id.blank?
+        return owner_id.id if owner_id.is_a?(User)
+
+        Integer(owner_id, exception: false).tap do |normalized|
+          if normalized.nil?
+            thread.errors.add(:work_owner, "is invalid")
+            raise ActiveRecord::RecordInvalid.new(thread)
+          end
+        end
+      end
+
+      # A new post notifies board members following everything, plus the
+      # assigned human owner whatever their involvement, sourced at the
+      # opening message so the inbox can open its exact context. The items
+      # go through the recorder for grouping and idempotency; the
+      # recipients are authorized here because room followers are not
+      # thread members yet.
+      def notify_board_post_created!(thread, message)
+        memberships = thread.room.memberships.includes(:user).to_a
+
+        memberships.each do |membership|
+          user = membership.user
+          next unless user&.active? && !user.bot?
+          next if user.id == thread.creator_id
+          next if membership.involved_in_invisible?
+          next unless membership.involved_in_everything? || user.id == thread.work_owner_id
+
+          ActivityItems::Recorder.record!(recipient: user, source: message,
+            event_type: "thread_activity", skip_source_check: true)
+        end
+      end
+
       def agent_post_eligible?(agent, granted_agent_ids, ever_granted_agent_ids)
         if ever_granted_agent_ids.include?(agent.id)
           granted_agent_ids.include?(agent.id)
@@ -438,14 +508,19 @@ class ChannelThread < ApplicationRecord
     self
   end
 
-  # Status update by the owning agent through the Bearer agent token API. The agent must
-  # already own this work; reassignment, conversion, and untracking stay
-  # human operations. Records a WorkThreadEvent with the agent's user as
-  # actor, so the inbox path is identical to a human owner's update. The
+  # Work update by the owning agent through the agent token API. The agent
+  # must already own this work; reassignment, conversion, and untracking
+  # stay human operations. work_status records a WorkThreadEvent with the
+  # agent's user as actor (so the inbox path is identical to a human
+  # owner's update) and carries the optional note; tags replaces the full
+  # tag set (an array or comma-separated string, blank clears); run_url
+  # must be https (blank clears). Each field updates only when its key
+  # was given, and an update with no field at all is invalid. The
   # manage_threads grant is checked by the controller, which owns the 403.
-  def update_work_status_by_agent!(agent:, work_status:, note: nil)
-    normalized_status = work_status.to_s.presence
-    unless WORK_STATUSES.include?(normalized_status)
+  def update_work_by_agent!(agent:, work_status: UNSET_WORK_VALUE, note: nil, tags: UNSET_WORK_VALUE, run_url: UNSET_WORK_VALUE)
+    status_given = !work_status.equal?(UNSET_WORK_VALUE)
+    normalized_status = status_given ? work_status.to_s.presence : nil
+    if status_given && !WORK_STATUSES.include?(normalized_status)
       errors.add(:work_status, "is invalid")
       raise ActiveRecord::RecordInvalid.new(self)
     end
@@ -456,6 +531,14 @@ class ChannelThread < ApplicationRecord
       raise ActiveRecord::RecordInvalid.new(self)
     end
 
+    tags_given = !tags.equal?(UNSET_WORK_VALUE)
+    run_url_given = !run_url.equal?(UNSET_WORK_VALUE)
+
+    unless status_given || tags_given || run_url_given
+      errors.add(:work_status, "is invalid")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
     self.class.transaction(requires_new: true) do
       with_lock do
         reload
@@ -463,21 +546,86 @@ class ChannelThread < ApplicationRecord
           raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
         end
 
-        before_status = self.work_status
-        if before_status != normalized_status
-          update!(work_status: normalized_status)
-          WorkThreadEvent.create_for_change!(
-            thread: self,
-            actor: agent.user,
-            from_status: before_status,
-            to_status: normalized_status,
-            from_owner: work_owner,
-            to_owner: work_owner,
-            note: normalized_note
-          )
+        self.tag_names = tags if tags_given
+        self.run_url = run_url.to_s.presence if run_url_given
+        save! if tags_given || run_url_given
+
+        if status_given
+          before_status = self.work_status
+          if before_status != normalized_status
+            update!(work_status: normalized_status)
+            WorkThreadEvent.create_for_change!(
+              thread: self,
+              actor: agent.user,
+              from_status: before_status,
+              to_status: normalized_status,
+              from_owner: work_owner,
+              to_owner: work_owner,
+              note: normalized_note
+            )
+          end
         end
       end
     end
+
+    self
+  end
+
+  # Result replacement by the owning agent through the agent token API.
+  # Mirrors update_result! with the ownership check in place of the human
+  # status rule: blank clears the result, an unchanged value writes
+  # nothing, and every write records a result_updated event with the
+  # agent's user as actor. The manage_threads grant is checked by the
+  # controller, which owns the 403.
+  def update_result_by_agent!(agent:, markdown:)
+    unless work? && work_owner_id == agent.user_id
+      raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
+    end
+
+    normalized = markdown.to_s.presence
+    return self if normalized == result_markdown
+
+    if normalized && normalized.length > RESULT_LIMIT
+      errors.add(:result_markdown, "is too long (maximum is #{RESULT_LIMIT} characters)")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    self.class.transaction(requires_new: true) do
+      with_lock do
+        reload
+        unless work? && work_owner_id == agent.user_id
+          raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
+        end
+
+        update!(
+          result_markdown: normalized,
+          result_updated_at: Time.current,
+          result_updated_by_id: agent.user_id
+        )
+        WorkThreadEvent.create_for_result!(thread: self, actor: agent.user, excerpt: normalized.to_s.first(200))
+      end
+    end
+
+    self
+  end
+
+  # Assignment side effects for a board post created with an owner: the
+  # work_assignment history event (from no owner, with the creator as
+  # actor) plus the agent ledger rows and their webhooks. Runs inside the
+  # creation transaction on a post whose owner was set at build time, so
+  # it records exactly what an owner change from nil would have recorded.
+  def write_creation_assignment!(actor:)
+    WorkThreadEvent.create_for_change!(
+      thread: self,
+      actor: actor,
+      from_status: work_status,
+      to_status: work_status,
+      from_owner: nil,
+      to_owner: work_owner
+    )
+    events = record_work_assignment_events!(from_owner: nil, to_owner: work_owner, actor: actor)
+
+    ActiveRecord.after_all_transactions_commit { deliver_work_assignment_webhooks(events) }
 
     self
   end

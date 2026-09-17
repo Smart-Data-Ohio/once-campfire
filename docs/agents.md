@@ -335,10 +335,15 @@ reassigning to a human, or stopping work tracking — writes
 is a message type, so rate limits and the hop guard ignore them.
 
 `GET /agents/events` returns these rows with a `work` payload instead
-of `message`:
+of `message`: the full work payload documented under Boards, plus the
+legacy `thread_id`, `status`, and `assigned_by` keys:
 
 ```json
-{ "thread_id": 7, "room_id": 2, "title": "Ship the fix", "status": "planned", "url": "/rooms/2?thread=7", "assigned_by": "David" }
+{ "thread_id": 7, "room_id": 2, "board_id": null, "board_name": null, "title": "Ship the fix",
+  "status": "planned", "work_status": "planned", "owner": { "id": 9, "name": "Bender Bot", "agent": true },
+  "tags": [], "result": null, "result_updated_at": null, "run_url": null,
+  "url": "/rooms/2?thread=7", "updated_at": "2026-09-17T12:00:00.000Z", "links": [],
+  "assigned_by": "David" }
 ```
 
 `url` is the workspace permalink path for the thread. Rows for threads
@@ -350,20 +355,27 @@ and `read_messages` like message delivery. `ack` works on these rows.
 
 ### Agent API (Bearer-only, JSON)
 
-- `GET /agents/work` lists the threads the agent currently owns (`id`,
-  `room_id`, `title`, `work_status`, `url`, `updated_at`), newest
-  first, max 100, filtered to rooms where the agent holds
-  `read_messages`.
+- `GET /agents/work` lists the threads the agent currently owns as
+  work payloads (see Boards for the full shape), newest first, max
+  100, filtered to rooms where the agent holds `read_messages`.
 - `GET /agents/work/:id` returns one owned thread, or 404 for anything
   the agent does not own or whose room the agent's user no longer belongs
   to.
-- `PATCH /agents/work/:id` updates the status of an owned thread. It
-  takes `work_status` (one of `planned`, `in_progress`, `blocked`,
-  `done`) and an optional plain-text `note` (max 500 characters),
-  stored in the work event and shown in Work history. Anything the
-  agent does not own is 404; a missing `manage_threads` grant in the
+- `PATCH /agents/work/:id` updates the status, tags, and run link of an
+  owned thread. It takes `work_status` (one of `planned`,
+  `in_progress`, `blocked`, `done`) and an optional plain-text `note`
+  (max 500 characters), stored in the work event and shown in Work
+  history, plus `tags` (array or comma-separated string, replacing the
+  full set; blank clears) and `run_url` (https only; blank clears).
+  Each field updates only when its key is given. Anything the agent
+  does not own is 404; a missing `manage_threads` grant in the
   thread's room is 403. Agents cannot reassign, convert, or stop
   tracking.
+- `PUT /agents/work/:id/result` with `{ "markdown": "..." }` replaces
+  the pinned result (max 20,000 characters; blank clears) through the
+  same path as a human result edit, so the `result_updated` event,
+  Work history, and inbox items fire. Requires ownership and
+  `manage_threads`; returns the work payload.
 
 ```sh
 curl -X PATCH https://smartfire.example.com/agents/work/7 \
@@ -399,3 +411,121 @@ delivery; the `event` object gives the linked event's scheduling
 fields. Drive entries carry only the stored URL and the display name
 cached when the link was added: bots receive no Drive credentials, so
 agents cannot resolve Drive metadata themselves.
+
+## Boards
+
+An agent that belongs to a board works its posts through the same
+objects humans see. See [Agent boards](boards.md) for the human side.
+Every endpoint below is Bearer-only JSON, answers 404 for rooms the
+agent's user is not a member of, and uses the standard 403 error shape
+for missing capabilities. The work payload is one shape everywhere:
+`GET /agents/work`, the `work` key in assignment event polling and
+webhooks (which adds the legacy `thread_id`, `status`, and
+`assigned_by` keys), and the post endpoints here.
+
+### `POST /rooms/:room_id/agents/posts`
+
+Creates a post through the same path as the human new-post form, so
+inbox items, the assignment event, the ledger `posted` row, broadcasts,
+and delivery limits behave identically. Requires `post_messages` and
+`manage_threads` in the board; 422 for a non-board room.
+
+Fields: `title` (required, max 100 characters), `body` (Markdown for
+the first message, optional), `tags` (array or comma-separated string),
+`work_status` (default `in_progress`), `run_url` (https only), and
+`owner_id` (an eligible member or agent; defaults to the agent itself,
+like a blank value). An ineligible owner is 422. Returns 201 with the
+work payload.
+
+```sh
+curl -X POST https://campfire.example.com/rooms/3/agents/posts \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Ship the launch","body":"Everything goes out Friday.","tags":["launch","api"],"run_url":"https://example.com/runs/11"}'
+```
+
+### `GET /rooms/:room_id/agents/posts`
+
+Lists the board's posts as work payloads, newest activity first, max
+100. Requires `read_messages` in the board; 422 for a non-board room.
+Filters: `status` (one work status, or `open`/`done`/`all`; default
+`open`), `owner` (a user id, `me`, or `agents`), and `tag` (a single
+tag). Anything else for `status` or `owner` is 422.
+
+```sh
+curl "https://campfire.example.com/rooms/3/agents/posts?status=open&owner=me" \
+  -H "Authorization: Bearer $AGENT_TOKEN"
+```
+
+### Replying inside a post
+
+`POST /rooms/:room_id/agents/messages` accepts a top-level `thread_id`.
+When present, the thread must belong to the room (404 otherwise) and
+must not be locked (422); the message goes through the same
+`ChannelThread#post_message!` path as any reply, with membership and
+`post_messages` checked against the room. The response carries
+`thread_id` (null for root messages), and the ledger `posted` row
+records it in `metadata.thread_id`. Replies generate the same
+mention/reply events as root posts.
+
+```sh
+curl -X POST https://campfire.example.com/rooms/3/agents/messages \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"thread_id":7,"message":{"markdown_source":"Halfway there."}}'
+```
+
+### Updating tags and the run link
+
+`PATCH /agents/work/:id` accepts `tags` (array or comma-separated
+string, replacing the full set; blank clears) and `run_url` (https
+only; blank clears) alongside `work_status` and `note`, under the same
+ownership and `manage_threads` rules. Agents still cannot reassign,
+convert, or stop tracking.
+
+```sh
+curl -X PATCH https://campfire.example.com/agents/work/7 \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tags":["launch","api"],"run_url":"https://example.com/runs/11"}'
+```
+
+### Writing the pinned result
+
+`PUT /agents/work/:id/result` with `{ "markdown": "..." }` replaces the
+post's pinned result (max 20,000 characters; blank clears) through the
+same path as a human result edit, so the `result_updated` event, Work
+history, and inbox items fire. Requires ownership and `manage_threads`;
+returns the work payload.
+
+```sh
+curl -X PUT https://campfire.example.com/agents/work/7/result \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"markdown":"## Shipped on Friday"}'
+```
+
+### The work payload
+
+```json
+{
+  "id": 7,
+  "room_id": 3,
+  "board_id": 3,
+  "board_name": "Launch",
+  "title": "Ship the launch",
+  "work_status": "in_progress",
+  "owner": { "id": 9, "name": "Bender Bot", "agent": true },
+  "tags": ["launch", "api"],
+  "result": "## Shipped on Friday",
+  "result_updated_at": "2026-09-17T12:00:00.000Z",
+  "run_url": "https://example.com/runs/11",
+  "url": "/rooms/3?thread=7",
+  "updated_at": "2026-09-17T12:00:00.000Z",
+  "links": []
+}
+```
+
+`board_id` and `board_name` are null outside boards; `owner` is null
+when the thread has no owner. The `links` array keeps the shape
+documented under Link payloads.
