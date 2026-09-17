@@ -357,16 +357,21 @@ img.message__attachment {
 .message__actions-menu {
   --border-color: var(--color-border-darker);
 
+  /* Pack grid tracks at the start so rows never stretch when the popover's
+     used height exceeds its content (seen in iOS Safari). */
+  align-content: start;
   background-color: var(--color-bg);
   border: 1px solid var(--border-color);
   border-radius: 0.7rem;
   display: grid;
   gap: 0.35rem;
+  inline-size: max-content;
   inset: auto;
+  max-block-size: min(70vh, 32rem);
   max-block-size: min(70dvh, 32rem);
-  max-inline-size: min(92vw, 28rem);
+  max-inline-size: min(92vw, 24rem);
   margin: 0;
-  min-inline-size: min(18rem, 92vw);
+  min-inline-size: 16rem;
   overflow-y: auto;
   padding: 0.45rem;
   position: fixed;
@@ -384,6 +389,7 @@ img.message__attachment {
 
 .message__quick-reactions {
   align-items: center;
+  block-size: fit-content;
   display: flex;
   flex-wrap: wrap;
   gap: 0.2rem;
@@ -403,13 +409,13 @@ img.message__attachment {
   --btn-size: 2.25rem;
 
   align-items: center;
-  aspect-ratio: 1;
+  block-size: var(--btn-size);
   border-radius: 0.45rem;
   display: inline-flex;
+  flex: none;
   font-size: 1.2rem;
+  inline-size: var(--btn-size);
   justify-content: center;
-  min-block-size: var(--btn-size);
-  min-inline-size: var(--btn-size);
 
   &[data-reaction-active] {
     background: color-mix(in srgb, var(--color-selected-dark) 20%, transparent);

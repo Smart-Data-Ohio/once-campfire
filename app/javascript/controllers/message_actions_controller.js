@@ -381,6 +381,7 @@ export default class extends Controller {
     this.menuTarget.setAttribute("aria-hidden", "false")
     this.#showMenuPopover()
     this.#positionMenu()
+    this.#positionMenuWhenSettled()
     this.#loadMetadata()
 
     const focus = () => {
@@ -599,6 +600,15 @@ export default class extends Controller {
 
     this.menuTarget.style.left = `${Math.min(Math.max(VIEWPORT_PADDING, point.x), maxX)}px`
     this.menuTarget.style.top = `${Math.min(Math.max(VIEWPORT_PADDING, point.y), maxY)}px`
+  }
+
+  // Webfonts and action icons can shift the menu's height after first paint.
+  // Re-clamp once they settle so the position uses the final measured height.
+  #positionMenuWhenSettled() {
+    if (document.fonts?.ready) document.fonts.ready.then(() => this.#positionMenu()).catch(() => {})
+    for (const image of this.menuTarget.querySelectorAll("img")) {
+      if (!image.complete) image.addEventListener("load", this.onReposition, { once: true })
+    }
   }
 
   #showMenuPopover() {

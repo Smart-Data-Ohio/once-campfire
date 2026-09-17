@@ -51,6 +51,25 @@ class MessageInteractionsTest < ApplicationSystemTestCase
     page.current_window.resize_to(1400, 1400)
   end
 
+  test "keeps the message action menu compact and inside the viewport on phones" do
+    page.current_window.resize_to(390, 844)
+    within_message(messages(:third)) do
+      open_message_actions
+    end
+    assert_compact_action_menu(max_reaction_rows: 1)
+
+    page.send_keys :escape
+    assert_no_selector ".message[data-message-actions-open]"
+
+    page.current_window.resize_to(320, 740)
+    within_message(messages(:third)) do
+      open_message_actions
+    end
+    assert_compact_action_menu(max_reaction_rows: 2)
+  ensure
+    page.current_window.resize_to(1400, 1400)
+  end
+
   test "edits through the normal composer and restores the saved draft on cancel and success" do
     fill_in "Write a message", with: "A draft that must survive editing"
 
@@ -279,6 +298,43 @@ class MessageInteractionsTest < ApplicationSystemTestCase
 
     def save_screenshot(name)
       page.save_screenshot SCREENSHOT_DIR.join(name)
+    end
+
+    def assert_compact_action_menu(max_reaction_rows:)
+      # Metadata reveals the edit/delete actions and re-clamps the menu, so
+      # wait for it before measuring the final geometry.
+      assert_selector ".message__edit-action", visible: true, wait: 10
+      geometry = page.evaluate_script(<<~JS)
+        (() => {
+          const menu = document.querySelector(".message[data-message-actions-open] .message__actions-menu")
+          const row = menu?.querySelector(".message__quick-reactions")
+          const bounds = element => {
+            const rect = element.getBoundingClientRect()
+            return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
+          }
+          return {
+            rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+            menu: menu ? bounds(menu) : null,
+            row: row ? bounds(row) : null,
+            viewport: { width: window.innerWidth, height: window.innerHeight }
+          }
+        })()
+      JS
+      refute_nil geometry["menu"], "expected the message action menu to be open"
+      refute_nil geometry["row"], "expected the quick reactions row to be present"
+
+      rem = geometry["rem"]
+      menu = geometry["menu"]
+      row = geometry["row"]
+      viewport = geometry["viewport"]
+
+      assert_operator row["height"], :<=, 3 * max_reaction_rows * rem,
+        "expected the quick reactions row to fit in #{max_reaction_rows} row(s)"
+      assert_operator menu["width"], :<=, 24 * rem, "expected the menu to be at most 24rem wide"
+      assert_operator menu["left"], :>=, 0
+      assert_operator menu["top"], :>=, 0
+      assert_operator menu["right"], :<=, viewport["width"]
+      assert_operator menu["bottom"], :<=, viewport["height"]
     end
 
     def assert_menu_within_viewport
