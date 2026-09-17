@@ -11,10 +11,11 @@ class Rooms::Stage::RolesController < ApplicationController
   # Hosts and administrators change any member's stage role. The role change
   # revokes the member's huddle grants in the same transaction, and three
   # broadcasts deliver it: a per-viewer roster goes to every member's own
-  # rooms stream, a personalized panel with a rejoin trigger goes to the
-  # affected member's stream, and a rejoin event goes to the persistent
-  # target in their huddle panel, which is present on every page. Both
-  # triggers make their browser rejoin with a fresh token for the new role.
+  # rooms stream, a personalized panel goes to the affected member's stream,
+  # and a rejoin event goes to the persistent target in their huddle panel,
+  # which is present on every page. The persistent event is the only reconnect
+  # trigger, so delayed delivery cannot reconnect twice; the panel carries no
+  # trigger.
   def update
     target = @room.memberships.find_by(id: params[:membership_id])
     return head :not_found unless target
@@ -63,7 +64,7 @@ class Rooms::Stage::RolesController < ApplicationController
       broadcast_replace_to target.user, :rooms,
         target: [ @room, :stage_panel ],
         partial: "rooms/stage/panel_body",
-        locals: { room: @room, membership: target.reload, rejoin: true }
+        locals: { room: @room, membership: target.reload, rejoin: false }
     end
 
     # The stage panel only exists on that stage's page, but the huddle panel

@@ -49,7 +49,7 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     assert_match "Invite to speak", host_roster.to_html
   end
 
-  test "the affected member's panel replacement carries the rejoin trigger" do
+  test "the affected member's panel replacement carries no rejoin trigger" do
     sign_in :david
 
     patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
@@ -59,8 +59,11 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
 
     panel = streams.find { |stream| stream["target"] == ActionView::RecordIdentifier.dom_id(@room, :stage_panel) }
     assert_equal "replace", panel["action"]
-    assert_match "stage-rejoin", panel.to_html
+    assert_no_match "stage-rejoin", panel.to_html
     assert_match "You are speaking", panel.to_html
+
+    event = streams.find { |stream| stream["action"] == "append" }
+    assert_equal "huddle_role_events", event["target"]
   end
 
   test "every role change appends a rejoin event to the member's persistent target" do
