@@ -49,6 +49,20 @@ class ChannelThreadBoardTest < ActiveSupport::TestCase
     assert_equal %w[ api-v2 bug ], post.reload.tag_names
   end
 
+  test "tag writer accepts an array of names as well as a comma-separated string" do
+    post = ChannelThread.new(room: @room, creator: @creator, name: "Tagged", work_status: "planned")
+    post.tag_names = [ "Bug", " bug ", "", "API-v2" ]
+
+    assert_equal %w[ bug api-v2 ], post.tag_names
+
+    post.save!
+    assert_equal %w[ api-v2 bug ], post.reload.tag_names
+
+    post.tag_names = []
+    post.save!
+    assert_empty post.reload.tag_names
+  end
+
   test "tag count, length, and format are validated without destroying existing tags" do
     post = ChannelThread.create!(room: @room, creator: @creator, name: "Tagged", work_status: "planned")
     post.tag_names = "bug"
@@ -149,6 +163,10 @@ class ChannelThreadBoardTest < ActiveSupport::TestCase
     post.update_result!(actor: @creator, markdown: "Same.")
     assert_no_difference -> { WorkThreadEvent.count } do
       post.update_result!(actor: @creator, markdown: "Same.")
+    end
+
+    assert_raises ChannelThread::WorkUpdateForbidden do
+      post.update_result!(actor: users(:kevin), markdown: "Same.")
     end
   end
 

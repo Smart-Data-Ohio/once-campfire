@@ -231,7 +231,8 @@ class ChannelThread < ApplicationRecord
   end
 
   def tag_names=(value)
-    @pending_tag_names = value.to_s.split(",").map { |name| name.strip.downcase }.reject(&:blank?).uniq
+    names = value.is_a?(Array) ? value : value.to_s.split(",")
+    @pending_tag_names = names.map { |name| name.to_s.strip.downcase }.reject(&:blank?).uniq
   end
 
   def reload(*)
@@ -484,7 +485,12 @@ class ChannelThread < ApplicationRecord
   # Replace the pinned result and record a result_updated event for Work
   # history and the activity inbox. Blank clears the result. Anyone who can
   # change the status can edit the result; an unchanged value writes nothing.
+  # The permission check runs before the unchanged-value return so an
+  # unauthorized caller cannot probe the current result, and is repeated
+  # under the row lock before writing.
   def update_result!(actor:, markdown:)
+    raise WorkUpdateForbidden, "You cannot edit the result in this thread" unless work_status_manageable_by?(actor)
+
     normalized = markdown.presence
     return self if normalized == result_markdown
 
