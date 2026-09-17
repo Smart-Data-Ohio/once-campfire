@@ -146,13 +146,35 @@ class ChannelMembersTest < ApplicationSystemTestCase
       assert page.evaluate_script("document.documentElement.scrollWidth <= innerWidth + 1"), "the workspace overflows the viewport horizontally"
     end
 
-    def settle_visual_transitions
-      page.evaluate_async_script <<~JS
-        const done = arguments[0];
-        const finite = document.getAnimations().filter(animation =>
-          Number.isFinite(animation.effect.getComputedTiming().endTime)
-        );
-        Promise.all(finite.map(animation => animation.finished.catch(() => {}))).then(done);
-      JS
+    # Wait until no finite animation is still running, re-querying the
+    # animation list on every poll. The previous implementation awaited the
+    # Animation objects themselves and handed them back through the driver,
+    # so a re-render that replaced a target node mid-transition surfaced as
+    # a stale element reference. Only booleans cross the wire here, and a
+    # node replaced mid-poll just settles on the next pass. Giving up after
+    # the timeout is safe: the callers only take screenshots afterwards.
+    def settle_visual_transitions(timeout: 10)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      loop do
+        settled = begin
+          page.evaluate_script(<<~JS)
+            (() => {
+              const unsettled = document.getAnimations().filter(animation => {
+                const timing = animation.effect?.getComputedTiming?.();
+                return timing &&
+                  Number.isFinite(timing.endTime) &&
+                  (animation.playState === "running" || animation.playState === "pending");
+              });
+              return unsettled.length === 0;
+            })()
+          JS
+        rescue Selenium::WebDriver::Error::StaleElementReferenceError
+          false
+        end
+        return if settled
+        return if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.05
+      end
     end
 end

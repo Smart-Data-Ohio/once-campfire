@@ -62,6 +62,20 @@ class ActivityInboxTest < ApplicationSystemTestCase
     within(form) { find("button[type='submit']").click }
 
     assert_selector "#user_inbox_preferences_event_reminders:not(:checked)", visible: :all
+    wait_for_saved_inbox_preference(users(:david), :event_reminders, false)
     assert_equal false, users(:david).reload.inbox_preferences.event_reminders
   end
+
+  private
+    # The unchecked selector above is satisfied by the browser's own checkbox
+    # state as soon as the label is clicked, so it does not wait for the form
+    # submission to be processed. Poll the database instead of reading it once.
+    def wait_for_saved_inbox_preference(user, key, value, timeout: Capybara.default_max_wait_time)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      until user.reload.inbox_preferences.public_send(key) == value
+        return if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.05
+      end
+    end
 end

@@ -1,0 +1,57 @@
+<%# locals: (thread:, context:, links: nil, linkable_events: nil) -%>
+<% links ||= thread.work_thread_links.sort_by(&:id) %>
+<% linkable_events ||= [] %>
+<div id="<%= work_thread_links_box_id(thread, context) %>" class="work-links">
+  <div class="work-links__list">
+    <span class="work-links__label">Linked</span>
+    <% if links.any? %>
+      <ul class="work-links__items" data-controller="drive-link">
+        <% links.each do |link| %>
+          <li class="work-links__item work-links__item--<%= link.kind %>">
+            <%= render "threads/work/links/link", link: link, thread: thread %>
+            <%= button_to "Remove", thread_work_link_path(thread, link), method: :delete,
+                  class: "work-links__remove", form_class: "work-links__remove-form",
+                  aria: { label: "Remove link to #{work_thread_link_label(link)}" } %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <span class="work-links__empty">Nothing linked yet.</span>
+    <% end %>
+  </div>
+  <% if context != :row %>
+    <details class="work-links__add">
+      <summary class="btn">Link</summary>
+      <div class="work-links__forms">
+        <%= render "threads/work/links/status", thread: thread, context: context %>
+
+        <%= form_with url: thread_work_links_path(thread), class: "work-links__form" do |form| %>
+          <%= form.hidden_field :kind, value: "pull_request" %>
+          <%= form.label :pull_request_url, "Pull request URL" %>
+          <%= form.url_field :pull_request_url, placeholder: "https://github.com/owner/repo/pull/123",
+                autocomplete: "off", required: true %>
+          <%= form.submit "Link pull request" %>
+        <% end %>
+
+        <%= form_with url: thread_work_links_path(thread), class: "work-links__form" do |form| %>
+          <%= form.hidden_field :kind, value: "event" %>
+          <% if linkable_events.any? %>
+            <%= form.label :event_id, "Event" %>
+            <%= form.select :event_id, linkable_events.map { |event| [ work_thread_link_event_option_label(event), event.id ] } %>
+            <%= form.submit "Link event" %>
+          <% else %>
+            <p class="work-links__none">No upcoming events in this room.</p>
+          <% end %>
+        <% end %>
+
+        <%= form_with url: thread_work_links_path(thread), class: "work-links__form" do |form| %>
+          <%= form.hidden_field :kind, value: "drive_file" %>
+          <%= form.label :drive_url, "Drive file URL" %>
+          <%= form.url_field :drive_url, placeholder: "https://drive.google.com/file/d/…",
+                autocomplete: "off", required: true %>
+          <%= form.submit "Link Drive file" %>
+        <% end %>
+      </div>
+    </details>
+  <% end %>
+</div>

@@ -1,0 +1,3 @@
+<%= turbo_frame_tag work_thread_links_panel_frame_id do %>
+  <%= render "threads/work/links/box", thread: @thread, links: @links, linkable_events: @linkable_events, context: :panel %>
+<% end %>

@@ -10,6 +10,7 @@
       <p aria-label="Work status">
         Work: <%= @thread.work_status_label %> · <%= owner_label %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %>
       </p>
+      <%= render "threads/work/links/box", thread: @thread, links: @work_links, linkable_events: @linkable_events, context: :header %>
       <% if @thread.work_thread_events.any? %>
         <details>
           <summary>Work history</summary>

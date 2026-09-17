@@ -179,6 +179,10 @@ Rails.application.routes.draw do
 
   resources :work_threads, path: "work", only: :index
 
+  get "threads/:thread_id/work/links", to: "threads/work/links#index", as: :thread_work_links
+  post "threads/:thread_id/work/links", to: "threads/work/links#create"
+  delete "threads/:thread_id/work/links/:id", to: "threads/work/links#destroy", as: :thread_work_link
+
   resource :unfurl_link, only: :create
 
   namespace :github do
