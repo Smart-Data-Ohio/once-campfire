@@ -21,7 +21,13 @@ module AgentAuthorization
       return if agent.nil?
 
       room = capability_check_room
-      return if room.nil?
+
+      if room.nil?
+        unless agent.has_capability_anywhere?(capability)
+          render json: { error: "Forbidden: agent lacks #{capability} capability" }, status: :forbidden
+        end
+        return
+      end
 
       unless agent.can?(capability, room)
         render json: { error: "Forbidden: agent lacks #{capability} capability" }, status: :forbidden

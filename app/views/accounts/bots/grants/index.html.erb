@@ -11,7 +11,7 @@
     <h1 class="margin-none">Grants for <%= @bot.name %></h1>
     <p class="margin-none-block-start">
       Room-scoped or workspace-wide capabilities. Revocation takes effect immediately.
-      Only posting and reacting are enforced so far; the other capabilities are stored for later slices.
+      Only reading, posting, and reacting are enforced so far; the other capabilities are stored for later slices.
     </p>
     <% if @agent.legacy_capabilities? %>
       <p class="txt-small">Legacy access: with no grants ever created, this agent can read and post in rooms it belongs to.</p>

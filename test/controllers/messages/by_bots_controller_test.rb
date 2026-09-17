@@ -252,6 +252,25 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "index is forbidden with only a post_messages grant" do
+    AgentGrant.create!(agent: agents(:bender_agent), room: @room, granted_by: users(:david), capability: "post_messages")
+
+    get room_bot_messages_url(@room, users(:bender).bot_key)
+
+    assert_response :forbidden
+    assert_equal "Forbidden: agent lacks read_messages capability", response.parsed_body["error"]
+  end
+
+  test "index still reads for a bot without an agent row" do
+    bot = User.create_bot!(name: "Legacy Reader")
+    @room.memberships.grant_to(bot)
+
+    get room_bot_messages_url(@room, bot.bot_key)
+
+    assert_response :success
+    assert_equal @room.messages.ordered.map(&:id), response.parsed_body.map { it["id"] }
+  end
+
   private
     def post_bot_message(body)
       post room_bot_messages_url(@room, users(:bender).bot_key), params: +body
