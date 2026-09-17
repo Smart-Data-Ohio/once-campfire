@@ -617,7 +617,7 @@ export default class extends Controller {
     const canStatus = Boolean(permissions.can_update_work_status || permissions.can_manage_work)
     const canAssign = Boolean(permissions.can_assign_work)
     this.workStatusLabelTarget.textContent = this.#workStatusLabel(thread.work_status)
-    this.workOwnerLabelTarget.textContent = this.#workOwnerLabel(thread)
+    this.#renderWorkOwnerLabel(thread)
     this.workStatusTarget.value = thread.work_status || "planned"
     this.workStatusTarget.disabled = !canStatus
     this.#renderWorkOwnerOptions(thread, canAssign)
@@ -631,7 +631,8 @@ export default class extends Controller {
     const owner = thread.work_owner
     const owners = Array.isArray(thread.work_owner_options) ? thread.work_owner_options.slice() : []
     if (owner && !owners.some(option => String(option.id) === String(owner.id))) owners.push(owner)
-    owners.sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+    const people = owners.filter(option => !option.agent).sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+    const agents = owners.filter(option => option.agent).sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
 
     this.workOwnerTarget.replaceChildren()
     const unassigned = document.createElement("option")
@@ -639,17 +640,28 @@ export default class extends Controller {
     unassigned.textContent = "Unassigned"
     this.workOwnerTarget.append(unassigned)
 
-    owners.forEach(option => {
-      const element = document.createElement("option")
-      element.value = String(option.id)
-      const isCurrentOwnerRemoved = owner && String(option.id) === String(owner.id) && thread.work_owner_active === false
-      const unavailable = option.active === false || option.human === false || isCurrentOwnerRemoved
-      element.textContent = unavailable ? `${option.name} (unavailable)` : option.name
-      element.disabled = unavailable
-      this.workOwnerTarget.append(element)
-    })
+    people.forEach(option => this.workOwnerTarget.append(this.#workOwnerOption(option, owner, thread)))
+
+    if (agents.length > 0) {
+      const group = document.createElement("optgroup")
+      group.label = "Agents"
+      agents.forEach(option => group.append(this.#workOwnerOption(option, owner, thread)))
+      this.workOwnerTarget.append(group)
+    }
     this.workOwnerTarget.value = owner?.id ? String(owner.id) : ""
     this.workOwnerTarget.disabled = !canAssign
+  }
+
+  #workOwnerOption(option, owner, thread) {
+    const element = document.createElement("option")
+    element.value = String(option.id)
+    const isCurrentOwnerRemoved = owner && String(option.id) === String(owner.id) && thread.work_owner_active === false
+    const unavailable = option.active === false || isCurrentOwnerRemoved
+    element.textContent = unavailable ? `${option.name} (unavailable)` : option.name
+    element.disabled = unavailable
+    const details = [ option.provider, option.description ].filter(detail => detail).join(" · ")
+    if (details) element.title = details
+    return element
   }
 
   #renderWorkHistory(thread) {
@@ -668,6 +680,7 @@ export default class extends Controller {
       const beforeOwner = before.owner?.name || "Unassigned"
       const afterOwner = after.owner?.name || "Unassigned"
       if (beforeOwner !== afterOwner) changes.push(`Owner: ${beforeOwner} → ${afterOwner}`)
+      if (event.note) changes.push(`Note: ${event.note}`)
       const timestamp = this.#dateText(event.created_at || event.createdAt)
       item.textContent = `${actor} · ${changes.join(" · ") || "Work updated"}${timestamp ? ` · ${timestamp}` : ""}`
       this.workHistoryListTarget.append(item)
@@ -832,12 +845,21 @@ export default class extends Controller {
     }[status] || String(status || "Planned").replaceAll("_", " ")
   }
 
-  #workOwnerLabel(thread) {
+  #renderWorkOwnerLabel(thread) {
     const owner = thread.work_owner
-    if (!owner) return "Owner: Unassigned"
-    return thread.work_owner_active === false || owner.active === false
-      ? `Owner unavailable: ${owner.name}`
-      : `Owner: ${owner.name}`
+    this.workOwnerLabelTarget.replaceChildren()
+    if (!owner) {
+      this.workOwnerLabelTarget.textContent = "Owner: Unassigned"
+      return
+    }
+    const unavailable = thread.work_owner_active === false || owner.active === false
+    this.workOwnerLabelTarget.append(unavailable ? `Owner unavailable: ${owner.name}` : `Owner: ${owner.name}`)
+    if (owner.agent) {
+      const badge = document.createElement("span")
+      badge.className = "agent-badge"
+      badge.textContent = "agent"
+      this.workOwnerLabelTarget.append(badge)
+    }
   }
 
   #statusLabel(thread) {

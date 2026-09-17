@@ -11,7 +11,7 @@
           <% if thread.work? %>
             <% owner = thread.work_owner %>
             <% owner_label = owner.blank? ? "Unassigned" : thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
-            <span>Work: <%= thread.work_status_label %> · <%= owner_label %></span>
+            <span>Work: <%= thread.work_status_label %> · <%= owner_label %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %></span>
           <% end %>
         </li>
       <% end %>

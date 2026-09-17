@@ -59,6 +59,39 @@ derived from the MIME type. The chip renders a small inline SVG per kind; it
 never loads Google's `iconLink` image, which would be a third-party request
 per chip.
 
+## Finding files from the composer
+
+Members with Drive previews enabled get a **Drive** button in the message
+composer toolbar (it renders only when the page carries the
+`google-drive-previews` meta tag). The button opens a small popover with a
+search field and up to ten matching rows: a file-type icon, the file name,
+"Modified \<relative time\>", and the owner's name. The recent list shows
+immediately; typing filters by file name. Choosing a row inserts the file's
+link at the caret, and the preview chip renders it once the message is
+sent. Escape and outside click close the popover; arrow keys move through
+results.
+
+The popover talks to `GET /google/drive/files?q=<text>`, which calls Drive
+`files.list` with the viewer's token (`pageSize=10`,
+`fields=files(id,name,mimeType,modifiedTime,owners(displayName),webViewLink)`,
+`orderBy=modifiedTime desc`, `spaces=drive`). A blank `q` lists recent
+files (`trashed=false`); otherwise the query is `name contains '<term>'
+and trashed=false`, where single quotes and backslashes in the term are
+escaped per the Drive query grammar (`\'`, `\\`). `q` is trimmed and
+capped at 100 characters. The response shape (`{ files: [ { id, name,
+kind, modified_at, owner, url } ] }`) and the `kind` derivation match the
+preview endpoint. Google failures answer 502 with
+`{ error: "drive_unavailable" }`; a revoked grant answers 404 like the
+preview endpoint. Results are never stored.
+
+List calls are throttled to 30 per user per minute (a `Rails.cache`
+minute-bucketed counter); past that the endpoint answers 429 with
+`{ error: "rate_limited" }` and the popover shows "Try again in a moment".
+
+Results are the viewer's own Drive view: nothing is shared until the
+member sends the message, and then only the link, which other viewers
+resolve with their own credentials as with pasted Drive links.
+
 ## The 404 policy
 
 The endpoint answers **404 with an empty body** in every denial case: the

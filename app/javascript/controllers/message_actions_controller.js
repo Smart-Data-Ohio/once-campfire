@@ -26,6 +26,7 @@ export default class extends Controller {
   #forwardDestinationsController
   #previouslyFocusedElement
   #menuPoint
+  #mobileSheetQuery
   #menuId
   #announceTimer
   #forwardPreviouslyFocusedElement
@@ -596,6 +597,15 @@ export default class extends Controller {
   #positionMenu() {
     if (!this.#open || !this.menuTarget || this.menuTarget.hidden) return
 
+    if (this.#isMobileSheet()) {
+      // The mobile bottom sheet is placed entirely by CSS. Clear any
+      // pointer-anchored coordinates so scrolling, resizing, or metadata
+      // arriving late can't fight the fixed placement.
+      this.menuTarget.style.left = ""
+      this.menuTarget.style.top = ""
+      return
+    }
+
     const point = this.#menuPoint || { x: 0, y: 0 }
     const rect = this.menuTarget.getBoundingClientRect()
     const viewportHeight = window.visualViewport?.height || window.innerHeight
@@ -609,6 +619,12 @@ export default class extends Controller {
   // Keep the menu above the home indicator on phones with a bottom inset.
   #safeAreaBottom() {
     return parseFloat(getComputedStyle(this.menuTarget).getPropertyValue("--safe-area-bottom")) || 0
+  }
+
+  // Matches the bottom-sheet breakpoint in messages.css so JS and CSS agree.
+  #isMobileSheet() {
+    this.#mobileSheetQuery ??= window.matchMedia("(max-width: 100ch), (pointer: coarse)")
+    return this.#mobileSheetQuery.matches
   }
 
   #showMenuPopover() {

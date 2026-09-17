@@ -24,7 +24,8 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_match "All Talk", response.body
     assert_match "Workspace-wide", response.body
-    assert_match "not yet enforced", response.body
+    assert_match "enforced", response.body
+    assert_no_match "not yet enforced", response.body
     assert_no_match "Legacy access", response.body
   end
 

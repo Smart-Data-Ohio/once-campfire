@@ -15,7 +15,8 @@ class Agents::EventsController < ApplicationController
   # agent's own deliverable rows ordered by id. Readability (message exists,
   # membership, read grant) filters in SQL before the limit applies, so
   # revoked rows can never hide newer readable rows. Approval decision rows
-  # carry no message and render an approval payload instead.
+  # carry no message and render an approval payload instead; work rows
+  # render a work payload instead.
   def index
     no_store_response!
 
@@ -33,6 +34,7 @@ class Agents::EventsController < ApplicationController
       .to_a
 
     @approval_cache = AgentApproval.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["approval_id"] }).index_by(&:id)
+    @thread_cache = ChannelThread.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["thread_id"] }).includes(:room).index_by(&:id)
 
     render json: events.filter_map { |event| poll_payload(agent, event) }
   end
@@ -85,10 +87,11 @@ class Agents::EventsController < ApplicationController
         return
       end
 
-      # Approval decisions carry no message and are always ackable by their
-      # own agent. Clearing the room forces the capability check below to
-      # the workspace-wide form, matching the polling endpoint.
-      if @agent_event.event_type == "approval_decided"
+      # Approval decisions and work assignments carry no message and are
+      # always ackable by their own agent. Clearing the room forces the
+      # capability check below to the workspace-wide form, matching the
+      # polling endpoint.
+      if @agent_event.event_type == "approval_decided" || AgentEvent::WORK_DELIVERABLE_TYPES.include?(@agent_event.event_type)
         @room = nil
         @message = nil
         return
@@ -114,6 +117,10 @@ class Agents::EventsController < ApplicationController
         return approval_poll_payload(event)
       end
 
+      if AgentEvent::WORK_DELIVERABLE_TYPES.include?(event.event_type)
+        return work_poll_payload(agent, event)
+      end
+
       message = event.message
       room = event.room
       return if message.nil? || room.nil?
@@ -129,6 +136,25 @@ class Agents::EventsController < ApplicationController
         room: { id: room.id, name: room.name },
         actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
         message: message_payload(message)
+      }.compact
+    end
+
+    def work_poll_payload(agent, event)
+      metadata = event.metadata.is_a?(Hash) ? event.metadata : {}
+      thread = @thread_cache&.dig(metadata["thread_id"]) || ChannelThread.find_by(id: metadata["thread_id"])
+      room = event.room
+      return if thread.nil? || room.nil?
+      return unless Membership.exists?(user_id: agent.user_id, room_id: room.id)
+      return unless agent.can?(:read_messages, room)
+
+      {
+        id: event.id,
+        event_type: event.event_type,
+        outcome: event.outcome,
+        created_at: event.created_at&.utc,
+        room: { id: room.id, name: room.name },
+        actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
+        work: Agent::Delivery.work_payload(thread, assigned_by: metadata["assigned_by"])
       }.compact
     end
 
