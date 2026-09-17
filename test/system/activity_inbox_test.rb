@@ -57,11 +57,11 @@ class ActivityInboxTest < ApplicationSystemTestCase
     assert_selector "##{dom_id(@item)}"
 
     visit user_profile_url
-    uncheck "user_inbox_preferences_event_reminders"
-    form = find("#user_inbox_preferences_event_reminders").ancestor("form")
+    find("#user_inbox_preferences_event_reminders", visible: :all).ancestor("label").click
+    form = find("#user_inbox_preferences_event_reminders", visible: :all).ancestor("form")
     within(form) { find("button[type='submit']").click }
 
-    assert_selector "#user_inbox_preferences_event_reminders:not(:checked)"
+    assert_selector "#user_inbox_preferences_event_reminders:not(:checked)", visible: :all
     assert_equal false, users(:david).reload.inbox_preferences.event_reminders
   end
 end
