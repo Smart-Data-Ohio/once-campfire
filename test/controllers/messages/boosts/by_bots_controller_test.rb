@@ -55,6 +55,13 @@ class Messages::Boosts::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_response :created
   end
 
+  test "create rejects an unknown brand shortcode" do
+    assert_no_difference -> { Boost.count } do
+      post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +":nope_not_real:"
+      assert_response :unprocessable_content
+    end
+  end
+
   test "create without content" do
     assert_no_difference -> { Boost.count } do
       post room_bot_message_boosts_url(@room, @bot.bot_key, @message)

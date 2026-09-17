@@ -7,10 +7,14 @@ class Messages::Boosts::ByBotsController < Messages::BoostsController
   before_action :ensure_content_present, only: :create
 
   def create
-    @boost = @message.boosts.create!(boost_params)
+    @boost = @message.boosts.create(boost_params)
 
-    broadcast_reactions
-    render :show, status: :created
+    if @boost.persisted?
+      broadcast_reactions
+      render :show, status: :created
+    else
+      head :unprocessable_content
+    end
   end
 
   private

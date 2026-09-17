@@ -27,6 +27,8 @@ class Messages::BoostsController < ApplicationController
 
     broadcast_reactions
     redirect_to message_boosts_url(@message)
+  rescue ActiveRecord::RecordInvalid
+    redirect_to message_boosts_url(@message)
   end
 
   def destroy
