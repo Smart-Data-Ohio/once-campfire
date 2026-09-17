@@ -389,6 +389,73 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     assert_select "#board_posts .board-row", count: 0
   end
 
+  test "board index pages at fifty posts with a load more link" do
+    55.times do |index|
+      ChannelThread.create!(room: @room, creator: @creator, name: "Paged #{index}", work_status: "planned")
+    end
+
+    sign_in :jz
+    get room_url(@room)
+    assert_response :success
+    assert_select "#board_posts .board-row", count: 50
+    load_more = css_select("p.board__more a").sole
+    assert_equal "Load more", load_more.text.strip
+    assert_includes load_more["href"], "page=2"
+
+    get room_url(@room, page: 2)
+    assert_response :success
+    assert_select "#board_posts .board-row", count: 56
+    assert_select "p.board__more", count: 0
+
+    get room_url(@room, view: "board")
+    assert_response :success
+    assert_select ".board__column-list .board-row", count: 50
+    assert_select "p.board__more a", text: "Load more", count: 1
+  end
+
+  test "board rows and containers carry filter data for live updates" do
+    @post.update!(work_owner_id: users(:kevin).id)
+    @post.tag_names = "api, launch"
+    @post.save!
+
+    sign_in :jz
+    get room_url(@room, status: "all", owner: users(:kevin).id, tag: "api")
+    assert_response :success
+    assert_select "#board_posts[data-controller='board-list'][data-board-list-status-value='all']" \
+      "[data-board-list-owner-value='#{users(:kevin).id}'][data-board-list-tag-value='api']" \
+      "[data-board-list-current-user-id-value='#{users(:jz).id}']"
+    assert_select "##{ActionView::RecordIdentifier.dom_id(@post, :board_row)}" \
+      "[data-board-row][data-status='planned'][data-owner-id='#{users(:kevin).id}']" \
+      "[data-owner-agent='false'][data-tags='api launch']"
+
+    get room_url(@room, view: "board")
+    assert_response :success
+    assert_select ".board__columns[data-controller='board-list'][data-board-list-status-value='all']"
+  end
+
+  test "rendering the board index costs no extra queries per post" do
+    create_board_posts(2, offset: 0)
+
+    sign_in :jz
+    # Warm per-process caches (the workspace icon registry's version stamp)
+    # so the two measured renders share the same constant cold-cache cost.
+    get room_url(@room)
+    assert_response :success
+
+    small = count_board_queries { get room_url(@room) }
+    assert_response :success
+    assert_select "#board_posts .board-row", count: 3
+
+    create_board_posts(4, offset: 10)
+
+    large = count_board_queries { get room_url(@room) }
+    assert_response :success
+    assert_select "#board_posts .board-row", count: 7
+
+    assert_equal small, large,
+      "board render should be O(1) in queries, got #{small} then #{large}"
+  end
+
   test "board rendering groups posts into read-only status columns" do
     @post.update!(work_status: "in_progress")
     done = ChannelThread.create!(room: @room, creator: @creator, name: "Finished", work_status: "done")
@@ -398,8 +465,10 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     get room_url(@room, view: "board")
     assert_response :success
     assert_select ".board__column", count: 4
-    assert_select ".board__column[aria-label='In progress'] ##{ActionView::RecordIdentifier.dom_id(@post, :board_row)}"
-    assert_select ".board__column[aria-label='Done'] ##{ActionView::RecordIdentifier.dom_id(done, :board_row)}"
+    assert_select ".board__column[aria-label='In progress'] ##{ActionView::RecordIdentifier.dom_id(@post, :board_column_row)}"
+    assert_select ".board__column[aria-label='Done'] ##{ActionView::RecordIdentifier.dom_id(done, :board_column_row)}"
+    assert_select "#board_column_in_progress ##{ActionView::RecordIdentifier.dom_id(@post, :board_column_row)}"
+    assert_select "#board_column_done ##{ActionView::RecordIdentifier.dom_id(done, :board_column_row)}"
     assert_select ".board__column[aria-label='Planned'] .board-row", count: 0
     assert_select "form.board__filters select[name='status']", count: 0
 
@@ -469,4 +538,36 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     post room_bot_messages_url(rooms(:watercooler), users(:bender).bot_key), params: +"Channel root message"
     assert_response :created
   end
+
+  private
+    def create_board_posts(count, offset:)
+      count.times do |index|
+        number = offset + index
+        post = ChannelThread.create!(room: @room, creator: @creator,
+          name: "Query post #{number}", work_status: "planned",
+          work_owner_id: (number.even? ? users(:kevin).id : @creator.id))
+        post.tag_names = "query, probe-#{number}"
+        post.save!
+        post.post_message!(creator: @creator, attributes: {
+          markdown_source: "Reply #{number}", client_message_id: "board-query-#{number}"
+        })
+        WorkThreadLink.create!(channel_thread: post, kind: "drive_file",
+          url: "https://drive.google.com/file/d/boardquery#{number}", created_by: @creator)
+      end
+    end
+
+    # Same shape as the count_queries in GithubPrCardsTest: every SQL
+    # statement except schema loads and query-cache hits.
+    def count_board_queries
+      count = 0
+      subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+        count += 1 unless payload[:name] == "SCHEMA" || payload[:cached]
+      end
+
+      ActiveRecord::Base.connection.clear_query_cache
+      yield
+      count
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
+    end
 end

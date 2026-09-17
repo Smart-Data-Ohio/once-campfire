@@ -17,9 +17,21 @@
 <% owner_filter = params[:owner].to_s.presence || "anyone" %>
 <% tag_filter = params[:tag].to_s.strip %>
 <% effective_status = board_view == "board" ? "all" : status_filter %>
-<% posts = ChannelThread.board_posts_for(@room, status: effective_status, owner: owner_filter, tag: tag_filter, viewer: Current.user).to_a %>
+<% page_number = [ [ params[:page].to_s.to_i, 1 ].max, ChannelThread::BOARD_POSTS_MAX_PAGE ].min %>
+<% page_size = page_number * ChannelThread::BOARD_POSTS_PER_PAGE %>
+<% posts_plus_probe = ChannelThread.board_posts_for(@room, status: effective_status, owner: owner_filter, tag: tag_filter, viewer: Current.user, page: page_number).to_a %>
+<% has_more_posts = posts_plus_probe.size > page_size %>
+<% posts = posts_plus_probe.first(page_size) %>
 <% tag_counts = ChannelThread.board_tag_counts(@room) %>
 <% filter_params = { status: status_filter, owner: owner_filter, tag: tag_filter.presence }.compact %>
+<%# One grouped count per page for replies, links, and owner availability, %>
+<%# shared by every row so the list costs the same queries for 5 or 50 posts. %>
+<% reply_counts = ChannelThread.board_reply_counts(posts) %>
+<% link_counts = ChannelThread.board_link_counts(posts) %>
+<% owner_active_map = ChannelThread.board_owner_active_map(@room, posts) %>
+<% row_locals = { reply_counts:, link_counts:, owner_active_map: } %>
+<% more_params = (board_view == "board" ? filter_params.except(:status) : filter_params).merge(view: board_view, page: page_number + 1) %>
+<% list_filter_values = { status: board_view == "board" ? "all" : status_filter, owner: owner_filter, tag: tag_filter, current_user_id: Current.user.id } %>
 
 <main class="board" aria-labelledby="board-title">
   <header class="board__header">
@@ -69,7 +81,11 @@
       <% end %>
     </p>
   <% elsif board_view == "board" %>
-    <div class="board__columns">
+    <div class="board__columns" data-controller="board-list"
+         data-board-list-status-value="<%= list_filter_values[:status] %>"
+         data-board-list-owner-value="<%= list_filter_values[:owner] %>"
+         data-board-list-tag-value="<%= list_filter_values[:tag] %>"
+         data-board-list-current-user-id-value="<%= list_filter_values[:current_user_id] %>">
       <% ChannelThread::WORK_STATUSES.each do |status| %>
         <% column_posts = posts.select { |post| post.work_status == status } %>
         <section class="board__column" aria-label="<%= ChannelThread::WORK_STATUS_LABELS.fetch(status) %>">
@@ -77,16 +93,25 @@
             <%= ChannelThread::WORK_STATUS_LABELS.fetch(status) %>
             <span class="board__column-count"><%= column_posts.count %></span>
           </h2>
-          <div class="board__column-list" role="list">
-            <%= render partial: "rooms/boards/row", collection: column_posts, as: :thread %>
+          <div id="board_column_<%= status %>" class="board__column-list" role="list">
+            <%= render partial: "rooms/boards/row", collection: column_posts, as: :thread,
+                  locals: row_locals.merge(dom_suffix: :board_column_row) %>
           </div>
         </section>
       <% end %>
     </div>
   <% else %>
-    <div id="board_posts" class="board__list" role="list">
-      <%= render partial: "rooms/boards/row", collection: posts, as: :thread %>
+    <div id="board_posts" class="board__list" role="list" data-controller="board-list"
+         data-board-list-status-value="<%= list_filter_values[:status] %>"
+         data-board-list-owner-value="<%= list_filter_values[:owner] %>"
+         data-board-list-tag-value="<%= list_filter_values[:tag] %>"
+         data-board-list-current-user-id-value="<%= list_filter_values[:current_user_id] %>">
+      <%= render partial: "rooms/boards/row", collection: posts, as: :thread, locals: row_locals %>
     </div>
+  <% end %>
+
+  <% if has_more_posts %>
+    <p class="board__more"><%= link_to "Load more", room_path(@room, **more_params), class: "btn" %></p>
   <% end %>
 
   <%= turbo_stream_from @room, :messages, channel: "RoomMessagesChannel" %>

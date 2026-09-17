@@ -5,6 +5,8 @@ class ChannelThread < ApplicationRecord
   TAG_LIMIT = 5
   RESULT_LIMIT = 20_000
   RUN_URL_LIMIT = 500
+  BOARD_POSTS_PER_PAGE = 50
+  BOARD_POSTS_MAX_PAGE = 20
   BOARD_ROW_BROADCAST_ATTRIBUTES = %w[ name work_status work_owner_id last_activity_at ].freeze
   WORK_STATUSES = %w[ planned in_progress blocked done ].freeze
   WORK_STATUS_LABELS = {
@@ -83,10 +85,15 @@ class ChannelThread < ApplicationRecord
     end
 
     # The board index query behind GET /rooms/:id for a board room. Filters
-    # arrive as query parameters and are remembered nowhere else.
-    def board_posts_for(room, status: nil, owner: nil, tag: nil, viewer: nil)
-      scope = room.channel_threads.ordered.includes(:creator, :work_owner, :tags,
-        work_thread_links: %i[ github_pull_request event ])
+    # arrive as query parameters and are remembered nowhere else. Paging is
+    # cumulative: page N shows the first N windows of BOARD_POSTS_PER_PAGE
+    # posts, so the "Load more" link appends the next window below the rows
+    # already shown. The relation carries one probe row past the window so
+    # the caller can tell whether more pages exist without a COUNT query;
+    # slice it off before rendering. The page is clamped so a crafted
+    # parameter cannot render the whole table.
+    def board_posts_for(room, status: nil, owner: nil, tag: nil, viewer: nil, page: 1)
+      scope = room.channel_threads.ordered.includes(:creator, :work_owner, :tags)
 
       scope = case status.to_s
       when "done"
@@ -112,7 +119,8 @@ class ChannelThread < ApplicationRecord
         scope = scope.where(id: ThreadTag.where(name: tag.to_s.strip.downcase).select(:channel_thread_id))
       end
 
-      scope
+      page_number = [ [ page.to_s.to_i, 1 ].max, BOARD_POSTS_MAX_PAGE ].min
+      scope.limit(page_number * BOARD_POSTS_PER_PAGE + 1)
     end
 
     # The board's tag filter options: distinct tag names across its posts
@@ -121,6 +129,69 @@ class ChannelThread < ApplicationRecord
       ThreadTag.where(channel_thread_id: room.channel_threads.select(:id))
         .group(:name).order(:name).count
     end
+
+    # Reply and linked-object counts for one board page in one grouped query
+    # each, so the rows render no count query of their own. Posts without
+    # replies or links are absent from the hashes; the rows default them
+    # to zero.
+    def board_reply_counts(posts)
+      ids = posts.map(&:id)
+      return {} if ids.empty?
+
+      Message.where(thread_id: ids).group(:thread_id).count
+    end
+
+    def board_link_counts(posts)
+      ids = posts.map(&:id)
+      return {} if ids.empty?
+
+      WorkThreadLink.where(channel_thread_id: ids).group(:channel_thread_id).count
+    end
+
+    # Whether each post's owner counts as available, computed once per board
+    # page instead of once per row. Mirrors work_owner_active? exactly:
+    # humans need an active account plus board membership, while agents
+    # additionally need an active Agent row and the post_messages capability
+    # in the board (legacy agents without any grant keep it, as Agent#can?
+    # reports). Owners stay preloaded; only the membership ids and the two
+    # grouped grant lookups below touch the database.
+    def board_owner_active_map(room, posts)
+      owners = posts.filter_map(&:work_owner).uniq(&:id)
+      return {} if owners.empty?
+
+      owner_ids = owners.map(&:id)
+      member_ids = room.memberships.where(user_id: owner_ids).pluck(:user_id).to_set
+      agents_by_user_id = Agent.where(user_id: owner_ids).index_by(&:user_id)
+      agent_ids = agents_by_user_id.values.map(&:id)
+      if agent_ids.empty?
+        granted_agent_ids = Set.new
+        ever_granted_agent_ids = Set.new
+      else
+        granted_agent_ids = AgentGrant.active
+          .where(agent_id: agent_ids, capability: "post_messages", room_id: [ room.id, nil ])
+          .pluck(:agent_id).to_set
+        ever_granted_agent_ids = AgentGrant.where(agent_id: agent_ids).group(:agent_id).count.keys.to_set
+      end
+
+      owners.to_h do |owner|
+        eligible = owner.active? && member_ids.include?(owner.id)
+        if eligible && owner.bot?
+          agent = agents_by_user_id[owner.id]
+          eligible = agent.present? && agent.suspended_at.nil? &&
+            agent_post_eligible?(agent, granted_agent_ids, ever_granted_agent_ids)
+        end
+        [ owner.id, eligible ]
+      end
+    end
+
+    private
+      def agent_post_eligible?(agent, granted_agent_ids, ever_granted_agent_ids)
+        if ever_granted_agent_ids.include?(agent.id)
+          granted_agent_ids.include?(agent.id)
+        else
+          Agent::LEGACY_CAPABILITIES.include?("post_messages")
+        end
+      end
   end
 
   def status

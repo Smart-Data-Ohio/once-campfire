@@ -95,6 +95,11 @@
   margin-block-start: 1.5rem;
 }
 
+.board__more {
+  margin-block-start: 1.2rem;
+  text-align: center;
+}
+
 .board-row {
   background: var(--workspace-surface, var(--color-bg));
   border: 1px solid var(--workspace-border, var(--color-border));

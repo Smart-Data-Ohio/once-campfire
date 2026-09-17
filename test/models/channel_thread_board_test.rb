@@ -189,6 +189,70 @@ class ChannelThreadBoardTest < ActiveSupport::TestCase
     assert_equal({ "bug" => 1 }, ChannelThread.board_tag_counts(@room))
   end
 
+  test "board posts page cumulatively at fifty per page with a clamped page" do
+    55.times do |index|
+      ChannelThread.create!(room: @room, creator: @creator, name: "Post #{index}", work_status: "planned")
+    end
+
+    first_page = ChannelThread.board_posts_for(@room, page: 1).to_a
+    assert_equal 51, first_page.size # the window plus the more-pages probe row
+    assert_equal "Post 54", first_page.first.name # newest activity first
+
+    second_page = ChannelThread.board_posts_for(@room, page: 2).to_a
+    assert_equal 55, second_page.size # cumulative: both windows, no probe row left
+
+    assert_equal first_page.map(&:id), ChannelThread.board_posts_for(@room, page: 0).map(&:id)
+    assert_equal first_page.map(&:id), ChannelThread.board_posts_for(@room, page: "junk").map(&:id)
+    assert_equal 55, ChannelThread.board_posts_for(@room, page: 999).count
+  end
+
+  test "board page counts group replies and links without per-row queries" do
+    post = ChannelThread.create!(room: @room, creator: @creator, name: "Linked", work_status: "planned")
+    2.times do |index|
+      post.post_message!(creator: @creator, attributes: { markdown_source: "Reply #{index}", client_message_id: "count-#{index}" })
+    end
+    WorkThreadLink.create!(channel_thread: post, kind: "drive_file",
+      url: "https://drive.google.com/file/d/count1234567", created_by: @creator)
+    quiet = ChannelThread.create!(room: @room, creator: @creator, name: "Quiet", work_status: "planned")
+
+    posts = ChannelThread.board_posts_for(@room, status: "all").to_a
+    assert_equal({ post.id => 2 }, ChannelThread.board_reply_counts(posts))
+    assert_equal({ post.id => 1 }, ChannelThread.board_link_counts(posts))
+    assert_equal({}, ChannelThread.board_reply_counts([]))
+    assert_equal({}, ChannelThread.board_link_counts([]))
+    assert_equal({}, ChannelThread.board_reply_counts([ quiet ]))
+  end
+
+  test "board owner availability matches work_owner_active? for every owner kind" do
+    agent_user = User.create_bot!(name: "Board Worker")
+    agent = agent_user.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(agent_user)
+    AgentGrant.create!(agent: agent, room: @room, granted_by: users(:david), capability: "post_messages")
+
+    member_post = ChannelThread.create!(room: @room, creator: @creator, name: "Member",
+      work_status: "planned", work_owner_id: users(:kevin).id)
+    agent_post = ChannelThread.create!(room: @room, creator: @creator, name: "Agent",
+      work_status: "planned", work_owner_id: agent_user.id)
+    unassigned = ChannelThread.create!(room: @room, creator: @creator, name: "Nobody", work_status: "planned")
+
+    posts = ChannelThread.board_posts_for(@room, status: "all").to_a
+    assert_equal({ users(:kevin).id => true, agent_user.id => true },
+      ChannelThread.board_owner_active_map(@room, posts))
+    assert_equal({}, ChannelThread.board_owner_active_map(@room, [ unassigned ]))
+    assert_equal({}, ChannelThread.board_owner_active_map(@room, []))
+
+    @room.memberships.find_by!(user: users(:kevin)).destroy!
+    AgentGrant.revoke_for_membership!(@room.memberships.find_by!(user_id: agent_user.id))
+
+    posts.each(&:reload)
+    assert_equal member_post.work_owner_active?,
+      ChannelThread.board_owner_active_map(@room, posts).fetch(users(:kevin).id)
+    assert_equal agent_post.work_owner_active?,
+      ChannelThread.board_owner_active_map(@room, posts).fetch(agent_user.id)
+    assert_not member_post.work_owner_active?
+    assert_not agent_post.work_owner_active?
+  end
+
   test "agent owner filter matches update-work eligibility" do
     agent_user = User.create_bot!(name: "Board Worker")
     agent = agent_user.create_agent!(kind: :workspace, owner: users(:david))

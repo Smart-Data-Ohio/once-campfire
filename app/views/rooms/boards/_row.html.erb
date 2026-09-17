@@ -1,6 +1,20 @@
+<%# The board index passes reply_counts, link_counts, and owner_active_map %>
+<%# (one grouped query each per page); live row broadcasts render a single %>
+<%# row without them and fall back to per-row queries. dom_suffix keeps the %>
+<%# column rendering's row id distinct from the list's, so a status change %>
+<%# can move the row between columns without touching list viewers. %>
+<% dom_suffix = local_assigns[:dom_suffix] || :board_row %>
+<% reply_counts = local_assigns[:reply_counts] %>
+<% link_counts = local_assigns[:link_counts] %>
+<% owner_active_map = local_assigns[:owner_active_map] %>
 <% owner = thread.work_owner %>
-<% owner_label = owner.blank? ? "Unassigned" : thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
-<div id="<%= dom_id(thread, :board_row) %>" class="board-row" role="listitem">
+<% owner_active = owner_active_map ? owner_active_map.fetch(owner&.id, false) : thread.work_owner_active? %>
+<% owner_label = owner.blank? ? "Unassigned" : owner_active ? owner.name : "Owner unavailable (#{owner.name})" %>
+<% reply_count = reply_counts ? reply_counts.fetch(thread.id, 0) : thread.messages.count %>
+<% link_count = link_counts ? link_counts.fetch(thread.id, 0) : thread.work_thread_links.size %>
+<div id="<%= dom_id(thread, dom_suffix) %>" class="board-row" role="listitem"
+     data-board-row data-status="<%= thread.work_status %>" data-owner-id="<%= thread.work_owner_id %>"
+     data-owner-agent="<%= owner&.bot? ? "true" : "false" %>" data-tags="<%= thread.tag_names.join(" ") %>">
   <%= link_to room_thread_path(thread.room, thread), class: "board-row__link" do %>
     <div class="board-row__heading">
       <strong class="board-row__title"><%= thread.name %></strong>
@@ -18,8 +32,8 @@
       </span>
     <% end %>
     <span class="board-row__meta">
-      <%= pluralize(thread.messages.count, "reply") %> ·
-      <%= pluralize(thread.work_thread_links.size, "linked object") %> ·
+      <%= pluralize(reply_count, "reply") %> ·
+      <%= pluralize(link_count, "linked object") %> ·
       Updated <%= time_tag thread.last_activity_at, data: { local_time_target: "datetime" } %>
     </span>
   <% end %>
