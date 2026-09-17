@@ -25,7 +25,7 @@ module Github
       sha = data["head"]["sha"]
 
       attributes = card_attributes(data).merge(
-        review_decision: review_decision(data),
+        review_decision: review_decision,
         check_status: check_status(sha),
         payload: data,
         fetched_at: Time.current,
@@ -67,9 +67,7 @@ module Github
         end
       end
 
-      def review_decision(data)
-        return "review_required" if data["state"] == "open" && data["draft"]
-
+      def review_decision
         decisions = fetch_reviews_latest_decisions
         if decisions.include?("CHANGES_REQUESTED")
           "changes_requested"
@@ -97,8 +95,14 @@ module Github
         runs = get("commits/#{sha}/check-runs?per_page=100").fetch("check_runs", [])
         statuses = runs.filter_map { |run| run["status"] == "completed" ? run["conclusion"] : "pending" }
 
-        combined = get("commits/#{sha}/status").fetch("state", nil)
-        statuses << combined if combined.present? && (combined != "pending" || statuses.empty?)
+        combined = get("commits/#{sha}/status")
+        combined_state = combined.fetch("state", nil)
+        # The combined status reports "pending" when the commit has no
+        # statuses at all: that means no CI ran, not that checks are running.
+        has_statuses = combined.fetch("total_count", 0).to_i > 0
+        if combined_state.present? && (combined_state != "pending" || (statuses.empty? && has_statuses))
+          statuses << combined_state
+        end
 
         if statuses.intersect?(%w[ failure error timed_out action_required ])
           "failing"

@@ -34,7 +34,7 @@
       <% end %>
 
       <% if checks_label = github_pr_checks_label(pull_request) %>
-        <span class="github-pr-card__checks github-pr-card__checks--<%= pull_request.check_status %>"><%= checks_label %></span>
+        <span class="github-pr-card__checks github-pr-card__checks--<%= pull_request.check_status || "none" %>"><%= checks_label %></span>
       <% end %>
     </div>
   <% else %>
@@ -46,6 +46,6 @@
       <span class="github-pr-card__updated">Updated <%= local_datetime_tag pull_request.github_updated_at %></span>
     <% end %>
     <%= link_to "View on GitHub", pull_request.html_url || "https://github.com/#{pull_request.full_name}/pull/#{pull_request.number}",
-          class: "github-pr-card__link", target: "_blank", rel: "noopener" %>
+          class: "github-pr-card__link", target: "_blank", rel: "noopener noreferrer" %>
   </footer>
 </article>

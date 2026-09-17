@@ -79,6 +79,7 @@
 .github-pr-card__checks--passing { color: var(--color-positive); }
 .github-pr-card__checks--failing { color: var(--color-negative); }
 .github-pr-card__checks--pending { color: var(--color-alert); }
+.github-pr-card__checks--none { opacity: 0.7; }
 
 .github-pr-card__error {
   margin: 0.35rem 0 0;

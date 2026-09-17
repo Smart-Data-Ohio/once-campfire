@@ -3,10 +3,12 @@ module Github
   # canonical /pull/<number> form and /pulls/<number> variants, with any
   # trailing path, query, or fragment (e.g. /files, ?diff=split).
   module PullRequestUrl
+    # Owner and repo segments exclude exactly "." and "..", which GitHub
+    # never issues as names, so traversal-looking URLs never match.
     PATTERN = %r{
       https://github\.com/
-      (?<owner>[A-Za-z0-9_.-]+)/
-      (?<repo>[A-Za-z0-9_.-]+)/
+      (?<owner>(?!\.\.?/)[A-Za-z0-9_.-]+)/
+      (?<repo>(?!\.\.?/)[A-Za-z0-9_.-]+)/
       (?:pull|pulls)/
       (?<number>\d+)\b
     }x
