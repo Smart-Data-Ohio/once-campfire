@@ -8,6 +8,7 @@ class ActivityItemsController < ApplicationController
 
   def index
     no_store_response!
+    Huddle::InvitationResolver.resolve_overdue!(user: Current.user)
     @activity_items = filtered_activity_items
     @next_cursor = @activity_items.length == PAGE_SIZE ? @activity_items.last.id : nil
     @unread_count = accessible_activity_items.unread.count
@@ -172,6 +173,16 @@ class ActivityItemsController < ApplicationController
           room_id: thread&.room_id,
           thread_id: thread&.id,
           creator_id: source.actor_id,
+          body: activity_item_source_body(item).truncate(500),
+          path: activity_item_source_path(item)
+        }
+      when HuddleGrant
+        {
+          type: item.source_type,
+          id: source.id,
+          room_id: source.room_id,
+          thread_id: nil,
+          creator_id: source.user_id,
           body: activity_item_source_body(item).truncate(500),
           path: activity_item_source_path(item)
         }

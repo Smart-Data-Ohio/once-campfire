@@ -1,0 +1,18 @@
+<div id="huddle-invitation"
+     class="huddle-invitation shadow"
+     data-controller="huddle-invitation"
+     role="alertdialog"
+     aria-labelledby="huddle-invitation-title"
+     aria-describedby="huddle-invitation-description"
+     hidden>
+  <div class="huddle-invitation__text min-width">
+    <p class="huddle-invitation__kicker">Incoming huddle</p>
+    <p id="huddle-invitation-title" class="huddle-invitation__title overflow-ellipsis" data-huddle-invitation-target="title"></p>
+    <p id="huddle-invitation-description" class="huddle-invitation__description overflow-ellipsis" data-huddle-invitation-target="description"></p>
+  </div>
+
+  <div class="huddle-invitation__actions">
+    <button type="button" class="btn btn--primary" data-action="huddle-invitation#join">Join</button>
+    <button type="button" class="btn btn--plain" data-action="huddle-invitation#dismiss">Dismiss</button>
+  </div>
+</div>

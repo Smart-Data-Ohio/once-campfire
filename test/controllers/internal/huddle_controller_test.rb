@@ -133,6 +133,48 @@ class Internal::HuddleControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a successful authorization records liveness without changing the response" do
+    assert_nil @huddle.grant.last_seen_at
+
+    freeze_time do
+      post_authorize(@huddle.token)
+
+      assert_response :success
+      assert_equal expected_payload, response.parsed_body
+      assert_equal Time.current, @huddle.grant.reload.last_seen_at
+    end
+  end
+
+  test "grant lookup records liveness at most once per ten seconds" do
+    get "/internal/huddle/grants/#{@huddle.grant_id}", headers: gateway_headers
+    assert_response :success
+    assert_equal expected_payload, response.parsed_body
+    assert_not_nil @huddle.grant.reload.last_seen_at
+
+    travel 9.seconds do
+      assert_no_changes -> { @huddle.grant.reload.last_seen_at } do
+        get "/internal/huddle/grants/#{@huddle.grant_id}", headers: gateway_headers
+      end
+      assert_response :success
+    end
+
+    travel 11.seconds do
+      assert_changes -> { @huddle.grant.reload.last_seen_at } do
+        get "/internal/huddle/grants/#{@huddle.grant_id}", headers: gateway_headers
+      end
+      assert_response :success
+    end
+  end
+
+  test "a denied lookup does not record liveness" do
+    @huddle.grant.revoke!
+
+    get "/internal/huddle/grants/#{@huddle.grant_id}", headers: gateway_headers
+
+    assert_response :not_found
+    assert_nil @huddle.grant.reload.last_seen_at
+  end
+
   test "gateway authentication is required for both endpoints" do
     post "/internal/huddle/authorize", headers: { "Authorization" => "Bearer #{@huddle.token}" }
     assert_response :unauthorized
