@@ -32,6 +32,24 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_url
   end
 
+  test "connect with features[]=drive requests both scopes with incremental auth" do
+    post google_connect_path, params: { features: [ "drive" ] }
+
+    assert_response :redirect
+    query = Rack::Utils.parse_query(URI(response.location).query)
+    assert_equal "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.metadata.readonly", query["scope"]
+    assert_equal "true", query["include_granted_scopes"]
+  end
+
+  test "connect without features requests only the Calendar scope" do
+    post google_connect_path
+
+    assert_response :redirect
+    query = Rack::Utils.parse_query(URI(response.location).query)
+    assert_equal "openid email https://www.googleapis.com/auth/calendar.events", query["scope"]
+    assert_not_includes query.keys, "include_granted_scopes"
+  end
+
   test "callback with a bad state is 422" do
     get google_callback_path, params: { state: "bogus", code: "auth-code" }
 
@@ -61,6 +79,39 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
       .map { |enqueued| enqueued[:args] }
     assert_equal [ [ events(:launch_party).id, @david.id ], [ events(:watercooler_sync).id, @david.id ] ].sort,
       synced_event_ids.sort
+  end
+
+  test "callback stores the granted scope string" do
+    state = connect_state_from_redirect
+    stub_google_code_exchange(scope: DRIVE_SCOPES)
+
+    get google_callback_path, params: { state:, code: "auth-code" }
+
+    assert_redirected_to user_profile_path
+    assert_equal DRIVE_SCOPES, @david.reload.google_account.scopes
+    assert_predicate @david.google_account, :drive?
+  end
+
+  test "callback without a scope string leaves scopes unset" do
+    state = connect_state_from_redirect
+    stub_google_code_exchange
+
+    get google_callback_path, params: { state:, code: "auth-code" }
+
+    assert_redirected_to user_profile_path
+    assert_nil @david.reload.google_account.scopes
+    assert_not_predicate @david.google_account, :drive?
+  end
+
+  test "callback without a scope string keeps previously stored scopes" do
+    connect_google!(@david, scopes: DRIVE_SCOPES, disconnected_reason: "Google rejected the connection")
+    state = connect_state_from_redirect
+    stub_google_code_exchange
+
+    get google_callback_path, params: { state:, code: "auth-code" }
+
+    assert_redirected_to user_profile_path
+    assert_equal DRIVE_SCOPES, @david.reload.google_account.scopes
   end
 
   test "callback clears a previous disconnected reason on reconnect" do

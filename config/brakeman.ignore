@@ -37,25 +37,25 @@
     {
       "warning_type": "Redirect",
       "warning_code": 18,
-      "fingerprint": "a03f27d05ff187e1b68dc43c3fc57aa0537b3695646126d5f17de034d3717668",
+      "fingerprint": "5a9979227bea9f0a2cff01bcbca730dd3cfafd308aee9eb9b8779b26f032b494",
       "check_name": "Redirect",
       "message": "Possible unprotected redirect",
       "file": "app/controllers/google/connections_controller.rb",
       "line": 11,
       "link": "https://brakemanscanner.org/docs/warning_types/redirect/",
-      "code": "redirect_to(Google::Client.authorize_url(:redirect_uri => google_callback_url, :state => state_verifier.generate(SecureRandom.hex(16))), :allow_other_host => true)",
+      "code": "redirect_to(Google::Client.authorize_url(:redirect_uri => google_callback_url, :state => state_verifier.generate(SecureRandom.hex(16)), :drive => drive_requested?), :allow_other_host => true)",
       "render_path": null,
       "location": {
         "type": "method",
         "class": "Google::ConnectionsController",
         "method": "connect"
       },
-      "user_input": "Google::Client.authorize_url(:redirect_uri => google_callback_url, :state => state_verifier.generate(SecureRandom.hex(16)))",
+      "user_input": "Google::Client.authorize_url(:redirect_uri => google_callback_url, :state => state_verifier.generate(SecureRandom.hex(16)), :drive => drive_requested?)",
       "confidence": "Weak",
       "cwe_id": [
         601
       ],
-      "note": "False positive: redirect target host is hard-coded to accounts.google.com in Google::Client.authorize_url; all query params are server-generated, so no user input can steer the destination."
+      "note": "False positive: redirect target host is hard-coded to accounts.google.com in Google::Client.authorize_url; all query params are server-generated (drive_requested? only flips a boolean), so no user input can steer the destination."
     }
   ],
   "brakeman_version": "7.1.0"
