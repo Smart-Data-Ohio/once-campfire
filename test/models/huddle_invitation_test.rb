@@ -79,10 +79,11 @@ class HuddleInvitationTest < ActiveSupport::TestCase
       end
     end
 
-    assert_not ActivityItem.exists?(first_item.id)
-    second_item = ActivityItem.find_by!(user: users(:jason), source: grant)
-    assert_equal "huddle_started", second_item.event_type
-    assert_predicate second_item, :unread?
+    assert_equal 1, ActivityItem.where(user: users(:jason)).count
+    first_item.reload
+    assert_equal "huddle_started", first_item.event_type
+    assert_predicate first_item, :unread?
+    assert_operator first_item.created_at, :>, 1.minute.ago
   end
 
   test "a second grant for the same starter does not ring again inside two minutes" do
@@ -107,24 +108,65 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     end
   end
 
-  test "a handled invitation does not suppress the next ring" do
+  test "a handled invitation still suppresses the next ring inside two minutes" do
     HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
-    ActivityItem.find_by!(user: users(:jason)).mark_handled!
+    item = ActivityItem.find_by!(user: users(:jason)).mark_handled!
 
-    assert_difference -> { ActivityItem.where(user: users(:jason), event_type: "huddle_started").count }, 1 do
+    assert_no_enqueued_jobs only: Huddle::PushInvitationJob do
       HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
     end
+
+    assert_predicate item.reload, :handled?
+    assert_equal 1, ActivityItem.where(user: users(:jason)).count
   end
 
-  test "an invitation older than two minutes does not suppress the next ring" do
+  test "an invitation older than two minutes re-rings through the same row" do
+    item = nil
     travel_to 3.minutes.ago do
       HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      item = ActivityItem.find_by!(user: users(:jason), event_type: "huddle_started")
     end
-    assert_equal 1, ActivityItem.where(user: users(:jason), event_type: "huddle_started").count
 
-    assert_difference -> { ActivityItem.where(user: users(:jason), event_type: "huddle_started").count }, 1 do
-      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+    assert_enqueued_with(job: Huddle::PushInvitationJob, args: [ item.id ]) do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
     end
+
+    assert_equal 1, ActivityItem.where(user: users(:jason)).count
+    assert_operator item.reload.created_at, :>, 1.minute.ago
+  end
+
+  test "a handled invitation older than two minutes re-rings through the same row" do
+    item = nil
+    travel_to 3.minutes.ago do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      item = ActivityItem.find_by!(user: users(:jason)).mark_handled!
+    end
+
+    assert_enqueued_with(job: Huddle::PushInvitationJob, args: [ item.id ]) do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    end
+
+    assert_equal 1, ActivityItem.where(user: users(:jason)).count
+    item.reload
+    assert_equal "huddle_started", item.event_type
+    assert_predicate item, :unread?
+    assert_operator item.created_at, :>, 1.minute.ago
+  end
+
+  test "a missed invitation older than two minutes re-rings through the same row" do
+    item = nil
+    travel_to 3.minutes.ago do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      item = ActivityItem.find_by!(user: users(:jason))
+      item.update!(event_type: "huddle_missed")
+    end
+
+    HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+
+    item.reload
+    assert_equal "huddle_started", item.event_type
+    assert_predicate item, :unread?
+    assert_equal 1, ActivityItem.where(user: users(:jason)).count
   end
 
   test "obtaining a grant clears the recipient's open invitations for the room" do

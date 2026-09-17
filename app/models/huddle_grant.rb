@@ -160,29 +160,37 @@ class HuddleGrant < ApplicationRecord
 
     # A huddle "starts" for a DM when a grant is issued while the other
     # participant is not in the call. Grants persist per session, so issuance
-    # (created or reused) drives the ring and the dedup window guards it.
+    # (created or reused) drives the ring and the dedup window guards it: any
+    # invitation or missed item from the last two minutes, handled or not,
+    # keeps reconnects and rejoins silent.
     def invite_direct_participant
       recipient = direct_huddle_recipient
       return unless recipient
       return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?
-      return if recent_unhandled_invitation?(recipient)
+      return if recent_invitation?(recipient)
 
       item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
       return unless item
-
-      unless item.previously_new_record?
-        # Inbox identity is recipient + source, so a reused grant re-rings
-        # through the same row. A stale invitation (handled, missed, or past
-        # the window) is replaced with a fresh ring; a fresh one means a
-        # concurrent issuance already rang and stands.
-        return unless stale_invitation?(item)
-
-        item.destroy!
-        item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
-        return unless item
-      end
+      return unless item.previously_new_record? || refresh_invitation!(item)
 
       Huddle::PushInvitationJob.perform_later(item.id)
+    end
+
+    # Inbox identity is recipient + source, so a reused grant re-rings through
+    # the same row. The row is reset in place under a lock so the recipient's
+    # existing links stay valid and two concurrent issuances cannot both ring;
+    # a row another issuance refreshed inside the window stands as is.
+    def refresh_invitation!(item)
+      refreshed = false
+
+      item.with_lock do
+        if stale_invitation?(item)
+          item.update!(event_type: "huddle_started", read_at: nil, handled_at: nil, created_at: Time.current)
+          refreshed = true
+        end
+      end
+
+      refreshed
     end
 
     def direct_huddle_recipient
@@ -196,15 +204,19 @@ class HuddleGrant < ApplicationRecord
       User.active.without_bots.find_by(id: other_id) if other_id
     end
 
-    def recent_unhandled_invitation?(recipient)
-      open_invitations_for(recipient.id)
+    def recent_invitation?(recipient)
+      invitations_for(recipient.id)
         .where(activity_items: { created_at: INVITATION_DEDUP_WINDOW.ago.. })
         .exists?
     end
 
     def open_invitations_for(user_id)
+      invitations_for(user_id).where(handled_at: nil)
+    end
+
+    def invitations_for(user_id)
       ActivityItem
-        .where(user_id:, source_type: HuddleGrant.polymorphic_name, event_type: ActivityItem::HUDDLE_EVENT_TYPES, handled_at: nil)
+        .where(user_id:, source_type: HuddleGrant.polymorphic_name, event_type: ActivityItem::HUDDLE_EVENT_TYPES)
         .joins("INNER JOIN huddle_grants AS invitation_grants ON invitation_grants.id = activity_items.source_id")
         .where(invitation_grants: { room_id: room_id })
     end

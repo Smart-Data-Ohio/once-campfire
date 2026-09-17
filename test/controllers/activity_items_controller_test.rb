@@ -162,12 +162,14 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "index resolves the current user's overdue invitations but no one else's" do
-    overdue_item = travel_to 1.minute.ago do
+    # Three minutes back: a handled item inside the two-minute dedup window
+    # would keep the fresh start at the end of this test from ringing.
+    overdue_item = travel_to 3.minutes.ago do
       start_dm_huddle_for(users(:david))
     end
     # Created directly: issuing through issue! would handle the recipient's
     # own open invitation for the room as a join.
-    other_item = travel_to 1.minute.ago do
+    other_item = travel_to 3.minutes.ago do
       other_grant = HuddleGrant.create!(
         identity: "campfire-participant-#{SecureRandom.hex(32)}",
         room_name: Huddle.room_name(rooms(:david_and_jason).id),

@@ -112,8 +112,10 @@ class ActivityItem < ApplicationRecord
       broadcast_activity_change
     end
 
+    # A refreshed huddle invitation rings again through the same row, which
+    # may change nothing but `created_at`, so that counts as a change too.
     def broadcast_updated
-      return unless saved_change_to_read_at? || saved_change_to_handled_at? || saved_change_to_event_type?
+      return unless saved_change_to_read_at? || saved_change_to_handled_at? || saved_change_to_event_type? || saved_change_to_created_at?
 
       broadcast_activity_change
     end
