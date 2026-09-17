@@ -9,6 +9,7 @@ class Agent < ApplicationRecord
 
   has_many :agent_credentials, dependent: :destroy
   has_many :agent_grants, dependent: :destroy
+  has_many :agent_events, dependent: :destroy
 
   enum :kind, { personal: "personal", workspace: "workspace" }, default: :personal
 
@@ -62,5 +63,19 @@ class Agent < ApplicationRecord
     else
       scope.where(room_id: nil).exists?
     end
+  end
+
+  # True when the agent holds the capability in any room or workspace-wide.
+  # Used by endpoints without a room context (event polling). Reads the
+  # database on every call; no caching.
+  def has_capability_anywhere?(capability)
+    return false unless active?
+
+    capability = capability.to_s
+    return false unless AgentGrant::CAPABILITIES.include?(capability)
+
+    return LEGACY_CAPABILITIES.include?(capability) if legacy_capabilities?
+
+    AgentGrant.active.where(agent_id: id, capability: capability).exists?
   end
 end

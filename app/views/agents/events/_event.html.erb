@@ -1,0 +1,22 @@
+<li class="flex flex-column gap flush fill-shade border-radius pad-block pad-inline-double">
+  <div class="flex align-center gap">
+    <div class="min-width flex-item-grow">
+      <div class="overflow-ellipsis txt-large"><strong><%= event.event_type %></strong> · <%= event.outcome %></div>
+      <div class="overflow-ellipsis txt-small">
+        <%= event.created_at.to_fs(:short) %>
+        <% if event.room %> · <%= room_display_name(event.room) %><% end %>
+        <% if event.actor %> · from <%= event.actor.name %><% end %>
+        <% if event.message_id %> · message #<%= event.message_id %><% end %>
+        <% if event.hop.positive? %> · hop <%= event.hop %><% end %>
+      </div>
+      <% if event.detail.present? %>
+        <div class="txt-small"><%= event.detail %></div>
+      <% end %>
+      <% if event.message %>
+        <div class="txt-small overflow-ellipsis"><%= truncate(event.message.plain_text_body, length: 140) %></div>
+      <% elsif event.message_id %>
+        <div class="txt-small">Message deleted</div>
+      <% end %>
+    </div>
+  </div>
+</li>

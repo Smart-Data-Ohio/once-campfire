@@ -27,6 +27,15 @@
     <% end %>
   </div>
 
+  <% if @bot.agent %>
+    <div class="flex align-center gap justify-space-between margin-block-end">
+      <%= link_to agent_events_path(@bot.agent), class: "btn full-width txt--small" do %>
+        <%= image_tag "messages-outlined.svg", aria: { hidden: "true" }, size: 20 %>
+        View activity ledger
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="flex align-center gap justify-space-between">
     <%= button_to account_bot_path(@bot), method: :delete, class: "btn txt--small btn--negative", aria: { label: "Delete this chat bot" },
           data: { turbo_confirm: "Are you sure you want to permanently remove this bot from the account? This can’t be undone." } do %>
