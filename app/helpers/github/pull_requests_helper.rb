@@ -1,4 +1,11 @@
 module Github::PullRequestsHelper
+  # Cache key for a message rendered with its PR cards. A PR update never
+  # touches the message, so the key folds in the newest card row; otherwise a
+  # collection cache would keep serving "Loading pull request" indefinitely.
+  def message_with_pr_cards_cache_key(message)
+    [ message, message.github_pull_requests.map(&:updated_at).max ]
+  end
+
   # PRs referenced by a message, sorted by repository and number. Rendering
   # a stale card re-enqueues a fetch so rarely viewed cards converge without
   # a webhook; the fetch updates fetched_at, so this cannot loop.
