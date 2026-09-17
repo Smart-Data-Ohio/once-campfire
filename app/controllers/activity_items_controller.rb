@@ -3,7 +3,7 @@ class ActivityItemsController < ApplicationController
 
   PAGE_SIZE = 100
 
-  before_action :set_filter, only: :index
+  before_action :set_filter, :set_type_filter, only: :index
   before_action :no_store_response!, except: :index
 
   def index
@@ -20,6 +20,7 @@ class ActivityItemsController < ApplicationController
         render json: {
           activity_items: @activity_items.map { |item| activity_item_payload(item) },
           filter: @filter,
+          type_filter: @type_filter,
           unread_count: @unread_count,
           next_cursor: @next_cursor
         }
@@ -80,13 +81,17 @@ class ActivityItemsController < ApplicationController
       @filter = ActivityItem::FILTERS.include?(params[:status].to_s) ? params[:status].to_s : "unread"
     end
 
+    def set_type_filter
+      @type_filter = ActivityItem::TYPE_FILTERS.key?(params[:type].to_s) ? params[:type].to_s : "all"
+    end
+
     def accessible_activity_items
       ActivityItem.accessible_to(Current.user)
     end
 
     def filtered_activity_items
-      scope = accessible_activity_items.preload(:source).ordered
-      scope = scope.where("activity_items.id < ?", params[:before].to_i) if params[:before].to_s.match?(/\A\d+\z/)
+      scope = accessible_activity_items.preload(:source).ordered.with_type_filter(@type_filter)
+      scope = apply_cursor(scope)
       case @filter
       when "read"
         scope.read
@@ -95,6 +100,22 @@ class ActivityItemsController < ApplicationController
       else
         scope.unread
       end.limit(PAGE_SIZE)
+    end
+
+    # The ordering is (updated_at, id), so the cursor resolves the before
+    # item's updated_at and pages strictly below that pair. A cursor whose
+    # item is gone serves the first page: an id comparison alone would
+    # misorder under updated_at ordering.
+    def apply_cursor(scope)
+      return scope unless params[:before].to_s.match?(/\A\d+\z/)
+
+      cursor = accessible_activity_items.find_by(id: params[:before].to_i)
+      return scope unless cursor
+
+      scope.where(
+        "activity_items.updated_at < ? OR (activity_items.updated_at = ? AND activity_items.id < ?)",
+        cursor.updated_at, cursor.updated_at, cursor.id
+      )
     end
 
     def find_activity_item
@@ -117,8 +138,8 @@ class ActivityItemsController < ApplicationController
 
     def render_state_change(item)
       respond_to do |format|
-        format.html { redirect_to activity_items_path(status: redirect_filter) }
-        format.turbo_stream { redirect_to activity_items_path(status: redirect_filter), status: :see_other }
+        format.html { redirect_to activity_items_path(status: redirect_filter, type: redirect_type_filter) }
+        format.turbo_stream { redirect_to activity_items_path(status: redirect_filter, type: redirect_type_filter), status: :see_other }
         format.json do
           render json: activity_item_payload(item)
         end
@@ -127,14 +148,18 @@ class ActivityItemsController < ApplicationController
 
     def render_invalid_state(message)
       respond_to do |format|
-        format.html { redirect_to activity_items_path(status: redirect_filter), alert: message }
-        format.turbo_stream { redirect_to activity_items_path(status: redirect_filter), status: :see_other, alert: message }
+        format.html { redirect_to activity_items_path(status: redirect_filter, type: redirect_type_filter), alert: message }
+        format.turbo_stream { redirect_to activity_items_path(status: redirect_filter, type: redirect_type_filter), status: :see_other, alert: message }
         format.json { render json: { error: message }, status: :unprocessable_content }
       end
     end
 
     def redirect_filter
       ActivityItem::FILTERS.include?(params[:status].to_s) ? params[:status].to_s : "unread"
+    end
+
+    def redirect_type_filter
+      ActivityItem::TYPE_FILTERS.key?(params[:type].to_s) ? params[:type].to_s : "all"
     end
 
     def activity_item_payload(item)

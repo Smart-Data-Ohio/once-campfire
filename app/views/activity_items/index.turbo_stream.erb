@@ -1,6 +1,6 @@
 <%= turbo_stream.replace "activity-items-list" do %>
   <div id="activity-items-list" class="activity-inbox__list" aria-live="polite">
-    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter %>
+    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter, type_filter: @type_filter %>
   </div>
 <% end %>
 
@@ -10,6 +10,6 @@
 
 <%= turbo_stream.replace "activity-items-pagination" do %>
   <div id="activity-items-pagination">
-    <%= render "activity_items/pagination", filter: @filter, next_cursor: @next_cursor %>
+    <%= render "activity_items/pagination", filter: @filter, type_filter: @type_filter, next_cursor: @next_cursor %>
   </div>
 <% end %>
