@@ -16,29 +16,23 @@
 
 /* The stage roster lives in a drawer like the member panel: an overlay on
    every viewport, since it opens from the room header rather than joining
-   the desktop grid. */
+   the desktop grid. A modal dialog puts it in the top layer, above the
+   member panel and outside the header's stacking context. */
 .stage-panel {
-  inset: 0;
-  position: fixed;
-  z-index: 10;
-}
-
-.stage-panel[hidden] {
-  display: none;
-}
-
-.stage-panel__backdrop {
-  background: rgb(11 13 18 / 58%);
+  background: transparent;
   border: 0;
-  border-radius: 0;
+  block-size: 100dvh;
+  inline-size: 100dvw;
   inset: 0;
+  margin: 0;
+  max-block-size: none;
+  max-inline-size: none;
   padding: 0;
-  position: absolute;
+  position: fixed;
 }
 
-.stage-panel__backdrop:hover {
-  box-shadow: none;
-  filter: none;
+.stage-panel::backdrop {
+  background: rgb(11 13 18 / 58%);
 }
 
 .stage-panel__surface {

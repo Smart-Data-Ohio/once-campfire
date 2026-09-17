@@ -56,6 +56,8 @@ The live one-to-one DM Huddles slice was followed by one persistent voice-channe
 
 Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. Done for the next slice when members find a persistent voice channel, see who is in it, join and leave with working text chat, and lose the call along with the room when removed.
 
+**Status:** Stage channels shipped with host, speaker, and listener roles, token and grant-revocation enforcement for listeners, hand raising, and host moderation from the stage panel; see [stage channels](docs/stage-channels.md). Streaming remains open.
+
 ### 3. AI agents as first-class participants
 
 - Agents have distinct identities such as **Riel's GPT Agent**, **Jon's Cursor Agent**, and **Chris's Claude Agent**. An agent's messages are authored by the agent, with visible ownership; they are not attributed to the human owner.

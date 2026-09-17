@@ -76,8 +76,7 @@
     <% end %>
 
     <% if room.stage? && (stage_membership = room.memberships.find_by(user: Current.user)) %>
-      <div class="stage-panel-wrap" data-controller="stage-panel"
-           data-action="keydown.esc@window->stage-panel#close">
+      <div class="stage-panel-wrap" data-controller="stage-panel">
         <button type="button" class="btn room-header__action"
                 aria-controls="<%= dom_id(room, :stage_panel_dialog) %>"
                 aria-expanded="false"
@@ -89,17 +88,11 @@
           <span class="room-header__action-label">Stage</span>
         </button>
 
-        <aside id="<%= dom_id(room, :stage_panel_dialog) %>"
-               class="stage-panel"
-               aria-label="Stage"
-               data-stage-panel-target="panel"
-               hidden>
-          <button type="button"
-                  class="stage-panel__backdrop"
-                  aria-hidden="true"
-                  tabindex="-1"
-                  data-action="stage-panel#close"></button>
-
+        <dialog id="<%= dom_id(room, :stage_panel_dialog) %>"
+                class="stage-panel"
+                aria-labelledby="<%= dom_id(room, :stage_panel_title) %>"
+                data-stage-panel-target="panel"
+                data-action="click->stage-panel#backdropClicked close->stage-panel#wasClosed">
           <section class="stage-panel__surface" aria-labelledby="<%= dom_id(room, :stage_panel_title) %>">
             <header class="stage-panel__header">
               <div class="min-width">
@@ -120,7 +113,7 @@
               <%= render "rooms/stage/panel_body", room: room, membership: stage_membership, rejoin: false %>
             </div>
           </section>
-        </aside>
+        </dialog>
       </div>
     <% end %>
 
