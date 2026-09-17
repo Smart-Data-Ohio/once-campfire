@@ -740,6 +740,20 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "sidebar_stage_live"
   end
 
+  test "index rows render no live pip for a stage venue with an ended stream" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    stream = Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    stream.end!
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_select "##{ActionView::RecordIdentifier.dom_id(@event, :venue_live_dot)}", 1
+    assert_select "article .stage-live-dot__pip", 0
+  end
+
   test "index rows never render a live dot for a voice venue" do
     voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
     @event.update!(venue_room_id: voice.id)
