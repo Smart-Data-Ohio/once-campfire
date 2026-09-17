@@ -1,4 +1,8 @@
 <%= form_with model: room do |form| %>
+  <% if room.errors.any? %>
+    <p class="txt-negative txt-align-center" role="alert"><%= room.errors.full_messages.to_sentence %></p>
+  <% end %>
+
   <div class="flex align-center gap">
     <% if Current.user.can_administer?(room) %>
       <%= translation_button(:room_name) %>
@@ -15,6 +19,12 @@
       </h1>
     <% end %>
   </div>
+
+  <% if Current.user.can_administer?(room) %>
+    <div class="margin-block-start">
+      <%= render "shared/icon_field", form: form, record: room, scope: "room" %>
+    </div>
+  <% end %>
 
   <hr class="margin-block borderless">
 

@@ -21,6 +21,10 @@ class Rooms::OpensController < RoomsController
 
     broadcast_create_room(room)
     redirect_to room_url(room)
+  rescue ActiveRecord::RecordInvalid => error
+    @room = error.record
+    @users = User.active.ordered
+    render :new, status: :unprocessable_entity
   end
 
   def edit
@@ -28,10 +32,13 @@ class Rooms::OpensController < RoomsController
   end
 
   def update
-    @room.update! room_params
-
-    broadcast_update_room
-    redirect_to room_url(@room)
+    if @room.update(room_params)
+      broadcast_update_room
+      redirect_to room_url(@room)
+    else
+      @users = User.active.ordered
+      render :edit, status: :unprocessable_entity
+    end
   end
 
   private
@@ -53,5 +60,6 @@ class Rooms::OpensController < RoomsController
 
     def broadcast_update_room
       broadcast_replace_to :rooms, target: [ @room, :list ], partial: "users/sidebars/rooms/shared", locals: { room: @room }
+      broadcast_replace_to :rooms, target: [ @room, :header ], partial: "rooms/show/header_identity", locals: { room: @room }
     end
 end

@@ -30,6 +30,9 @@ class Room < ApplicationRecord
   before_destroy -> { AgentGrant.revoke_for_room!(self) }
   validate :direct_rooms_keep_their_type, on: :update
 
+  normalizes :icon_name, with: ->(name) { Icons.normalize_name(name) }
+  validate :icon_name_must_resolve, if: :icon_name_changed?
+
   scope :opens,           -> { where(type: "Rooms::Open") }
   scope :closeds,         -> { where(type: "Rooms::Closed") }
   scope :directs,         -> { where(type: "Rooms::Direct") }
@@ -82,6 +85,12 @@ class Room < ApplicationRecord
   end
 
   private
+    def icon_name_must_resolve
+      if icon_name.present? && Icons.find(icon_name).nil?
+        errors.add :icon_name, "is not a known icon"
+      end
+    end
+
     # Open and closed rooms convert into each other freely. A direct room can't become
     # either: its participants agreed to a private conversation, not to one whose
     # audience someone else gets to widen afterwards.

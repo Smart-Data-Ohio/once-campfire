@@ -1,4 +1,6 @@
 module MessagePayloadHelper
+  include IconsAvatarHelper
+
   # JSON for a message is deliberately assembled here instead of relying on a
   # model's as_json. A reply and a forward contain links whose visibility is
   # specific to the requesting member, so a shared fragment cache must not be
@@ -17,7 +19,7 @@ module MessagePayloadHelper
         markdown_source: message.markdown_source
       }.compact,
       creator: user_payload(message.creator),
-      room: { id: message.room_id },
+      room: room_payload(message),
       thread_context: message.thread_message? ? thread_payload(message.thread) : nil,
       thread_summary: include_thread_summary ? thread_summary_payload(message) : nil,
       reply_to: reply_payload(message),
@@ -98,8 +100,14 @@ module MessagePayloadHelper
         id: user.id,
         name: user.name,
         role: user.role,
-        avatar_url: fresh_user_avatar_url(user)
+        avatar_url: fresh_user_avatar_url(user),
+        icon_name: user.icon_name,
+        icon_avatar_url: icon_avatar_url(user.icon_name)
       }
+    end
+
+    def room_payload(message)
+      { id: message.room_id, icon_name: message.room.icon_name }
     end
 
     def work_owner_payload(owner)

@@ -428,6 +428,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022908) do
   create_table "rooms", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "creator_id", null: false
+    t.string "icon_name"
     t.string "name"
     t.string "type", null: false
     t.datetime "updated_at", null: false
@@ -472,6 +473,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022908) do
     t.datetime "created_at", null: false
     t.string "email_address"
     t.string "github_login"
+    t.string "icon_name"
     t.json "inbox_preferences", default: {}
     t.string "name", null: false
     t.string "password_digest"
