@@ -17,6 +17,8 @@ class ActiveSupport::TestCase
   # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
   fixtures :all
 
+  set_fixture_class twitter_posts: Twitter::Post, twitter_post_references: Twitter::PostReference
+
   include SessionTestHelper, MentionTestHelper, TurboTestHelper, DnsTestHelper, WorkspaceIconTestHelper
 
   setup do

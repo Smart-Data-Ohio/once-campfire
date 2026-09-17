@@ -1,0 +1,16 @@
+jack_first_post:
+  post_id: "20"
+  url: https://x.com/jack/status/20
+  author_handle: jack
+  author_name: jack
+  author_avatar_url: https://pbs.twimg.com/profile_images/1661201415899951105/azNjKOSH_200x200.jpg
+  text: just setting up my twttr
+  posted_at: 2006-03-21 20:50:14
+  replies: 18041
+  reposts: 124658
+  likes: 310826
+  fetched_at: <%= 1.hour.ago.to_fs(:db) %>
+
+unfetched_post:
+  post_id: "266031293945503744"
+  url: https://x.com/BarackObama/status/266031293945503744

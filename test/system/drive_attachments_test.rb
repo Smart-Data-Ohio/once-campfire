@@ -124,8 +124,11 @@ class DriveAttachmentsTest < ApplicationSystemTestCase
 
     assert_selector "#thread-panel [data-thread-panel-target='conversation']", visible: true, wait: 10
     within("#thread-panel") do
+      find("button.composer__drive-btn", wait: 10)
+      wait_for_thread_panel_settled
       find("button.composer__drive-btn").click
-      assert_selector ".drive-picker__item", text: "Q3 Planning"
+      assert_selector '[role="dialog"][aria-label="Find a Drive file"]', visible: true, wait: 10
+      assert_selector ".drive-picker__item", text: "Q3 Planning", wait: 10
       attach_from_picker "Q3 Planning"
       assert_selector ".composer__drive-attachments .drive-attachment-chip", text: "Q3 Planning"
       fill_in "Write a thread reply", with: "thread file attached"
@@ -137,6 +140,23 @@ class DriveAttachmentsTest < ApplicationSystemTestCase
   end
 
   private
+    # The thread drawer slides in over a 220ms transform transition while its
+    # content mounts from a deep link, so the Drive button can exist (and be
+    # found) while still translating. Clicking mid-slide can miss the moving
+    # target and silently no-op, leaving the picker closed. Poll the settled
+    # state the click depends on instead of racing the transition.
+    def wait_for_thread_panel_settled(timeout: 10)
+      page.document.synchronize(timeout, errors: [ Capybara::ExpectationNotMet ]) do
+        unless thread_panel_settled?
+          raise Capybara::ExpectationNotMet, "expected the thread panel slide transition to settle"
+        end
+      end
+    end
+
+    def thread_panel_settled?
+      page.evaluate_script("getComputedStyle(document.querySelector('#thread-panel .thread-panel__surface')).transform === 'none'")
+    end
+
     def open_message_actions
       find("[data-message-edit-format], [data-reply-target='body']", match: :first).right_click
       assert_selector "[data-message-actions-target='menu']", visible: true, wait: 10

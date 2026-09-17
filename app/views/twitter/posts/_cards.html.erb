@@ -1,0 +1,13 @@
+<%# Without a message (messages/_template) this renders nothing: a pending
+    message carries no references yet and the server broadcast appends the
+    real block. %>
+<% if (message = local_assigns[:message]) %>
+  <% posts = twitter_post_cards_for(message) %>
+  <% if posts.any? %>
+    <div id="<%= dom_id(message, :twitter_cards) %>" class="x-post-cards">
+      <% posts.each do |post| %>
+        <%= render "twitter/posts/card", post: post %>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>

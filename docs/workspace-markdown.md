@@ -14,7 +14,7 @@ At widths of 1280 pixels and above, the list opens beside the conversation and c
 
 New messages use Markdown in a compact, automatically growing message box. Type Markdown syntax directly for headings, bold, italics, strikethrough, links, quotes, lists, tables, task lists, inline code, and fenced code blocks.
 
-On a desktop, Enter sends, Shift+Enter inserts a line break, and Ctrl/Cmd+Enter sends. On a touch device or narrow screen, Enter inserts a line break; use the send button to send. Ctrl/Cmd+B, Ctrl/Cmd+I, and Ctrl/Cmd+K format the selection. Use attachments for images and other files; file paste and file drop continue to work.
+On a desktop, Enter sends, Shift+Enter inserts a line break, and Ctrl/Cmd+Enter sends. On a touch device or narrow screen, Enter inserts a line break; use the send button to send. Ctrl/Cmd+B, Ctrl/Cmd+I, and Ctrl/Cmd+K format the selection. Use attachments for images and other files; file paste and file drop continue to work. Links to X posts render as live cards under the message; see [X post cards](x-posts.md).
 
 Type `@` to find a member of the current room. Selecting a suggestion inserts `@[Display Name]`. Only an exact, unique, active room member is resolved to a mention. Ambiguous names and names outside the room stay plain text. Mentions inside code or links do not notify anyone. The resolved identity is saved with the message, so a later display-name change does not redirect an existing mention.
 

@@ -62,3 +62,8 @@ thirteenth:
   record: thirteenth (Message)
   name: body
   body: When we are not sure, we are alive.
+
+x_card_post:
+  record: x_card_post (Message)
+  name: body
+  body: https://x.com/jack/status/20

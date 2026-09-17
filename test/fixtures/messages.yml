@@ -75,3 +75,9 @@ thirteenth:
   creator: jz
   client_message_id: "0013"
   created_at: <%= 5.minutes.ago %>
+
+x_card_post:
+  room: pets
+  creator: david
+  client_message_id: "x-card-fixture"
+  created_at: <%= 2.days.ago %>
