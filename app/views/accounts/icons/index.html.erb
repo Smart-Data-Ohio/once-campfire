@@ -1,0 +1,61 @@
+<% @page_title = "Workspace icons" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to edit_account_path %>
+  </div>
+<% end %>
+
+<section class="panel panel--wide txt-align-center flex flex-column position-relative" style="view-transition-name: workspace-icons">
+  <div class="flex align-center gap">
+    <div class="pad-inline-double center">
+      <h1 class="margin-none">Workspace icons</h1>
+      <p class="margin-none-block-start">Upload SVG or PNG icons members can use as <code>:shortcodes:</code> in messages and reactions.</p>
+    </div>
+  </div>
+
+  <div class="pad-inline pad-block-start">
+    <%= form_with model: @workspace_icon, url: account_icons_path, class: "flex flex-column gap txt-align-start fill-shade border-radius pad" do |form| %>
+      <% if @workspace_icon.errors.any? %>
+        <div class="txt-negative" role="alert">
+          <ul class="margin-none">
+            <% @workspace_icon.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <div class="flex align-center gap">
+        <label class="flex flex-column gap flex-item-grow">
+          <span class="txt-small"><strong>Name</strong> <span class="txt-subtle">lowercase letters, numbers, underscores, 2–32 characters</span></span>
+          <%= form.text_field :name, class: "input", autocomplete: "off", placeholder: "acme" %>
+        </label>
+
+        <label class="flex flex-column gap flex-item-grow">
+          <span class="txt-small"><strong>Title</strong></span>
+          <%= form.text_field :title, class: "input", autocomplete: "off", placeholder: "Acme Corp" %>
+        </label>
+      </div>
+
+      <label class="flex flex-column gap">
+        <span class="txt-small"><strong>Icon file</strong> <span class="txt-subtle">SVG or square PNG (at least 64px), at most 256 KB</span></span>
+        <%= form.file_field :image, class: "input", accept: "image/svg+xml,image/png" %>
+      </label>
+
+      <div>
+        <%= form.submit "Upload icon", class: "btn btn--reversed" %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="pad-inline pad-block-start">
+    <menu class="flex flex-column gap margin-none pad">
+      <% if @workspace_icons.any? %>
+        <%= render partial: "accounts/icons/icon", collection: @workspace_icons, as: :icon %>
+      <% else %>
+        <li class="txt-subtle">No workspace icons yet.</li>
+      <% end %>
+    </menu>
+  </div>
+</section>

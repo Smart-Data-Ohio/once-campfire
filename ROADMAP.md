@@ -135,7 +135,7 @@ Done for the first slice when members can turn a channel thread into work, assig
 
 Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
 
-**Status:** first slice shipped and the listed companies are covered. Thirty-three brand icons from two sources (Simple Icons, CC0; LobeHub `@lobehub/icons-static-svg`, MIT) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Amazon (retail) has no usable icon in either source. Still open: uploaded workspace icons are not started.
+**Status:** first slice shipped and the listed companies are covered. Thirty-three brand icons from two sources (Simple Icons, CC0; LobeHub `@lobehub/icons-static-svg`, MIT) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Amazon (retail) has no usable icon in either source. Administrator-uploaded workspace icons shipped as well: SVG/PNG uploads from the Icons page under Account, served from `/icons/:name` and usable as `:name:` in messages, reactions, and autocomplete. Still open: room or agent avatars drawn from the icon set.
 
 ## Proposed additions
 

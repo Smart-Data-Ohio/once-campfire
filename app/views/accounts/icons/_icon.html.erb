@@ -1,0 +1,20 @@
+<li class="flex flex-column gap flush fill-shade border-radius pad-block pad-inline-double">
+  <div class="flex align-center gap">
+    <span class="autocomplete__icon" style="font-size: 2em;">
+      <%= image_tag workspace_icon_path(name: icon.name), alt: "", size: 32, loading: :lazy %>
+    </span>
+
+    <div class="min-width txt-align-start">
+      <div class="overflow-ellipsis txt-large"><strong><%= icon.title %></strong> <code>:<%= icon.name %>:</code></div>
+      <div class="overflow-ellipsis txt-small">
+        Uploaded by <%= icon.creator.name %>
+      </div>
+    </div>
+
+    <%= button_to account_icon_path(icon), method: :delete, class: "btn btn--negative flex-item-justify-end",
+          form: { data: { turbo_confirm: "Delete :#{icon.name}:? Messages using it will show the literal shortcode." } } do %>
+      <%= image_tag "trash.svg", aria: { hidden: "true" }, size: 20 %>
+      <span class="for-screen-reader">Delete :<%= icon.name %>:</span>
+    <% end %>
+  </div>
+</li>

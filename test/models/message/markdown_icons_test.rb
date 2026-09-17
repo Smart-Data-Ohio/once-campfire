@@ -98,10 +98,14 @@ class Message::MarkdownIconsTest < ActiveSupport::TestCase
     end
   end
 
-  test "presentation sanitizer drops icon markup with an unknown name" do
+  test "presentation sanitizer falls back to literal text for an unknown name" do
     unknown = %(<p><img class="icon icon--brand" src="/assets/icons/brands/nope_not_real-abc123.svg" alt=":nope_not_real:"></p>)
 
-    assert_empty Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(unknown)).css("img")
+    presented = Message::Markdown.sanitize_presentation(unknown)
+    fragment = Nokogiri::HTML5.fragment(presented)
+
+    assert_empty fragment.css("img")
+    assert_equal ":nope_not_real:", fragment.text.strip
   end
 
   test "presentation sanitizer drops a class-variant icon with a foreign src" do
@@ -164,12 +168,16 @@ class Message::MarkdownIconsTest < ActiveSupport::TestCase
     assert_empty Nokogiri::HTML5.fragment(html).css("img")
   end
 
-  test "presentation drops an icon whose asset cannot be resolved" do
+  test "presentation falls back to literal text when an asset cannot be resolved" do
     Icons.stubs(:brand_image_urls).returns({})
 
     stored = %(<p><img class="icon icon--brand" src="/assets/icons/brands/openai-old.svg" alt=":openai:"></p>)
 
-    assert_empty Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(stored)).css("img")
+    presented = Message::Markdown.sanitize_presentation(stored)
+    fragment = Nokogiri::HTML5.fragment(presented)
+
+    assert_empty fragment.css("img")
+    assert_equal ":openai:", fragment.text.strip
   end
 
   test "shortcode-only messages get the large emoji treatment" do
