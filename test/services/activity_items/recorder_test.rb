@@ -189,6 +189,21 @@ class ActivityItems::RecorderTest < ActiveSupport::TestCase
     assert_equal 1, ActivityItem.where(user: @recipient).count
     assert_equal item.id, ActivityItem.find_by!(user: @recipient).id
     assert_predicate item.reload, :unread?
+    assert_equal "Update 10", item.source.plain_text_body.strip
+  end
+
+  test "a status update after a work assignment keeps the assignment item and repoints the update item" do
+    thread = ChannelThread.create!(room: @room, creator: @author, name: "Assigned thread")
+    ThreadMembership.join!(thread, @author)
+    ThreadMembership.join!(thread, @recipient).update!(involvement: "everything")
+
+    thread.update_work!(actor: @author, work_status: "planned")
+    thread.update_work!(actor: @author, work_owner_id: @recipient.id)
+    thread.update_work!(actor: @author, work_status: "in_progress")
+
+    items = ActivityItem.where(user: @recipient).order(:id)
+    assert_equal %w[ work_update work_assignment ], items.pluck(:event_type)
+    assert_equal "in_progress", items.first.source.to_status, "the collapsed update item points at the latest status change"
   end
 
   test "work updates for one thread collapse into a single item" do

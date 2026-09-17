@@ -261,6 +261,9 @@ class HuddleGrant < ApplicationRecord
     # creates an item, so a second grant for this room and starter inside
     # the same window also stays silent: rejoins and reconnects ring once.
     def recent_grant_issuance?
+      previous_issue = last_issued_at_previously_was
+      return true if previous_issue && previous_issue >= INVITATION_DEDUP_WINDOW.ago
+
       HuddleGrant.where(room_id: room_id, user_id: user_id)
         .where(created_at: INVITATION_DEDUP_WINDOW.ago..)
         .where.not(id: id)

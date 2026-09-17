@@ -51,7 +51,7 @@ Your profile's **Notifications** section holds five switches, all on by default.
 
 Bursts of related updates collapse into one item instead of many:
 
-- A new thread-activity or work-update item refreshes your existing unhandled item for that thread — unread again, back at the top — instead of adding a second row. Handling the item starts fresh: the next update creates a new one.
+- A new thread-activity or work-update item refreshes your existing unhandled item of the same kind for that thread — unread again, back at the top, and now describing the latest change — instead of adding a second row. Items of other kinds for the thread (a mention, a work assignment) are left alone. Handling the item starts fresh: the next update creates a new one.
 - One message produces at most one item per person, with the most specific type: a mention beats a reply, and a reply beats thread activity.
 
 ### Filters

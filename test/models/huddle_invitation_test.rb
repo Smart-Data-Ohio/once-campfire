@@ -112,6 +112,15 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: users(:jason))
   end
 
+  test "a switched-off user is not rung again when the same session reissues its grant" do
+    users(:jason).update!(inbox_preferences: { "huddle_invitations" => false })
+
+    assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    end
+  end
+
   test "channel huddles create no invitation" do
     assert_no_difference -> { ActivityItem.count } do
       assert_no_enqueued_jobs do

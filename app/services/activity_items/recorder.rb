@@ -48,8 +48,11 @@ module ActivityItems
       return if @source.respond_to?(:creator_id) && @source.creator_id == recipient.id
       return unless source_allows_recipient?(recipient)
 
+      # A burst of the same kind of update for one thread keeps a single
+      # item, repointed at the newest event so it describes the latest
+      # change, and surfaces as unread again.
       if (grouped_item = find_groupable_item(recipient, event_type))
-        grouped_item.update!(read_at: nil, updated_at: Time.current)
+        grouped_item.update!(source: @source, read_at: nil, updated_at: Time.current)
         return grouped_item
       end
 
@@ -164,7 +167,7 @@ module ActivityItems
         return unless thread_id
 
         ActivityItem
-          .where(user_id: recipient.id, handled_at: nil)
+          .where(user_id: recipient.id, handled_at: nil, event_type: event_type)
           .where(
             "(activity_items.source_type = :message AND activity_items.source_id IN " \
             "(SELECT id FROM messages WHERE thread_id = :thread_id)) OR " \
