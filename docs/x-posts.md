@@ -59,10 +59,9 @@ bounds this to one enqueue per post per 10-minute window.
 
 References only form when a message is created or edited, so untouched
 legacy messages keep their old OpenGraph boxes until their references
-are synced. Run
-
-    bin/rails twitter:backfill_references
-
-to sync references for every message whose Markdown source or rich-text
-body contains a post URL; matched messages then render cards instead of
-boxes. The task is idempotent and prints how many messages it synced.
+are synced. The `BackfillTwitterPostReferences` data migration syncs
+references for every message whose Markdown source or rich-text body
+contains a post URL; it runs with the normal `bin/rails db:migrate` on
+deploy, is idempotent, and only creates references and enqueues fetch
+jobs. Outside a deploy, `bin/rails twitter:backfill_references` runs
+the same sync ad hoc and prints how many messages it synced.
