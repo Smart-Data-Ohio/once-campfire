@@ -145,6 +145,10 @@ Rails.application.routes.draw do
 
   resource :unfurl_link, only: :create
 
+  namespace :github do
+    post "webhooks", to: "webhooks#create"
+  end
+
   get "webmanifest"    => "pwa#manifest"
   get "service-worker" => "pwa#service_worker"
 

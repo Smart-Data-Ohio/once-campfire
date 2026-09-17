@@ -52,6 +52,11 @@ class UnfurlLinksControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  test "create for a GitHub PR URL returns no content (PR cards render instead)" do
+    post unfurl_link_url, params: { url: "https://github.com/rails/rails/pull/123" }
+    assert_response :no_content
+  end
+
   test "create with a missing URL" do
     assert_raise ActionController::ParameterMissing do
       post unfurl_link_url, params: { url: "" }

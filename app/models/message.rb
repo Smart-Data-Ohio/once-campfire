@@ -17,6 +17,10 @@ class Message < ApplicationRecord
 
   has_one :channel_thread, class_name: "ChannelThread", foreign_key: :parent_message_id, dependent: :nullify
 
+  has_many :github_pull_request_references, class_name: "Github::PullRequestReference", dependent: :destroy
+  has_many :github_pull_requests, through: :github_pull_request_references,
+    source: :pull_request, class_name: "Github::PullRequest"
+
   has_rich_text :body
 
   validates :markdown_source, length: { maximum: Markdown::SOURCE_LIMIT }, allow_nil: true
@@ -27,6 +31,10 @@ class Message < ApplicationRecord
   before_destroy :preserve_reply_tombstones, prepend: true
   after_create_commit :receive_in_conversation
   after_create_commit :record_activity_items
+  # Create and update need distinct callback filters: registering the same
+  # method twice on the commit chain keeps only one registration.
+  after_create_commit :sync_github_pull_request_references
+  after_update_commit :resync_github_pull_request_references
 
   scope :ordered, -> { order(:created_at) }
   scope :root_messages, -> { where(thread_id: nil) }
@@ -48,7 +56,7 @@ class Message < ApplicationRecord
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, :github_pull_requests, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply
   # source and thread, but never boosts or image variants, so it gets a lighter
@@ -160,6 +168,14 @@ class Message < ApplicationRecord
   private
     def record_activity_items
       ActivityItems::Recorder.record_message!(self)
+    end
+
+    def sync_github_pull_request_references
+      Github::PullRequestReferenceSync.call(self)
+    end
+
+    def resync_github_pull_request_references
+      Github::PullRequestReferenceSync.call(self) if saved_change_to_markdown_source?
     end
 
     def receive_in_conversation
