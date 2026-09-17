@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022908) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -233,10 +233,12 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022908) do
     t.string "time_zone", null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
+    t.integer "venue_room_id"
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
     t.index ["series_id", "starts_at"], name: "index_events_on_series_slot", unique: true, where: "series_id IS NOT NULL AND cancelled_at IS NULL"
     t.index ["series_id"], name: "index_events_on_series_id"
+    t.index ["venue_room_id"], name: "index_events_on_venue_room_id"
   end
 
   create_table "github_notifications", force: :cascade do |t|
