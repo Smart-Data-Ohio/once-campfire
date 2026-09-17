@@ -21,6 +21,20 @@ class GithubConnectedAccountTest < ActiveSupport::TestCase
     assert_equal "github-token-#{users(:david).id}", account.reload.access_token
   end
 
+  test "an undecryptable token is unusable, not fatal" do
+    account = connect_github!(users(:david))
+    GithubConnectedAccount.connection.execute(
+      "UPDATE github_connected_accounts SET access_token = 'bogus-ciphertext' WHERE id = #{account.id}"
+    )
+
+    assert_nothing_raised do
+      assert_not account.reload.usable?
+    end
+    assert_not_predicate account, :connected?
+    assert_equal "The stored token could not be read; link it again", account.disconnected_reason
+    assert_not account.usable?
+  end
+
   test "connected, usable, and disconnect reason" do
     account = connect_github!(users(:david))
 

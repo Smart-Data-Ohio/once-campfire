@@ -21,6 +21,9 @@ module GithubWriteAction
 
     def write_client_for(account)
       Github::WriteClient.new(token: account.access_token)
+    rescue ActiveRecord::Encryption::Errors::Decryption
+      account.mark_disconnected!(GithubConnectedAccount::UNREADABLE_TOKEN_REASON)
+      raise Github::WriteClient::Error, GithubConnectedAccount::UNREADABLE_TOKEN_REASON
     end
 
     # Re-renders the thread's write-actions frame: fresh forms plus an
