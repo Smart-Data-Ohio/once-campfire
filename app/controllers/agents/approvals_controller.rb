@@ -128,8 +128,8 @@ class Agents::ApprovalsController < ApplicationController
   end
 
   # GET /agents/:id/approvals (HTML). Approval history for admins and the
-  # agent's owner. Paginated, filterable by status. Bearer [REDACTED] and
-  # non-deciders get 404.
+  # agent's owner. Paginated, filterable by status. Bearer agent tokens
+  # and non-deciders get 404.
   def for_agent
     if authenticated_by.agent_token? || authenticated_by.bot_key? || Current.user&.bot?
       head :not_found
@@ -163,7 +163,7 @@ class Agents::ApprovalsController < ApplicationController
   private
     def ensure_agent_token
       unless authenticated_by.agent_token? && Current.agent
-        render json: { error: "Forbidden: Bearer [REDACTED] token required" }, status: :forbidden
+        render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
       end
     end
 

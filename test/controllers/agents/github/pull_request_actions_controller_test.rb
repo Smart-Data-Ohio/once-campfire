@@ -224,7 +224,7 @@ class Agents::Github::PullRequestActionsControllerTest < ActionDispatch::Integra
       headers: { "Content-Type" => "application/json" }
 
     assert_response :forbidden
-    assert_equal "Forbidden: Bearer [REDACTED] token required", response.parsed_body["error"]
+    assert_equal "Forbidden: Bearer agent token required", response.parsed_body["error"]
     assert_not_requested :any, %r{api\.github\.com}
   end
 

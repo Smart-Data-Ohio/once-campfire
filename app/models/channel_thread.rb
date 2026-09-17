@@ -276,7 +276,7 @@ class ChannelThread < ApplicationRecord
     self
   end
 
-  # Status update by the owning agent through the Bearer [REDACTED] API. The agent must
+  # Status update by the owning agent through the Bearer agent token API. The agent must
   # already own this work; reassignment, conversion, and untracking stay
   # human operations. Records a WorkThreadEvent with the agent's user as
   # actor, so the inbox path is identical to a human owner's update. The

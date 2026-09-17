@@ -6,7 +6,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     @secret = "bender-test-secret-1234"
   end
 
-  test "PATCH /agents/me updates status and note for a valid Bearer [REDACTED]" do
+  test "PATCH /agents/me updates status and note for a valid Bearer agent token" do
     patch agents_me_url, params: { status: "working", status_note: "on it" },
       headers: { "Authorization" => "Bearer #{@secret}" }, as: :json
 
@@ -98,7 +98,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a rejected request does not touch last_seen_at" do
-    get agents_me_url, headers: { "Authorization" => "Bearer [REDACTED]" }
+    get agents_me_url, headers: { "Authorization" => "Bearer not-a-real-token" }
 
     assert_response :unauthorized
     assert_nil @agent.reload.last_seen_at

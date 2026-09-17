@@ -14,7 +14,7 @@ transaction.
 
 ## Credentials
 
-`agent_credentials` holds Bearer [REDACTED] Credentials store only a SHA256 digest
+`agent_credentials` holds Bearer agent tokens. Credentials store only a SHA256 digest
 plus a display identifier; the secret is shown once at creation. Revoked or
 expired credentials return 401 on the next request. The legacy `bot_key` URL
 path is frozen and unchanged.
