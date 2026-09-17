@@ -5,6 +5,6 @@
     <span class="work-threads__status work-threads__status--<%= thread.work_status %>"><%= thread.work_status_label %></span>
   </div>
   <span class="work-threads__channel"><%= room_display_name(thread.room) %></span>
-  <span class="work-threads__owner"><%= owner.present? && thread.work_owner_active? ? "Owner: #{owner.name}" : owner.present? ? "Owner unavailable (#{owner.name})" : "Unassigned" %></span>
+  <span class="work-threads__owner"><%= owner.present? && thread.work_owner_active? ? "Owner: #{owner.name}" : owner.present? ? "Owner unavailable (#{owner.name})" : "Unassigned" %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %></span>
   <span class="work-threads__activity"><%= pluralize(thread.message_count, "message") %> · Updated <%= time_tag thread.updated_at, data: { local_time_target: "datetime" } %></span>
 <% end %>

@@ -13,7 +13,7 @@ class WorkThreadEvent < ApplicationRecord
   after_create_commit :record_activity_items
 
   class << self
-    def create_for_change!(thread:, actor:, from_status:, to_status:, from_owner:, to_owner:)
+    def create_for_change!(thread:, actor:, from_status:, to_status:, from_owner:, to_owner:, note: nil)
       return if from_status == to_status && from_owner&.id == to_owner&.id
 
       from_owner_snapshot = owner_snapshot(from_owner)
@@ -40,7 +40,8 @@ class WorkThreadEvent < ApplicationRecord
             "status" => to_status,
             "owner" => to_owner_snapshot
           },
-          "actor" => actor_snapshot(actor)
+          "actor" => actor_snapshot(actor),
+          "note" => note.presence
         }
       )
     end
@@ -67,6 +68,10 @@ class WorkThreadEvent < ApplicationRecord
           "role" => actor.role
         }
       end
+  end
+
+  def note
+    metadata.is_a?(Hash) ? metadata["note"].presence : nil
   end
 
   def status_changed?
