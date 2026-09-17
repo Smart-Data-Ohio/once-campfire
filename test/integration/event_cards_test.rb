@@ -27,7 +27,7 @@ class EventCardsTest < ActionDispatch::IntegrationTest
       assert_select ".event-card", count: 1
       assert_select ".event-card__eyebrow", text: "Event"
       assert_select ".event-card__title", text: "Planning session"
-      assert_select '.event-card__title a[href=?]', room_event_path(@room, event)
+      assert_select ".event-card__title a[href=?]", room_event_path(@room, event)
       assert_select ".event-card__meta time", count: 2
       assert_select ".event-card__venue", text: /Lounge/
       assert_select ".event-card__organizer", text: /David/
