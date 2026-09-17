@@ -2,8 +2,8 @@
 
 First slices of [roadmap section 4](../ROADMAP.md) ("GitHub work inside
 conversations"): read-only PR cards, subscriptions, and review requests, plus
-per-user write actions (comments, approve, request changes) from PR threads.
-Re-requesting review and agent write actions are not in this slice.
+per-user write actions (comments, approve, request changes, requesting
+review) from PR threads. Agent write actions are not in this slice.
 
 ## What it does
 
@@ -128,7 +128,7 @@ Create the token at GitHub Settings → Developer settings → Personal access
 tokens → Fine-grained tokens, with repository access to the repositories
 you want to act on and these permissions:
 
-- **Pull requests: Read and write** (submit reviews)
+- **Pull requests: Read and write** (submit reviews, request reviews)
 - **Issues: Read and write** (post PR comments, which use the issues API)
 - **Metadata: Read** (included automatically)
 
@@ -144,8 +144,12 @@ instead of a first-time connect.
 A room member with a linked token sees a "Comment on GitHub" composer plus
 **Approve** and **Request changes** buttons in the PR thread header.
 (Requesting changes requires a note; GitHub rejects an empty
-request-changes review.) Members without a linked token see a "Connect
-GitHub" prompt in place of the controls.
+request-changes review.) Below the composer, a **Request review** row
+takes one or more GitHub usernames separated by commas or whitespace (a
+leading `@` is optional, up to 15). GitHub treats a request for someone
+who already reviewed as a re-request, so the same control covers both.
+Members without a linked token see a "Connect GitHub" prompt in place of
+the controls.
 
 Each action posts to GitHub as the member's own user and shows a brief
 inline confirmation; the thread itself gets no local message. GitHub's own
@@ -157,10 +161,12 @@ The member's own comment or review round-trips through the existing
 webhook: comments refresh the card via the `issue_comment` event, reviews
 flow through `pull_request_review` with the usual dedupe, and the bot's
 echo post in the PR thread ("NAME approved …") stays as the confirmation.
+A requested review round-trips through the `review_requested` event the
+same way, including the reviewer's inbox item when the login is linked.
 
-Out of scope for this slice: re-requesting review, agent write actions and
-approval binding (agents keep read-only PR context), and a local audit
-ledger — GitHub itself shows who posted what.
+Out of scope for this slice: agent write actions and approval binding
+(agents keep read-only PR context), and a local audit ledger — GitHub
+itself shows who posted what.
 
 ## Configuration
 
