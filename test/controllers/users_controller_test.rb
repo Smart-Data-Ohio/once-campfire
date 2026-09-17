@@ -11,6 +11,34 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
+  test "bot profile links to capability grants for admins" do
+    sign_in :david
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "a[href='#{account_bot_grants_path(users(:bender))}']", 1
+  end
+
+  test "bot profile links to capability grants for the agent owner" do
+    agents(:bender_agent).update!(owner: users(:kevin))
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "a[href='#{account_bot_grants_path(users(:bender))}']", 1
+  end
+
+  test "bot profile hides capability grants from anyone else" do
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "a[href='#{account_bot_grants_path(users(:bender))}']", 0
+  end
+
   test "new" do
     get join_url(@join_code)
     assert_response :success

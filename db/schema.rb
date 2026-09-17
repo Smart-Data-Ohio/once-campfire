@@ -91,6 +91,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.index ["token_digest"], name: "index_agent_credentials_on_token_digest", unique: true
   end
 
+  create_table "agent_grants", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.string "capability", null: false
+    t.datetime "created_at", null: false
+    t.integer "granted_by_id", null: false
+    t.datetime "revoked_at"
+    t.integer "room_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "capability"], name: "index_agent_grants_on_agent_capability_active_workspace", unique: true, where: "revoked_at IS NULL AND room_id IS NULL"
+    t.index ["agent_id", "revoked_at"], name: "index_agent_grants_on_agent_id_and_revoked_at"
+    t.index ["agent_id", "room_id", "capability"], name: "index_agent_grants_on_agent_room_capability_active", unique: true, where: "revoked_at IS NULL AND room_id IS NOT NULL"
+  end
+
   create_table "agents", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "description"
@@ -168,6 +181,48 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+  end
+
+  create_table "github_pull_request_references", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "github_pull_request_id", null: false
+    t.integer "message_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_pull_request_id"], name: "index_github_pull_request_references_on_github_pull_request_id"
+    t.index ["message_id", "github_pull_request_id"], name: "index_gh_pr_refs_on_message_and_pr", unique: true
+    t.index ["message_id"], name: "index_github_pull_request_references_on_message_id"
+  end
+
+  create_table "github_pull_requests", force: :cascade do |t|
+    t.string "author_avatar_url"
+    t.string "author_login"
+    t.string "base_branch"
+    t.string "check_status"
+    t.datetime "created_at", null: false
+    t.string "fetch_error"
+    t.datetime "fetch_requested_at"
+    t.datetime "fetched_at"
+    t.datetime "github_updated_at"
+    t.string "head_branch"
+    t.string "head_sha"
+    t.string "html_url"
+    t.integer "number", null: false
+    t.string "owner", null: false
+    t.json "payload"
+    t.string "repo", null: false
+    t.string "review_decision"
+    t.string "state"
+    t.string "title"
+    t.datetime "updated_at", null: false
+    t.index ["owner", "repo", "number"], name: "index_github_pull_requests_on_owner_repo_number", unique: true
+  end
+
+  create_table "github_webhook_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_guid", null: false
+    t.string "event"
+    t.datetime "updated_at", null: false
+    t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
   end
 
   create_table "huddle_cleanups", force: :cascade do |t|
@@ -361,6 +416,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "github_pull_request_references", "github_pull_requests"
+  add_foreign_key "github_pull_request_references", "messages"
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify

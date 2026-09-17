@@ -1,0 +1,51 @@
+<article class="github-pr-card github-pr-card--<%= pull_request.state || "unknown" %>" data-github-pr="<%= pull_request.full_name %>#<%= pull_request.number %>">
+  <header class="github-pr-card__header">
+    <span class="github-pr-card__repo"><%= pull_request.full_name %></span>
+    <span class="github-pr-card__number">#<%= pull_request.number %></span>
+    <span class="github-pr-card__state"><%= github_pr_state_label(pull_request) %></span>
+  </header>
+
+  <% if pull_request.fetch_error.present? %>
+    <p class="github-pr-card__error">
+      Couldn’t load this pull request.
+      <span class="github-pr-card__error-detail"><%= pull_request.fetch_error %></span>
+    </p>
+  <% elsif pull_request.title.present? %>
+    <p class="github-pr-card__title"><%= pull_request.title %></p>
+
+    <div class="github-pr-card__meta">
+      <% if pull_request.author_login.present? %>
+        <span class="github-pr-card__author">
+          <% if pull_request.author_avatar_url.present? %>
+            <%= image_tag pull_request.author_avatar_url, alt: "", size: "16x16", class: "github-pr-card__avatar", loading: "lazy" %>
+          <% end %>
+          <%= pull_request.author_login %>
+        </span>
+      <% end %>
+
+      <% if pull_request.base_branch.present? && pull_request.head_branch.present? %>
+        <span class="github-pr-card__branches" title="Base ← head">
+          <%= pull_request.base_branch %> ← <%= pull_request.head_branch %>
+        </span>
+      <% end %>
+
+      <% if review_label = github_pr_review_label(pull_request) %>
+        <span class="github-pr-card__review github-pr-card__review--<%= pull_request.review_decision %>"><%= review_label %></span>
+      <% end %>
+
+      <% if checks_label = github_pr_checks_label(pull_request) %>
+        <span class="github-pr-card__checks github-pr-card__checks--<%= pull_request.check_status || "none" %>"><%= checks_label %></span>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="github-pr-card__loading">Loading pull request…</p>
+  <% end %>
+
+  <footer class="github-pr-card__footer">
+    <% if pull_request.github_updated_at.present? %>
+      <span class="github-pr-card__updated">Updated <%= local_datetime_tag pull_request.github_updated_at %></span>
+    <% end %>
+    <%= link_to "View on GitHub", pull_request.html_url || "https://github.com/#{pull_request.full_name}/pull/#{pull_request.number}",
+          class: "github-pr-card__link", target: "_blank", rel: "noopener noreferrer" %>
+  </footer>
+</article>
