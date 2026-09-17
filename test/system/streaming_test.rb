@@ -226,11 +226,8 @@ class StreamingTest < ApplicationSystemTestCase
     wait_for_condition("the cancelled capture did not DELETE the stream") do
       page.evaluate_script("window.__streamDeleteSeen.length") > 0
     end
-    # The server commits the end on another connection; a first read here
-    # that lands before the commit would poison the query cache and read
-    # stale for the whole wait, so poll uncached.
     wait_for_condition("the cancelled capture left the stream live") do
-      Stream.uncached { Stream.find_by(room_id: room.id)&.ended_at.present? }
+      Stream.find_by(room_id: room.id)&.ended_at.present?
     end
 
     assert_no_selector ".stage-live__badge"
@@ -504,11 +501,16 @@ class StreamingTest < ApplicationSystemTestCase
       @gateway_pid = nil
     end
 
+    # Every DB poll runs uncached: the server commits on another
+    # connection, and a first read here that lands before the commit would
+    # poison the query cache and read stale for the whole wait.
     def wait_for_condition(message)
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
-      until yield
-        flunk message if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-        sleep 0.1
+      Stream.uncached do
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
+        until yield
+          flunk message if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          sleep 0.1
+        end
       end
       assert true
     end
