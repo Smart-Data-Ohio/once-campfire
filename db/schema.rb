@@ -98,8 +98,9 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_020000) do
     t.datetime "revoked_at"
     t.integer "room_id"
     t.datetime "updated_at", null: false
+    t.index ["agent_id", "capability"], name: "index_agent_grants_on_agent_capability_active_workspace", unique: true, where: "revoked_at IS NULL AND room_id IS NULL"
     t.index ["agent_id", "revoked_at"], name: "index_agent_grants_on_agent_id_and_revoked_at"
-    t.index ["agent_id", "room_id", "capability"], name: "index_agent_grants_on_agent_room_capability_active", unique: true, where: "revoked_at IS NULL"
+    t.index ["agent_id", "room_id", "capability"], name: "index_agent_grants_on_agent_room_capability_active", unique: true, where: "revoked_at IS NULL AND room_id IS NOT NULL"
   end
 
   create_table "agents", force: :cascade do |t|

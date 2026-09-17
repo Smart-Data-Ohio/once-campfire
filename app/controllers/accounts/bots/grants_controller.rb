@@ -17,6 +17,10 @@ class Accounts::Bots::GrantsController < ApplicationController
       @grants = ordered_grants
       render :index, status: :unprocessable_entity
     end
+  rescue ActiveRecord::RecordNotUnique
+    # Lost a concurrent-create race: the other request's active grant already
+    # covers this capability, so reuse it instead of surfacing a 500.
+    redirect_to account_bot_grants_url(@bot)
   end
 
   def destroy

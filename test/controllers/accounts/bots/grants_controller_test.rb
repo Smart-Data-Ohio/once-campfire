@@ -70,6 +70,19 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "create reuses the existing grant when a concurrent create wins the race" do
+    AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
+    AgentGrant.any_instance.stubs(:save).raises(ActiveRecord::RecordNotUnique)
+
+    assert_no_difference -> { AgentGrant.count } do
+      post account_bot_grants_url(@bot), params: {
+        agent_grant: { capability: "post_messages", room_id: rooms(:watercooler).id }
+      }
+    end
+
+    assert_redirected_to account_bot_grants_url(@bot)
+  end
+
   test "destroy revokes immediately and the next post is forbidden" do
     grant = AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
 

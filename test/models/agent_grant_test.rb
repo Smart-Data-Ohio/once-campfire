@@ -41,6 +41,24 @@ class AgentGrantTest < ActiveSupport::TestCase
     assert_includes duplicate.errors[:capability], "has already been granted"
   end
 
+  test "database rejects a second active workspace-wide grant for the same agent and capability" do
+    AgentGrant.create!(agent: @agent, granted_by: users(:david), capability: "post_messages")
+    duplicate = AgentGrant.new(agent: @agent, granted_by: users(:david), capability: "post_messages")
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      duplicate.save!(validate: false)
+    end
+  end
+
+  test "database rejects a second active room grant for the same agent, room, and capability" do
+    AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "post_messages")
+    duplicate = AgentGrant.new(agent: @agent, room: @room, granted_by: users(:david), capability: "post_messages")
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      duplicate.save!(validate: false)
+    end
+  end
+
   test "same capability in another room or workspace-wide does not conflict" do
     AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "post_messages")
 
