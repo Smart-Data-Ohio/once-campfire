@@ -56,6 +56,86 @@
   padding: var(--block-space-half) var(--inline-space);
 }
 
+.huddle__header-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: var(--inline-space-half);
+}
+
+.huddle__connection {
+  --btn-padding: 0.35em 0.5em;
+}
+
+.huddle__connection[hidden] {
+  display: none;
+}
+
+.huddle__connection-bars {
+  align-items: flex-end;
+  block-size: 0.85em;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.huddle__connection-bars i {
+  background: var(--workspace-border, var(--color-border-darker));
+  border-radius: 1px;
+  display: block;
+  inline-size: 3px;
+}
+
+.huddle__connection-bars i:nth-child(1) {
+  block-size: 35%;
+}
+
+.huddle__connection-bars i:nth-child(2) {
+  block-size: 65%;
+}
+
+.huddle__connection-bars i:nth-child(3) {
+  block-size: 100%;
+}
+
+.huddle__connection[data-quality="good"] .huddle__connection-bars i {
+  background: var(--color-positive);
+}
+
+.huddle__connection[data-quality="fair"] .huddle__connection-bars i:nth-child(-n+2) {
+  background: var(--color-alert);
+}
+
+.huddle__connection[data-quality="poor"] .huddle__connection-bars i:nth-child(1) {
+  background: var(--color-negative);
+}
+
+.huddle__connection-details {
+  display: grid;
+  font-size: 0.78rem;
+  gap: 0.2em 1em;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+}
+
+.huddle__connection-details[hidden] {
+  display: none;
+}
+
+.huddle__connection-details > div {
+  display: flex;
+  gap: 0.5em;
+  justify-content: space-between;
+}
+
+.huddle__connection-details dt {
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
+}
+
+.huddle__connection-details dd {
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
 .huddle__leave {
   color: var(--color-negative);
   flex: none;
@@ -216,8 +296,39 @@
   justify-content: stretch;
 }
 
+.huddle__controls[hidden] {
+  display: none;
+}
+
 .huddle__controls .btn {
   flex: 1;
+}
+
+.huddle__mute-group {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25em;
+  min-inline-size: 0;
+}
+
+.huddle__meter {
+  background: var(--workspace-sidebar-hover, var(--color-message-bg));
+  block-size: 0.35rem;
+  border-radius: 0.25em;
+  display: block;
+  overflow: hidden;
+}
+
+.huddle__meter[hidden] {
+  display: none;
+}
+
+.huddle__meter-fill {
+  background: var(--color-positive);
+  block-size: 100%;
+  display: block;
+  inline-size: 0;
 }
 
 .huddle__controls .btn[aria-pressed="true"] {
@@ -233,8 +344,92 @@
 }
 
 .huddle__settings {
+  display: grid;
+  gap: var(--block-space-half);
+}
+
+.huddle__settings[hidden] {
+  display: none;
+}
+
+.huddle__settings-row {
+  align-items: center;
   display: flex;
-  justify-content: flex-start;
+  gap: var(--inline-space);
+  justify-content: space-between;
+}
+
+.huddle__settings-row[hidden] {
+  display: none;
+}
+
+.huddle__devices {
+  display: grid;
+  gap: var(--block-space-half);
+}
+
+.huddle__devices[hidden] {
+  display: none;
+}
+
+.huddle__devices-heading {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.huddle__device {
+  display: grid;
+  font-size: 0.8rem;
+  gap: 0.2em;
+}
+
+.huddle__device > span {
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
+}
+
+.huddle__device .input {
+  font-size: 0.85rem;
+}
+
+.huddle__preview-wrap[hidden] {
+  display: none;
+}
+
+.huddle__preview {
+  aspect-ratio: 16 / 9;
+  background: oklch(var(--lch-always-black));
+  border-radius: 0.5em;
+  display: block;
+  inline-size: 100%;
+  object-fit: cover;
+  /* Like the in-call tile, the local preview behaves like a mirror. */
+  transform: scaleX(-1);
+}
+
+.huddle__check-error {
+  color: var(--color-negative);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.huddle__check-error[hidden] {
+  display: none;
+}
+
+.huddle__devices-actions {
+  display: flex;
+  gap: var(--inline-space-half);
+}
+
+.huddle__check-devices {
+  --btn-padding: 0.25em 0;
+
+  color: var(--workspace-text-muted, color-mix(in oklch, var(--color-text) 75%, var(--color-bg)));
+  font-size: 0.78rem;
+}
+
+.huddle__check-devices[aria-expanded="true"] {
+  color: var(--color-text);
 }
 
 .huddle__noise {
