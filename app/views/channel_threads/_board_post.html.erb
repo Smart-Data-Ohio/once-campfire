@@ -1,0 +1,229 @@
+<% @page_title = @thread.name %>
+<% @body_class = "sidebar board-post" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to room_path(@room) %>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<% owner = @thread.work_owner %>
+<% owner_label = owner.blank? ? "Unassigned" : @thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
+<% can_manage_metadata = @thread.work_manageable_by?(Current.user) %>
+<% can_assign = @thread.work_assignment_manageable_by?(Current.user) %>
+<% can_lifecycle = @thread.lifecycle_manageable_by?(Current.user) %>
+<% member = @thread.membership_for(Current.user) %>
+
+<main class="board-post" aria-labelledby="post-title">
+  <% if @post_error.present? %>
+    <p class="board-post__error" role="alert"><%= @post_error %></p>
+  <% end %>
+
+  <header class="board-post__header">
+    <p class="board-post__eyebrow">Post in <%= link_to room_display_name(@room), room_path(@room) %></p>
+    <h1 id="post-title"><%= @thread.name %></h1>
+    <p class="board-post__meta">
+      <%= @thread.status %> · <%= pluralize(@thread.messages.count, "message") %>
+      <% unless @thread.active? %>
+        · <strong><%= @thread.locked? ? "Locked" : "Closed" %></strong>
+      <% end %>
+    </p>
+
+    <% if @thread.run_link? %>
+      <p class="board-post__run"><%= link_to "Run", @thread.run_url, target: "_blank", rel: "noopener noreferrer" %></p>
+    <% end %>
+
+    <% if can_manage_metadata %>
+      <details class="board-post__edit">
+        <summary class="btn">Rename</summary>
+        <%= form_with url: room_thread_path(@room, @thread), method: :patch, class: "board-post__form" do |form| %>
+          <%= form.text_field "thread[name]", value: @thread.name, required: true,
+                maxlength: ChannelThread::NAME_LIMIT, autocomplete: "off", aria: { label: "Post title" } %>
+          <%= form.submit "Save title", class: "btn btn--reversed" %>
+        <% end %>
+      </details>
+    <% end %>
+  </header>
+
+  <section class="board-post__work" aria-label="Work metadata">
+    <dl class="board-post__facts">
+      <div>
+        <dt>Status</dt>
+        <dd><span class="board-row__status board-row__status--<%= @thread.work_status %>"><%= @thread.work_status_label %></span></dd>
+      </div>
+      <div>
+        <dt>Owner</dt>
+        <dd><%= owner_label %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %></dd>
+      </div>
+      <div>
+        <dt>Tags</dt>
+        <dd>
+          <% if @thread.tag_names.any? %>
+            <% @thread.tag_names.each do |tag| %>
+              <span class="board-tag"><%= tag %></span>
+            <% end %>
+          <% else %>
+            None
+          <% end %>
+        </dd>
+      </div>
+    </dl>
+
+    <% if @thread.work_status_manageable_by?(Current.user) %>
+      <details class="board-post__edit">
+        <summary class="btn">Update work</summary>
+        <div class="board-post__forms">
+          <%= form_with url: room_thread_path(@room, @thread), method: :patch, class: "board-post__form" do |form| %>
+            <label>
+              <span>Work status</span>
+              <%= form.select "thread[work_status]", options_for_select(
+                    ChannelThread::WORK_STATUSES.map { |status| [ ChannelThread::WORK_STATUS_LABELS.fetch(status), status ] },
+                    @thread.work_status) %>
+            </label>
+            <%= form.submit "Save status", class: "btn btn--reversed" %>
+          <% end %>
+
+          <% if can_assign %>
+            <% humans, agents = @thread.work_owner_candidates %>
+            <%= form_with url: room_thread_path(@room, @thread), method: :patch, class: "board-post__form" do |form| %>
+              <label>
+                <span>Owner</span>
+                <%= form.select "thread[work_owner_id]", grouped_options_for_select(
+                      { "Members" => humans.map { |user| [ user.name, user.id ] },
+                        "Agents" => agents.map { |user| [ user.name, user.id ] } },
+                      @thread.work_owner_id.to_s), { prompt: "Unassigned" } %>
+              </label>
+              <%= form.submit "Save owner", class: "btn btn--reversed" %>
+            <% end %>
+          <% end %>
+
+          <% if can_manage_metadata %>
+            <%= form_with url: room_thread_path(@room, @thread), method: :patch, class: "board-post__form" do |form| %>
+              <label>
+                <span>Tags, comma-separated</span>
+                <%= form.text_field "thread[tags]", value: @thread.tag_names.join(", "),
+                      autocomplete: "off", placeholder: "bug, api" %>
+              </label>
+              <%= form.submit "Save tags", class: "btn btn--reversed" %>
+            <% end %>
+          <% end %>
+        </div>
+      </details>
+    <% end %>
+
+    <%= render "threads/work/links/box", thread: @thread, links: @work_links, linkable_events: @linkable_events, context: :header %>
+  </section>
+
+  <section class="board-post__result" aria-labelledby="post-result-title">
+    <h2 id="post-result-title">Result</h2>
+    <% if @thread.result_markdown.present? %>
+      <div class="board-post__result-body">
+        <%= markdown_message_presentation(ActionText::Content.new(Message::Markdown.render(@thread.result_markdown, room: @room))) %>
+      </div>
+      <p class="board-post__result-meta">
+        Updated <%= time_tag @thread.result_updated_at, data: { local_time_target: "datetime" } if @thread.result_updated_at %>
+        <%= "by #{@thread.result_updated_by&.name}" if @thread.result_updated_by %>
+      </p>
+    <% else %>
+      <p class="board-post__result-empty">No result recorded yet.</p>
+    <% end %>
+
+    <% if @thread.work_status_manageable_by?(Current.user) %>
+      <details class="board-post__edit">
+        <summary class="btn">Edit result</summary>
+        <%= form_with url: room_thread_path(@room, @thread), method: :patch, class: "board-post__form" do |form| %>
+          <%= form.text_area "thread[result_markdown]", value: @thread.result_markdown, rows: 8,
+                maxlength: ChannelThread::RESULT_LIMIT, aria: { label: "Result in Markdown" },
+                placeholder: "Record the outcome in Markdown…" %>
+          <%= form.submit "Save result", class: "btn btn--reversed" %>
+        <% end %>
+      </details>
+    <% end %>
+  </section>
+
+  <section class="board-post__discussion" aria-labelledby="post-discussion-title">
+    <h2 id="post-discussion-title">Discussion</h2>
+    <div class="board-post__messages">
+      <% if @messages.empty? %>
+        <p class="board-post__messages-empty">No messages yet. Start the discussion below.</p>
+      <% end %>
+      <%= message_area_tag(@room, thread: @thread) do %>
+        <%= messages_tag(@room, thread: @thread) do %>
+          <%= render partial: "messages/message", collection: @messages %>
+        <% end %>
+
+        <%= turbo_stream_from @thread, :messages, channel: "RoomMessagesChannel" %>
+      <% end %>
+    </div>
+    <%= render "rooms/show/composer", room: @room, thread: @thread, inline: true %>
+  </section>
+
+  <section class="board-post__membership" aria-label="Post membership">
+    <% if member %>
+      <%= button_to "Leave post", leave_room_thread_path(@room, @thread), method: :delete, class: "btn" %>
+    <% else %>
+      <%= button_to "Join post", join_room_thread_path(@room, @thread), method: :post, class: "btn" %>
+    <% end %>
+  </section>
+
+  <% if @thread.work_thread_events.any? %>
+    <section class="board-post__history" aria-labelledby="post-history-title">
+      <h2 id="post-history-title">Work history</h2>
+      <ol>
+        <% @thread.work_thread_events.ordered.each do |event| %>
+          <li>
+            <% if event.event_type == "result_updated" %>
+              <%= event.actor&.name || "Former member" %> updated the result
+            <% else %>
+              <%= event.actor&.name || "Former member" %> ·
+              <% if event.status_changed? %>
+                status <%= ChannelThread::WORK_STATUS_LABELS.fetch(event.from_status, "Ordinary thread") %>
+                → <%= ChannelThread::WORK_STATUS_LABELS.fetch(event.to_status, "Ordinary thread") %>
+              <% end %>
+              <% if event.owner_changed? %>
+                <% if event.status_changed? %> · <% end %>
+                owner <%= event.from_owner_name || "Unassigned" %>
+                → <%= event.to_owner_name || "Unassigned" %>
+              <% end %>
+              <% if event.note.present? %>
+                · Note: <%= event.note %>
+              <% end %>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
+
+  <section class="board-post__manage" aria-label="Manage post">
+    <% if @thread.locked? %>
+      <% if can_lifecycle %>
+        <%= button_to "Unlock", room_thread_path(@room, @thread),
+              method: :patch, params: { thread: { status: "active" } }, class: "btn" %>
+      <% end %>
+    <% elsif @thread.closed? %>
+      <% if member %>
+        <%= button_to "Reopen", room_thread_path(@room, @thread),
+              method: :patch, params: { thread: { status: "active" } }, class: "btn" %>
+      <% end %>
+      <% if can_lifecycle %>
+        <%= button_to "Lock", room_thread_path(@room, @thread),
+              method: :patch, params: { thread: { status: "locked" } }, class: "btn" %>
+      <% end %>
+    <% else %>
+      <% if can_lifecycle %>
+        <%= button_to "Close", room_thread_path(@room, @thread),
+              method: :patch, params: { thread: { status: "closed" } }, class: "btn" %>
+        <%= button_to "Lock", room_thread_path(@room, @thread),
+              method: :patch, params: { thread: { status: "locked" } }, class: "btn" %>
+      <% end %>
+    <% end %>
+    <% if can_lifecycle %>
+      <%= button_to "Delete post", room_thread_path(@room, @thread), method: :delete,
+            class: "btn btn--negative",
+            form: { data: { turbo_confirm: "Delete this post and its discussion? This can't be undone." } } %>
+    <% end %>
+  </section>
+</main>

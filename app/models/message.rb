@@ -240,6 +240,10 @@ class Message < ApplicationRecord
       errors.add :reply_to_message, "must be in the same conversation" unless source.room_id == room_id && same_stream
     end
 
+    def no_root_messages_in_boards
+      errors.add :thread, "must be present in a board" if thread_id.nil? && room&.board?
+    end
+
     def validate_forward_metadata
       # A source can be deleted after a forward is created. In that case the
       # database intentionally nullifies forwarded_from_message_id while the
@@ -282,5 +286,6 @@ class Message < ApplicationRecord
 
     validate :validate_conversation_links
     validate :validate_forward_metadata
+    validate :no_root_messages_in_boards
     validates :forward_note, length: { maximum: Markdown::SOURCE_LIMIT }, allow_nil: true
 end

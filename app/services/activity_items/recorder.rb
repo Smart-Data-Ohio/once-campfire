@@ -23,8 +23,13 @@ module ActivityItems
       # Future sources such as work events can call this directly. The source
       # remains responsible for exposing current recipient preferences through
       # `activity_recipient_ids` when it has rules beyond room membership.
-      def record!(recipient:, source:, event_type:)
-        new(source).record!(recipient:, event_type:)
+      # skip_source_check is for the one caller whose recipients the source
+      # cannot authorize: a board post's first message notifies room members
+      # following everything, who are not thread members yet, so the board
+      # posts controller authorizes each recipient itself and the recorder
+      # still applies grouping and the unique-index guard.
+      def record!(recipient:, source:, event_type:, skip_source_check: false)
+        new(source).record!(recipient:, event_type:, skip_source_check:)
       end
     end
 
@@ -40,13 +45,13 @@ module ActivityItems
       end
     end
 
-    def record!(recipient:, event_type:)
+    def record!(recipient:, event_type:, skip_source_check: false)
       event_type = event_type.to_s
       validate_event_type!(event_type)
       return unless source_persisted?
       return unless ActivityItem.active_human?(recipient)
       return if @source.respond_to?(:creator_id) && @source.creator_id == recipient.id
-      return unless source_allows_recipient?(recipient)
+      return unless skip_source_check || source_allows_recipient?(recipient)
 
       # A burst of the same kind of update for one thread keeps a single
       # item, repointed at the newest event so it describes the latest

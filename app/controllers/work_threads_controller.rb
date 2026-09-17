@@ -1,6 +1,6 @@
 class WorkThreadsController < ApplicationController
   def index
-    @state = params[:state].to_s.in?(%w[all done agents]) ? params[:state].to_s : "open"
+    @state = params[:state].to_s.in?(%w[all done agents boards]) ? params[:state].to_s : "open"
     @threads = visible_work_threads
     no_store_response!
 
@@ -23,6 +23,8 @@ class WorkThreadsController < ApplicationController
         scope.where(work_status: "done")
       when "agents"
         scope.where(work_owner_id: Agent.select(:user_id))
+      when "boards"
+        scope.where(room_id: Room.boards.select(:id))
       when "all"
         scope
       else

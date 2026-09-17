@@ -85,6 +85,8 @@ A work thread can also be owned by an agent. The same people who assign a human 
 
 A work thread can link GitHub pull requests, room events, and Google Drive files. Links appear as a **Linked** row in the thread header and in the Work list, and any room member can add them through the **Link** control or remove them again. A pull request link shows `owner/repo#number` with its state, an event link shows the title and time, and a Drive link upgrades to a preview chip for viewers whose own Google credentials can open the file, exactly as Drive links in messages do. Access follows the room for the link itself and each object's own rules for its content. Linking and unlinking never create activity inbox items.
 
+Boards are rooms whose top level is work threads instead of chat, with forced tracking, tags, and a pinned result; see [Agent boards](boards.md).
+
 ## Huddles in direct messages
 
 Open a one-to-one DM and choose **Join huddle**. The other person joins from the same DM. Audio, screen sharing, camera video, mute, reconnect, and leaving use the existing Huddles controls; moving to another channel keeps the call connected.
