@@ -14,6 +14,10 @@ class MessageTest < ActiveSupport::TestCase
     assert_not Message.new(body: "Haha! 😄🤘").plain_text_body.all_emoji?
     assert_not Message.new(body: "🔥\nmultiple lines\n💯").plain_text_body.all_emoji?
     assert_not Message.new(body: "🔥 💯").plain_text_body.all_emoji?
+    assert ":openai:🔥".all_emoji?
+    assert ":openai::fire:".all_emoji?
+    assert_not ":openai: hello".all_emoji?
+    assert_not "12:30".all_emoji?
   end
 
   test "mentionees" do

@@ -13,11 +13,12 @@ class Message::Markdown
     action-text-attachment div figure figcaption img span
   ]).freeze
   PRESENTATION_ATTRIBUTES = (MARKDOWN_ATTRIBUTES + ActionText::Attachment::ATTRIBUTES + %w[
-    alt aria-hidden data-turbo-frame data-user-id height src width
+    alt aria-hidden data-turbo-frame data-user-id draggable height src width
   ]).uniq.freeze
 
   MENTION_TOKEN_PATTERN = /(?<!\\)@\[(?<name>[^\[\]\r\n]+)\]/
   SKIPPED_MENTION_ANCESTORS = %w[ a code pre ].freeze
+  SKIPPED_ICON_ANCESTORS = %w[ a action-text-attachment code pre ].freeze
   ALLOWED_CLASSES = %w[ contains-task-list markdown-body task-list-item ].freeze
   LANGUAGE_CLASS_PATTERN = /\Alanguage-[a-zA-Z0-9_+.-]+\z/
   BLOCK_TAGS = %w[ blockquote h1 h2 h3 h4 h5 h6 li ol p pre table tr ul ].freeze
@@ -44,7 +45,14 @@ class Message::Markdown
     # server-rendered Action Text attachments, then sanitizes once more with the
     # attributes required by the existing mention partial.
     def sanitize_presentation(html)
-      sanitize(html, tags: PRESENTATION_TAGS, attributes: PRESENTATION_ATTRIBUTES)
+      safe = sanitize(html, tags: PRESENTATION_TAGS, attributes: PRESENTATION_ATTRIBUTES)
+      return safe unless safe.include?("icon--brand")
+
+      fragment = Nokogiri::HTML5.fragment(safe)
+      fragment.css("img.icon--brand").each do |img|
+        img.remove unless Icons.brand_image_urls.value?(img["src"])
+      end
+      fragment.to_html
     end
 
     private
@@ -59,6 +67,7 @@ class Message::Markdown
       def plain_text_from(node)
         return node.text if node.text?
         return "\n" if node.name == "br"
+        return node["alt"].to_s if node.name == "img" && node["class"].to_s.split.include?("icon--brand")
 
         text = node.children.map { |child| plain_text_from(child) }.join
         return "#{text}\t" if CELL_TAGS.include?(node.name)
@@ -98,6 +107,7 @@ class Message::Markdown
     constrain_generated_markup(fragment)
     restore_mention_tokens_in_attributes(fragment, mention_tokens)
     restore_mention_tokens(fragment, mention_tokens)
+    expand_icon_shortcodes(fragment)
     fragment.to_html
   end
 
@@ -199,5 +209,45 @@ class Message::Markdown
 
     def skipped_mention_context?(text_node)
       text_node.ancestors.any? { |ancestor| SKIPPED_MENTION_ANCESTORS.include?(ancestor.name) }
+    end
+
+    def expand_icon_shortcodes(fragment)
+      fragment.xpath(".//text()").each do |text_node|
+        next unless text_node.content.match?(Icons::SHORTCODE_PATTERN)
+        next if skipped_icon_context?(text_node)
+
+        replacement = Nokogiri::XML::DocumentFragment.new(fragment.document)
+        remaining = text_node.content
+
+        while (match = Icons::SHORTCODE_PATTERN.match(remaining))
+          replacement.add_child(Nokogiri::XML::Text.new(remaining[0...match.begin(0)], fragment.document)) if match.begin(0).positive?
+          replacement.add_child(icon_node(fragment, match[:name]))
+          remaining = remaining[match.end(0)..]
+        end
+
+        replacement.add_child(Nokogiri::XML::Text.new(remaining, fragment.document)) if remaining.present?
+        text_node.replace(replacement)
+      end
+    end
+
+    def icon_node(fragment, name)
+      case (icon = Icons.find(name))
+      when Icons::Brand
+        Nokogiri::XML::Node.new("img", fragment.document).tap do |img|
+          img["class"] = "icon icon--brand"
+          img["src"] = Icons.brand_image_urls.fetch(icon.name)
+          img["alt"] = ":#{icon.name}:"
+          img["title"] = icon.title
+          img["draggable"] = "false"
+        end
+      when Icons::Emoji
+        Nokogiri::XML::Text.new(icon.character, fragment.document)
+      else
+        Nokogiri::XML::Text.new(":#{name}:", fragment.document)
+      end
+    end
+
+    def skipped_icon_context?(text_node)
+      text_node.ancestors.any? { |ancestor| SKIPPED_ICON_ANCESTORS.include?(ancestor.name) }
     end
 end
