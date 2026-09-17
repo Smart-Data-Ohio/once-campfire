@@ -9,6 +9,9 @@ class EventAttendance < ApplicationRecord
   validate :user_must_be_active_human
   validate :user_must_be_room_member
 
+  after_create_commit -> { Calendar::SyncEntryJob.perform_later(event_id, user_id) }
+  after_update_commit -> { Calendar::SyncEntryJob.perform_later(event_id, user_id) if saved_change_to_response? }
+
   private
     def event_must_be_open
       errors.add :event, "is cancelled" if event&.cancelled?

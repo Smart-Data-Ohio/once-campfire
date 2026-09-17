@@ -12,6 +12,9 @@ class User < ApplicationRecord
 
   has_many :push_subscriptions, class_name: "Push::Subscription", dependent: :delete_all
 
+  has_one :google_account, dependent: :destroy
+  has_many :event_calendar_entries, dependent: :destroy
+
   has_many :boosts, dependent: :destroy, foreign_key: :booster_id
   has_many :searches, dependent: :delete_all
 
