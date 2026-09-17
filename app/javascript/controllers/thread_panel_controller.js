@@ -856,11 +856,24 @@ export default class extends Controller {
     return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
   }
 
+  #emptyThreadListMessage() {
+    switch (this.filterTarget.value) {
+      case "work":
+        return "No open work in this channel. Open a thread, then choose Manage → Track as work to give it a status and an owner."
+      case "done":
+        return "No completed work in this channel yet. Tracked work appears here once its status is set to Done."
+      case "closed":
+        return "No closed threads in this channel."
+      default:
+        return "No threads yet. Choose New thread to start one."
+    }
+  }
+
   #renderThreadList() {
     const list = this.browserListTarget
     list.replaceChildren()
     if (this.#threads.length === 0) {
-      this.browserStatusTarget.textContent = "No threads match this filter."
+      this.browserStatusTarget.textContent = this.#emptyThreadListMessage()
       return
     }
     this.browserStatusTarget.textContent = ""

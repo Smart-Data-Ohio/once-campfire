@@ -21,7 +21,7 @@
     <div>
       <span class="work-threads__eyebrow">Workspace work</span>
       <h1 id="work-threads-title">Work threads</h1>
-      <p>Pick up an active conversation without searching through archived channel threads.</p>
+      <p>A work thread is a channel thread with a status and an owner. This list gathers tracked work from every channel you belong to, so you can pick it back up without searching through archived threads.</p>
     </div>
 
     <nav class="work-threads__filters" aria-label="Work thread filters">
@@ -31,8 +31,28 @@
     </nav>
   </header>
 
+  <details class="work-threads__guide" <%= "open" if @threads.empty? %>>
+    <summary>How to start a work thread</summary>
+    <ol>
+      <li>Open a channel and choose <strong>Threads</strong> in the channel header.</li>
+      <li>Open an existing thread, or choose <strong>New thread</strong> to start one from scratch or from a message.</li>
+      <li>In the thread, open <strong>Manage</strong> and choose <strong>Track as work</strong>. The thread starts as <strong>Planned</strong>.</li>
+      <li>Use <strong>Update work</strong> to assign an owner from the channel and move it through <strong>In progress</strong>, <strong>Blocked</strong>, and <strong>Done</strong>.</li>
+    </ol>
+    <p>The person who started the thread, the channel's creator, or an administrator can turn tracking on and assign an owner. The assigned owner can update the status. Completing work keeps the conversation and its history.</p>
+  </details>
+
   <% if @threads.empty? %>
-    <p class="work-threads__empty">No work threads match this view.</p>
+    <p class="work-threads__empty">
+      <% case @state %>
+      <% when "done" %>
+        No completed work yet. Work shows up here once its status is set to Done.
+      <% when "all" %>
+        No work threads yet. Track a channel thread as work and it will appear here.
+      <% else %>
+        No open work yet. Track a channel thread as work and it will appear here.
+      <% end %>
+    </p>
   <% else %>
     <div class="work-threads__list" role="list">
       <%= render partial: "work_threads/thread", collection: @threads, as: :thread %>
