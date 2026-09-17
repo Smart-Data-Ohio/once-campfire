@@ -3,7 +3,7 @@ class Agents::MessagesController < MessagesController
 
   allow_agent_access only: :create
 
-  # Bearer-only endpoint. Forgery protection stays on: Bearer [REDACTED] already
+  # Bearer-only endpoint. Forgery protection stays on: Bearer agent already
   # bypass it through the Authentication concern, and a session-cookie request
   # that trips it gets the same 403 JSON that ensure_agent_token would return.
   rescue_from ActionController::InvalidAuthenticityToken, with: :reject_session_request
@@ -43,7 +43,7 @@ class Agents::MessagesController < MessagesController
     end
 
     def reject_session_request
-      render json: { error: "Forbidden: Bearer [REDACTED] token required" }, status: :forbidden
+      render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
     end
 
     def create_thread_reply
