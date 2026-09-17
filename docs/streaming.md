@@ -23,9 +23,7 @@ One room carries at most one live stream. Starting while another stream is
 live answers 409 and names the presenter. Listeners cannot go live, and
 non-members get 404 like the other stage endpoints.
 
-Going live works best from inside the call. Starting without joining
-leaves the stream live with no video until the presenter joins and shares
-or stops it; joining afterwards shares through the ordinary control.
+Going live requires joining the stage call first: the Go live control stays disabled until the huddle connects to the room, and starting without an active huddle grant is rejected, so a stream never goes live with nothing to publish over.
 
 ## Watching
 
@@ -79,9 +77,7 @@ A stream also ends, in the same transaction, when:
 Ending always broadcasts the same updates as an explicit stop. On the
 presenting browser, a cancelled or denied capture, the browser's own stop
 control, and leaving the call end the stream as well, so no live state
-dangles behind a share that is already gone. A host stopping someone
-else's stream ends the live state; the presenter's share, if still
-publishing, continues as an ordinary screen share.
+dangles behind a share that is already gone. When a host stops someone else's stream, the presenter's browser is notified through the huddle panel and stops sharing, instead of the share continuing as an ordinary screen share.
 
 ## Deliberately not included
 

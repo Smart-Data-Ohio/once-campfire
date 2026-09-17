@@ -92,13 +92,15 @@ class Rooms::StageViewTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_no_match(/Live: David/, response.body)
 
+    grant = HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"),
+      membership: @room.memberships.find_by!(user: users(:david)))
     Stream.create!(room: @room, membership: @room.memberships.find_by!(user: users(:david)),
       user: users(:david), quality: "1080p15")
     get room_url(@room)
 
     assert_response :success
     assert_match(/Live: David/, response.body)
-    assert_match(/data-live-stream-presenter-name="David"/, response.body)
+    assert_match(/data-presenter-id="#{grant.identity}"/, response.body)
   end
 
   test "the sidebar live dot renders only while live" do

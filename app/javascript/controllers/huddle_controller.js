@@ -1542,6 +1542,7 @@ export default class extends Controller {
       wrapper: figure,
       publication,
       name,
+      participantIdentity: participant?.identity || null,
       isLocal,
       kind: "screen",
       expandButton,
@@ -1798,29 +1799,31 @@ export default class extends Controller {
     }
   }
 
-  // The Live badge names the presenter of the connected room's stream, if
-  // the current page carries one. Viewed from another page there is no badge
-  // to match against, so shares there expand only by hand.
-  #liveStreamPresenterName() {
+  // The Live badge carries the presenter's LiveKit participant identity for
+  // the connected room's stream, if the current page carries one. Viewed
+  // from another page there is no badge to match against, so shares there
+  // expand only by hand.
+  #liveStreamPresenterId() {
     if (!this.roomId) return null
 
     const badge = document.querySelector(
       `[data-live-stream-badge][data-room-id="${this.roomId}"]`
     )
-    return badge?.dataset.liveStreamPresenterName || null
+    return badge?.dataset.presenterId || null
   }
 
   // The presenter's screen share: the local one while this browser presents,
-  // otherwise a remote share whose publisher matches the Live badge. The
-  // token names participants after their users, so the badge name identifies
-  // the publisher; ordinary shares from other speakers never match.
+  // otherwise a remote share whose publisher identity matches the Live
+  // badge. Identity — not the display name — identifies the publisher, so
+  // two members sharing a name never mis-resolve; ordinary shares from other
+  // speakers never match.
   #isStreamTrack(track) {
     const attachment = this.attachments.get(track)
     if (!attachment || attachment.kind !== "screen") return false
     if (attachment.isLocal) return this.streaming?.roomId === this.roomId
 
-    const presenter = this.#liveStreamPresenterName()
-    return presenter !== null && attachment.name === presenter
+    const presenterId = this.#liveStreamPresenterId()
+    return presenterId !== null && attachment.participantIdentity === presenterId
   }
 
   // The viewed stream's remote publication, for the quality control. The

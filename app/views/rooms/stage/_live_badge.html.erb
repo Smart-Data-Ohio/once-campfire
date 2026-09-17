@@ -1,6 +1,9 @@
 <% stream = room.live_stream %>
+<% presenter_identity = stream && HuddleGrant.active
+      .where(room_id: room.id, membership_id: stream.membership_id)
+      .order(last_issued_at: :desc).pick(:identity) %>
 <%= tag.span id: dom_id(room, :stage_live_badge), class: "stage-live",
-      data: { live_stream_badge: true, room_id: room.id, live_stream_presenter_name: stream&.user&.name } do %>
+      data: { live_stream_badge: true, room_id: room.id, presenter_id: presenter_identity } do %>
   <% if stream %>
     <span class="stage-live__badge" role="status">
       <span class="stage-live__pip" aria-hidden="true"></span>

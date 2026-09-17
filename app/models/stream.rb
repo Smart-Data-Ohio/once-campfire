@@ -45,6 +45,11 @@ class Stream < ApplicationRecord
     # revocation, and gateway enforcement all funnel through here.
     def end_when_last_grant_revoked(grant)
       return if grant.room_id.nil? || grant.membership_id.nil?
+
+      # Streams only exist on stage rooms; every other revocation — DMs,
+      # voice, plain channels — skips the membership and stream lookups.
+      stage_room = Room.find_by(id: grant.room_id)
+      return unless stage_room.is_a?(Rooms::Stage)
       return if HuddleGrant.active.where(room_id: grant.room_id, membership_id: grant.membership_id).exists?
 
       live.where(room_id: grant.room_id, membership_id: grant.membership_id).each(&:end!)

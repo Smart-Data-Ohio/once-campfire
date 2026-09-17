@@ -243,4 +243,26 @@ class StreamTest < ActiveSupport::TestCase
 
     assert_not Stream.exists?(stream.id)
   end
+
+  test "revoking a grant outside a stage room runs no stream queries" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    queries = capture_sql { grant.revoke! }
+
+    assert_no_match(/FROM "streams"/, queries.join("\n"))
+  end
+
+  private
+    def capture_sql
+      queries = []
+      subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+        queries << payload[:sql] unless payload[:name] == "SCHEMA" || payload[:cached]
+      end
+
+      ActiveRecord::Base.connection_pool.clear_query_cache
+      yield
+      queries
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
+    end
 end
