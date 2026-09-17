@@ -265,6 +265,80 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "ledger page shows content when the message is currently readable" do
+    sign_in :david
+    @room.messages.create!(
+      creator: users(:david), body: "Readable ledger plans #{mention_attachment_for(:bender)}",
+      client_message_id: "ledger-readable"
+    )
+
+    get agent_events_url(@agent)
+
+    assert_response :success
+    assert_match "Readable ledger plans", response.body
+    assert_no_match "Content unavailable", response.body
+  end
+
+  test "ledger page redacts content after the agent loses room membership" do
+    sign_in :david
+    message = @room.messages.create!(
+      creator: users(:david), body: "Secret membership plans #{mention_attachment_for(:bender)}",
+      client_message_id: "ledger-membership"
+    )
+    memberships(:bender_watercooler).destroy!
+
+    get agent_events_url(@agent)
+
+    assert_response :success
+    assert_match "Content unavailable", response.body
+    assert_no_match "Secret membership plans", response.body
+    assert_match "message ##{message.id}", response.body
+  end
+
+  test "ledger page redacts content after the read grant is revoked" do
+    sign_in :david
+    grant = AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "read_messages")
+    @room.messages.create!(
+      creator: users(:david), body: "Secret grant plans #{mention_attachment_for(:bender)}",
+      client_message_id: "ledger-grant"
+    )
+    grant.revoke!
+
+    get agent_events_url(@agent)
+
+    assert_response :success
+    assert_match "Content unavailable", response.body
+    assert_no_match "Secret grant plans", response.body
+  end
+
+  test "ledger page redacts content for an owner outside the room" do
+    @agent.update!(owner: users(:kevin))
+    sign_in users(:kevin)
+    @room.messages.create!(
+      creator: users(:david), body: "Secret owner plans #{mention_attachment_for(:bender)}",
+      client_message_id: "ledger-owner-outside"
+    )
+
+    get agent_events_url(@agent)
+
+    assert_response :success
+    assert_match "Content unavailable", response.body
+    assert_no_match "Secret owner plans", response.body
+  end
+
+  test "ledger page shows content to an owner inside the room" do
+    @agent.update!(owner: users(:kevin))
+    sign_in users(:kevin)
+    rooms(:bender_and_kevin).messages.create!(
+      creator: users(:kevin), body: "Shared DM plans", client_message_id: "ledger-owner-inside"
+    )
+
+    get agent_events_url(@agent)
+
+    assert_response :success
+    assert_match "Shared DM plans", response.body
+  end
+
   test "ledger page filters by outcome" do
     sign_in :david
     @room.messages.create!(

@@ -12,10 +12,10 @@
       <% if event.detail.present? %>
         <div class="txt-small"><%= event.detail %></div>
       <% end %>
-      <% if event.message %>
+      <% if agent_event_content_visible?(@agent, event, Current.user) %>
         <div class="txt-small overflow-ellipsis"><%= truncate(event.message.plain_text_body, length: 140) %></div>
-      <% elsif event.message_id %>
-        <div class="txt-small">Message deleted</div>
+      <% else %>
+        <div class="txt-small">Content unavailable</div>
       <% end %>
     </div>
   </div>
