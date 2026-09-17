@@ -168,7 +168,7 @@ class ChannelThread < ApplicationRecord
   # The membership, lifecycle transition, activity timestamp, and post belong
   # to one critical section. In particular, a close/lock racing a post may not
   # leave a newly written message in a thread that was just archived or locked.
-  def post_message!(creator:, attributes:)
+  def post_message!(creator:, attributes:, drive_file_ids: nil)
     message = nil
 
     self.class.transaction(requires_new: true) do
@@ -180,7 +180,13 @@ class ChannelThread < ApplicationRecord
         ThreadMembership.join!(self, creator)
         now = Time.current
         update!(closed_at: nil, last_activity_at: now)
-        message = Message.create_with_attachment!(attributes.merge(room:, thread: self, creator:))
+        # Built on the unsaved message (like Message.create_with_attachment!
+        # does for its attachment) so a textless post with attachments
+        # validates and everything saves atomically.
+        message = Message.new(attributes.merge(room:, thread: self, creator:))
+        Array(drive_file_ids).each { |file_id| message.drive_attachments.build(file_id:) }
+        message.save!
+        message.process_attachment
       end
     end
 

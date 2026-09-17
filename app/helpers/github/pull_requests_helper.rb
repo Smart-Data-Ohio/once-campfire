@@ -96,16 +96,19 @@ module Github::PullRequestsHelper
   #
   # The decision is cached per viewer and repository for 10 minutes, both
   # grants and denials, so a page of cards from one repository costs at
-  # most one GitHub request per viewer per window. Members without a
-  # usable linked account are denied with no request, and a transport
-  # failure denies without caching so the next load retries.
+  # most one GitHub request per viewer per window. The key carries the
+  # linked account's updated_at, so linking, relinking, or repairing the
+  # account invalidates that member's cached decisions without enumerating
+  # repositories. Members without a usable linked account are denied with
+  # no request, and a transport failure denies without caching so the next
+  # load retries.
   def github_pr_visible_to?(pull_request, user)
     return true if github_pr_public?(pull_request)
 
     account = user&.github_connected_account
     return false unless account&.usable?
 
-    Rails.cache.fetch([ "github_repo_access", user.id, pull_request.owner, pull_request.repo ], expires_in: 10.minutes) do
+    Rails.cache.fetch([ "github_repo_access", user.id, account.updated_at, pull_request.owner, pull_request.repo ], expires_in: 10.minutes) do
       Github::WriteClient.new(token: account.access_token)
         .repository_readable?(pull_request.owner, pull_request.repo)
     rescue Github::WriteClient::Unauthorized
