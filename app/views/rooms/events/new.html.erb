@@ -1,0 +1,12 @@
+<% @page_title = "New event" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to room_events_path(@room) %>
+  </div>
+<% end %>
+
+<section class="panel">
+  <h1>Schedule an event in <%= room_display_name(@room) %></h1>
+  <%= render "rooms/events/form", event: @event, url: room_events_path(@room) %>
+</section>

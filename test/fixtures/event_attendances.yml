@@ -1,0 +1,29 @@
+launch_david:
+  event: launch_party
+  user: david
+  response: going
+
+launch_jason:
+  event: launch_party
+  user: jason
+  response: maybe
+
+launch_jz:
+  event: launch_party
+  user: jz
+  response: declined
+
+retro_jason:
+  event: retro
+  user: jason
+  response: going
+
+sync_david:
+  event: watercooler_sync
+  user: david
+  response: going
+
+sync_jason:
+  event: watercooler_sync
+  user: jason
+  response: going

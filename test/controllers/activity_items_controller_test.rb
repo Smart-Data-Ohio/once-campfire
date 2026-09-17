@@ -211,6 +211,20 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_select "##{ActionView::RecordIdentifier.dom_id(missed_item)}", text: /You missed a huddle from Jason/
   end
 
+  test "event items carry their event in the JSON payload" do
+    event = events(:launch_party)
+    item = ActivityItem.create!(user: users(:david), source: event, event_type: "event_update")
+
+    get activity_items_url, as: :json
+
+    assert_response :success
+    payload = response.parsed_body.fetch("activity_items").find { |entry| entry.fetch("id") == item.id }
+    assert_equal "Event", payload.dig("source", "type")
+    assert_equal event.id, payload.dig("source", "id")
+    assert_equal event.room_id, payload.dig("source", "room_id")
+    assert_equal room_event_path(event.room, event), payload.dig("source", "path")
+  end
+
   private
     def start_dm_huddle_for(recipient)
       starter = (rooms(:david_and_jason).user_ids - [ recipient.id ]).first
