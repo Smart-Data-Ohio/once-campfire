@@ -4,7 +4,14 @@
   <% room_icon = icon_avatar_tag(room.icon_name, size: 24) %>
   <span class="sidebar-item__icon<%= " sidebar-item__icon--custom" if room_icon %>" aria-hidden="true"><%= room_icon %></span>
   <span class="sidebar-item__label overflow-ellipsis"><%= room.name %></span>
-  <% if local_assigns[:unread] %>
+  <% if Huddle.configured? %>
+    <span class="voice-room__trailing">
+      <%= render "rooms/huddles/participants", room: room, placement: :sidebar, participants: huddle_participants_by_room_id[room.id] || [] %>
+      <% if local_assigns[:unread] %>
+        <span class="sidebar-item__status">New</span>
+      <% end %>
+    </span>
+  <% elsif local_assigns[:unread] %>
     <span class="sidebar-item__status">New</span>
   <% end %>
 <% end %>

@@ -1,7 +1,8 @@
 <%= sidebar_turbo_frame_tag do %>
   <div class="sidebar__container"
-      data-controller="badge-dot"
+      data-controller="badge-dot<%= " huddle-presence" if Huddle.configured? %>"
       data-badge-dot-unread-class="unread"
+      data-huddle-presence-url-value="<%= huddle_presence_users_path %>"
       data-action="rooms-list:unread@window->badge-dot#update rooms-list:read@window->badge-dot#update turbo:submit-start->turbo-frame#unpermanize">
     <header class="workspace-identity">
       <div class="workspace-identity__mark" aria-hidden="true">
@@ -93,7 +94,8 @@
           </header>
 
           <div id="direct_rooms" class="sidebar-list" data-controller="sorted-list" data-action="rooms-list:unread@window->sorted-list#updateItem">
-            <%= render partial: "users/sidebars/rooms/direct", collection: @direct_memberships, as: :membership, cached: true %>
+            <%# No collection caching: the huddle stack inside each row must render fresh. %>
+            <%= render partial: "users/sidebars/rooms/direct", collection: @direct_memberships, as: :membership %>
           </div>
 
           <div class="sidebar-list sidebar-list--people" aria-label="Start a direct message">

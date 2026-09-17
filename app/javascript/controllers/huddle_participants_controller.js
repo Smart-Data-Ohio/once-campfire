@@ -1,9 +1,11 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Who is currently in a voice channel, rendered as an avatar stack with a
+// Who is currently in a room's huddle, rendered as an avatar stack with a
 // count. Server pushes replace this stack when a grant is issued, revoked, or
 // first seen in the call; the interval below only covers grants that quietly
-// expire, so it must not run more often than every 15 seconds.
+// expire, so it must not run more often than every 15 seconds. An interval of
+// zero means the stack is fed externally (sidebar rows share one aggregate
+// poll) and never polls on its own.
 class ParticipantsRevoked extends Error {}
 
 // Responses are shared across every stack watching the same room, so a room
@@ -30,7 +32,9 @@ export default class extends Controller {
   static values = { url: String, max: Number, interval: Number, label: { type: String, default: "in voice" } }
 
   connect() {
-    this.refreshTimer = setInterval(() => this.refresh(), this.intervalValue)
+    if (this.intervalValue > 0) {
+      this.refreshTimer = setInterval(() => this.refresh(), this.intervalValue)
+    }
     this.handleSharedUpdate = ({ detail }) => {
       if (detail.url === this.urlValue && !this.revoked) this.#render(detail.participants)
     }
@@ -113,8 +117,10 @@ export default class extends Controller {
 
     this.countTarget.hidden = participants.length === 0
     this.countTarget.textContent = participants.length
-    this.element.setAttribute("aria-label", participants.length > 0
+    const label = participants.length > 0
       ? `${participants.length} ${this.labelValue}: ${participants.map(participant => participant.name).join(", ")}`
-      : `Nobody ${this.labelValue}`)
+      : `Nobody ${this.labelValue}`
+    this.element.setAttribute("aria-label", label)
+    this.element.setAttribute("title", label)
   }
 }

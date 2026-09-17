@@ -1,15 +1,18 @@
-<% participants = HuddleGrant.participants_for(room) %>
+<% participants = local_assigns[:participants] || HuddleGrant.participants_for(room) %>
 <% max_avatars = placement == :header ? 5 : 3 %>
-<% on_stage = room.stage? %>
+<% label = room.stage? ? "on stage" : room.voice? ? "in voice" : "in huddle" %>
+<% accessible_label = participants.any? ? "#{participants.count} #{label}: #{participants.map(&:name).to_sentence}" : "Nobody #{label}" %>
 <span id="<%= dom_id(room, :"#{placement}_voice_participants") %>"
-      class="voice-stack<%= " voice-stack--live" if participants.any? %>"
+      class="voice-stack<%= " voice-stack--live" if participants.any? %><%= " voice-stack--huddle" unless room.voice? || room.stage? %>"
       role="img"
-      aria-label="<%= participants.any? ? "#{participants.count} #{on_stage ? "on stage" : "in voice"}: #{participants.map(&:name).to_sentence}" : (on_stage ? "Nobody on stage" : "Nobody in voice") %>"
+      aria-label="<%= accessible_label %>"
+      title="<%= accessible_label %>"
       data-controller="huddle-participants"
       data-huddle-participants-url-value="<%= participants_room_huddle_path(room) %>"
       data-huddle-participants-max-value="<%= max_avatars %>"
-      data-huddle-participants-interval-value="15000"
-      data-huddle-participants-label-value="<%= on_stage ? "on stage" : "in voice" %>">
+      data-huddle-participants-interval-value="<%= placement == :sidebar ? 0 : 15000 %>"
+      data-huddle-participants-label-value="<%= label %>"
+      data-huddle-presence-room-id="<%= room.id %>">
   <span class="voice-stack__avatars" data-huddle-participants-target="avatars">
     <% participants.first(max_avatars).each do |participant| %>
       <%= image_tag fresh_user_avatar_path(participant), size: 20, alt: "", title: participant.name,

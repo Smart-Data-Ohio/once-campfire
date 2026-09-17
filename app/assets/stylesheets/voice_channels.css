@@ -54,6 +54,23 @@
   margin-inline-end: 0.25rem;
 }
 
+/* Channel and DM rows show the stack only while someone is in the call, so
+   quiet rows look exactly as before; the empty stack stays in the DOM as the
+   broadcast target. */
+.voice-stack--huddle:not(.voice-stack--live) {
+  display: none;
+}
+
+/* A small live pip after the count while anyone is in the call. */
+.voice-stack--huddle.voice-stack--live::after {
+  background: var(--color-negative);
+  block-size: 0.5rem;
+  border-radius: 50%;
+  content: "";
+  flex: none;
+  inline-size: 0.5rem;
+}
+
 @media (max-width: 40rem) {
   /* The phone header already squeezes seven icon-only actions beside the
      sidebar toggle, so the voice stack yields first: at most three

@@ -28,17 +28,14 @@
       <% end %>
     <% end %>
 
-    <% if room.voice? || room.stage? %>
-      <%= render "rooms/huddles/participants", room: room, placement: :header %>
-    <% end %>
-
     <%= link_to room_events_path(room), class: "btn room-header__action", aria: { label: "Show events" }, title: "Show events" do %>
       <%= image_tag "calendar.svg", size: 20, aria: { hidden: "true" } %>
       <span class="room-header__action-label">Events</span>
     <% end %>
 
     <% stage_membership = room.stage? ? room.memberships.find_by(user: Current.user) : nil %>
-    <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
+    <% huddleable = Huddle.configured? && (!room.direct? || room.users.count == 2) %>
+    <% if huddleable %>
       <%= render "rooms/stage/live_badge", room: room if room.stage? %>
       <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
             aria: { label: "View shared screen" }, title: "View shared screen",
@@ -50,6 +47,8 @@
         <%= image_tag "laptop.svg", size: 20, aria: { hidden: "true" } %>
         <span data-huddle-share-indicator-target="label">Screen shared</span>
       <% end %>
+
+      <%= render "rooms/huddles/participants", room: room, placement: :header %>
 
       <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle" },
             data: {

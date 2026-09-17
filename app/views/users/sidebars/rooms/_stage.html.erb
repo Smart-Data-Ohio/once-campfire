@@ -6,7 +6,7 @@
   <span class="sidebar-item__label overflow-ellipsis"><%= room.name %></span>
   <span class="voice-room__trailing">
     <%= render "rooms/stage/live_dot", room: room %>
-    <%= render "rooms/huddles/participants", room: room, placement: :sidebar %>
+    <%= render "rooms/huddles/participants", room: room, placement: :sidebar, participants: huddle_participants_by_room_id[room.id] || [] %>
     <% if local_assigns[:unread] %>
       <span class="sidebar-item__status">New</span>
     <% end %>
