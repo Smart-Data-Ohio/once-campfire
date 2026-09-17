@@ -273,6 +273,20 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: users(:jason), source: occurrences.third)
   end
 
+  test "this event on the head accepts the form's unchanged rule values" do
+    head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
+    occurrences = head.series_events.to_a
+
+    occurrences.first.update_with_scope!(
+      { title: "Renamed", recurrence_rule: "weekly", recurrence_until: head.recurrence_until.to_s },
+      scope: "this_event", actor: @organizer
+    )
+
+    assert_equal "Renamed", occurrences.first.reload.title
+    assert_equal "Planning session", occurrences.second.reload.title
+    assert_equal "Planning session", occurrences.third.reload.title
+  end
+
   test "this event is the default scope" do
     head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
     occurrences = head.series_events.to_a
