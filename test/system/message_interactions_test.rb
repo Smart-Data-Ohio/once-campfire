@@ -66,6 +66,9 @@ class MessageInteractionsTest < ApplicationSystemTestCase
       open_message_actions
     end
     assert_compact_action_menu(max_reaction_rows: 2)
+
+    page.send_keys :escape
+    assert_no_selector ".message[data-message-actions-open]"
   ensure
     page.current_window.resize_to(1400, 1400)
   end
@@ -312,8 +315,17 @@ class MessageInteractionsTest < ApplicationSystemTestCase
             const rect = element.getBoundingClientRect()
             return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
           }
+          const contentHeight = menu => {
+            const style = getComputedStyle(menu)
+            const children = Array.from(menu.children).filter(child => child.getBoundingClientRect().height > 0)
+            const gaps = Math.max(0, children.length - 1) * parseFloat(style.rowGap || 0)
+            const frame = ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"]
+              .reduce((sum, property) => sum + parseFloat(style[property] || 0), 0)
+            return children.reduce((sum, child) => sum + child.getBoundingClientRect().height, 0) + gaps + frame
+          }
           return {
             rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+            contentHeight: menu ? contentHeight(menu) : null,
             menu: menu ? bounds(menu) : null,
             row: row ? bounds(row) : null,
             viewport: { width: window.innerWidth, height: window.innerHeight }
@@ -331,6 +343,8 @@ class MessageInteractionsTest < ApplicationSystemTestCase
       assert_operator row["height"], :<=, 3 * max_reaction_rows * rem,
         "expected the quick reactions row to fit in #{max_reaction_rows} row(s)"
       assert_operator menu["width"], :<=, 24 * rem, "expected the menu to be at most 24rem wide"
+      assert_operator menu["height"], :<=, geometry["contentHeight"] + 2,
+        "expected the menu box to be no taller than its content"
       assert_operator menu["left"], :>=, 0
       assert_operator menu["top"], :>=, 0
       assert_operator menu["right"], :<=, viewport["width"]

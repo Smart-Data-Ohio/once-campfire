@@ -357,10 +357,16 @@ img.message__attachment {
 .message__actions-menu {
   --border-color: var(--color-border-darker);
 
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+
   /* Pack grid tracks at the start so rows never stretch when the popover's
      used height exceeds its content (seen in iOS Safari). */
   align-content: start;
   background-color: var(--color-bg);
+  /* The popover UA sheet sizes top-layer boxes with fit-content, which WebKit
+     can resolve as stretch-fit against the fixed containing block. Size both
+     axes to the content explicitly; the max-* rules below still cap them. */
+  block-size: max-content;
   border: 1px solid var(--border-color);
   border-radius: 0.7rem;
   display: grid;
@@ -388,7 +394,8 @@ img.message__attachment {
 }
 
 .message__quick-reactions {
-  align-items: center;
+  align-content: start;
+  align-items: start;
   block-size: fit-content;
   display: flex;
   flex-wrap: wrap;
@@ -414,8 +421,9 @@ img.message__attachment {
   display: inline-flex;
   flex: none;
   font-size: 1.2rem;
-  inline-size: var(--btn-size);
+  inline-size: fit-content;
   justify-content: center;
+  min-inline-size: var(--btn-size);
 
   &[data-reaction-active] {
     background: color-mix(in srgb, var(--color-selected-dark) 20%, transparent);

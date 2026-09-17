@@ -72,6 +72,8 @@ export default class extends Controller {
     window.addEventListener("keydown", this.onWindowKeydown)
     window.addEventListener("scroll", this.onCancelLongPress, true)
     window.addEventListener("resize", this.onReposition)
+    window.visualViewport?.addEventListener("resize", this.onReposition)
+    window.visualViewport?.addEventListener("scroll", this.onReposition)
     window.addEventListener("message-actions:opening", this.onOtherMenuOpened)
     window.addEventListener("message-actions:edit-last", this.onEditLast)
   }
@@ -95,6 +97,8 @@ export default class extends Controller {
     window.removeEventListener("keydown", this.onWindowKeydown)
     window.removeEventListener("scroll", this.onCancelLongPress, true)
     window.removeEventListener("resize", this.onReposition)
+    window.visualViewport?.removeEventListener("resize", this.onReposition)
+    window.visualViewport?.removeEventListener("scroll", this.onReposition)
     window.removeEventListener("message-actions:opening", this.onOtherMenuOpened)
     window.removeEventListener("message-actions:edit-last", this.onEditLast)
   }
@@ -381,7 +385,6 @@ export default class extends Controller {
     this.menuTarget.setAttribute("aria-hidden", "false")
     this.#showMenuPopover()
     this.#positionMenu()
-    this.#positionMenuWhenSettled()
     this.#loadMetadata()
 
     const focus = () => {
@@ -595,20 +598,17 @@ export default class extends Controller {
 
     const point = this.#menuPoint || { x: 0, y: 0 }
     const rect = this.menuTarget.getBoundingClientRect()
+    const viewportHeight = window.visualViewport?.height || window.innerHeight
     const maxX = Math.max(VIEWPORT_PADDING, window.innerWidth - rect.width - VIEWPORT_PADDING)
-    const maxY = Math.max(VIEWPORT_PADDING, window.innerHeight - rect.height - VIEWPORT_PADDING)
+    const maxY = Math.max(VIEWPORT_PADDING, viewportHeight - rect.height - VIEWPORT_PADDING - this.#safeAreaBottom())
 
     this.menuTarget.style.left = `${Math.min(Math.max(VIEWPORT_PADDING, point.x), maxX)}px`
     this.menuTarget.style.top = `${Math.min(Math.max(VIEWPORT_PADDING, point.y), maxY)}px`
   }
 
-  // Webfonts and action icons can shift the menu's height after first paint.
-  // Re-clamp once they settle so the position uses the final measured height.
-  #positionMenuWhenSettled() {
-    if (document.fonts?.ready) document.fonts.ready.then(() => this.#positionMenu()).catch(() => {})
-    for (const image of this.menuTarget.querySelectorAll("img")) {
-      if (!image.complete) image.addEventListener("load", this.onReposition, { once: true })
-    }
+  // Keep the menu above the home indicator on phones with a bottom inset.
+  #safeAreaBottom() {
+    return parseFloat(getComputedStyle(this.menuTarget).getPropertyValue("--safe-area-bottom")) || 0
   }
 
   #showMenuPopover() {
