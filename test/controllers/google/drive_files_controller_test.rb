@@ -165,6 +165,205 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "index lists recent files when q is blank" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_equal(
+      {
+        "files" => [
+          {
+            "id" => "1AbcDefGhIjKlMnOpQrSt",
+            "name" => "Q3 Planning",
+            "kind" => "document",
+            "modified_at" => "2026-09-16T10:30:00.000Z",
+            "owner" => "Riel",
+            "url" => "https://docs.google.com/document/d/1AbcDefGhIjKlMnOpQrSt/edit"
+          },
+          {
+            "id" => "2BcdEfgHiJkLmNoPqRsTu",
+            "name" => "Budget 2026",
+            "kind" => "spreadsheet",
+            "modified_at" => "2026-09-15T09:00:00.000Z",
+            "owner" => "Jon",
+            "url" => "https://docs.google.com/spreadsheets/d/2BcdEfgHiJkLmNoPqRsTu/edit"
+          }
+        ]
+      },
+      response.parsed_body
+    )
+    assert_requested list_stub, query: hash_including({
+      "q" => "trashed=false",
+      "pageSize" => "10",
+      "fields" => "files(id,name,mimeType,modifiedTime,owners(displayName),webViewLink)",
+      "orderBy" => "modifiedTime desc",
+      "spaces" => "drive"
+    })
+  end
+
+  test "index treats whitespace-only q as a recent list" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path(q: "   "), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_requested list_stub, query: hash_including({ "q" => "trashed=false" })
+  end
+
+  test "index searches by name with quote and backslash escaping" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path(q: "bob's\\draft"), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_requested list_stub, query: hash_including({
+      "q" => "name contains 'bob\\'s\\\\draft' and trashed=false"
+    })
+  end
+
+  test "index trims q and caps it at 100 characters" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path(q: "  plan  "), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_requested list_stub, query: hash_including({ "q" => "name contains 'plan' and trashed=false" })
+
+    WebMock.reset!
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path(q: "a" * 150), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_requested list_stub, query: hash_including({ "q" => "name contains '#{"a" * 100}' and trashed=false" })
+  end
+
+  test "index maps unknown MIME types to file" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    stub_google_drive_list(files: [
+      drive_list_payload["files"].first.merge("mimeType" => "image/png")
+    ])
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_equal "file", response.parsed_body["files"].first["kind"]
+  end
+
+  test "index is 404 with an empty body without Drive consent" do
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+    assert_empty response.body
+
+    connect_google!(@david)
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+    assert_empty response.body
+    assert_not_requested :get, GOOGLE_DRIVE_FILES_URL
+  end
+
+  test "index is 404 with an empty body for a disconnected account" do
+    connect_google!(@david, scopes: DRIVE_SCOPES, disconnected_reason: "Google rejected the connection")
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+    assert_empty response.body
+    assert_not_requested :get, GOOGLE_DRIVE_FILES_URL
+  end
+
+  test "index is 404 when signed out" do
+    delete session_path
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+    assert_empty response.body
+  end
+
+  test "index is 502 when Google fails" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    stub_google_drive_list(status: 500)
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :bad_gateway
+    assert_equal({ "error" => "drive_unavailable" }, response.parsed_body)
+  end
+
+  test "index is 404 when the refresh fails with invalid_grant" do
+    account = connect_google!(@david, scopes: DRIVE_SCOPES)
+    account.update!(access_token_expires_at: 1.hour.ago)
+    stub_google_token_invalid_grant
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+    assert_equal "Google rejected the connection", account.reload.disconnected_reason
+  end
+
+  test "index refreshes an expired access token before listing" do
+    account = connect_google!(@david, scopes: DRIVE_SCOPES)
+    account.update!(access_token_expires_at: 1.hour.ago)
+    stub_google_token_refresh
+    list_stub = stub_google_drive_list
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_requested :post, GOOGLE_TOKEN_URL, times: 1
+    assert_requested list_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_equal "refreshed-access-token", account.reload.access_token
+  end
+
+  test "index throttles each user to 30 lists per minute" do
+    jason = users(:jason)
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    connect_google!(jason, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    with_memory_cache do
+      30.times do
+        get google_drive_files_path, headers: { "Accept" => "application/json" }
+        assert_response :success
+      end
+
+      get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+      assert_response :too_many_requests
+      assert_equal({ "error" => "rate_limited" }, response.parsed_body)
+      assert_requested list_stub, times: 30
+
+      sign_in jason
+      get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+      assert_response :success
+    end
+  end
+
+  test "index never caches results" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    list_stub = stub_google_drive_list
+
+    with_memory_cache do
+      2.times do
+        get google_drive_files_path, headers: { "Accept" => "application/json" }
+        assert_response :success
+      end
+
+      assert_requested list_stub, times: 2
+    end
+  end
+
   private
     # The test environment uses :null_store; swap in a memory store so cache
     # behavior is exercisable.

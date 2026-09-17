@@ -146,6 +146,28 @@ module Google
         forbidden: :not_found, service_name: "Drive")
     end
 
+    DRIVE_LIST_FIELDS = "files(id,name,mimeType,modifiedTime,owners(displayName),webViewLink)"
+
+    # Viewer-side Drive search for the composer picker. A blank query lists
+    # recent files; otherwise matches by name. Single quotes and backslashes
+    # in the term are escaped per the Drive query grammar.
+    def list_drive_files(query:)
+      drive_query = if query.to_s.present?
+        "name contains '#{escape_drive_query(query.to_s)}' and trashed=false"
+      else
+        "trashed=false"
+      end
+
+      api_request(:get, "/drive/v3/files", nil,
+        query: URI.encode_www_form(
+          q: drive_query, pageSize: 10, fields: DRIVE_LIST_FIELDS,
+          orderBy: "modifiedTime desc", spaces: "drive"
+        ),
+        service_name: "Drive")
+    end
+
+
+
     def refresh_access_token!
       response = self.class.post_token_form(
         client_id: self.class.client_id, client_secret: self.class.client_secret,
@@ -171,6 +193,13 @@ module Google
     end
 
     private
+      # Prefix each quote and backslash with a backslash, in one pass so the
+      # added backslashes are never re-escaped. Block form: \' would be a
+      # post-match backreference in a replacement string.
+      def escape_drive_query(term)
+        term.gsub(/['\\]/) { |char| "\\#{char}" }
+      end
+
       def api_request(method, path, payload = nil, query: nil, forbidden: :error, service_name: "Calendar")
         refresh_access_token! if @account.access_token_expired?
 
