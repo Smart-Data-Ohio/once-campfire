@@ -1,0 +1,10 @@
+<div id="<%= dom_id(room, :stage_panel) %>" class="stage-panel__body"
+     data-viewer-can-manage="<%= membership.host? || membership.user.administrator? %>"
+     data-viewer-stage-role="<%= membership.stage_role %>"
+     data-viewer-membership-id="<%= membership.id %>">
+  <% if local_assigns[:rejoin] %>
+    <span data-controller="stage-rejoin" data-stage-rejoin-room-id-value="<%= room.id %>" hidden></span>
+  <% end %>
+  <%= render "rooms/stage/controls", room: room, membership: membership %>
+  <%= render "rooms/stage/roster", room: room %>
+</div>

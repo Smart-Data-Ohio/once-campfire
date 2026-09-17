@@ -1,0 +1,224 @@
+/* Stage channels */
+
+.stage-room .sidebar-item__icon::before {
+  content: "◉";
+}
+
+.stage-panel-wrap {
+  display: contents;
+}
+
+.stage-panel__glyph {
+  color: var(--workspace-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* The stage roster lives in a drawer like the member panel: an overlay on
+   every viewport, since it opens from the room header rather than joining
+   the desktop grid. */
+.stage-panel {
+  inset: 0;
+  position: fixed;
+  z-index: 10;
+}
+
+.stage-panel[hidden] {
+  display: none;
+}
+
+.stage-panel__backdrop {
+  background: rgb(11 13 18 / 58%);
+  border: 0;
+  border-radius: 0;
+  inset: 0;
+  padding: 0;
+  position: absolute;
+}
+
+.stage-panel__backdrop:hover {
+  box-shadow: none;
+  filter: none;
+}
+
+.stage-panel__surface {
+  background: var(--workspace-sidebar);
+  border-inline-start: 1px solid var(--workspace-border);
+  block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+  inline-size: min(22rem, calc(100dvw - 2.5rem));
+  inset: 0 0 0 auto;
+  min-inline-size: 0;
+  position: absolute;
+}
+
+.stage-panel__header {
+  align-items: center;
+  border-block-end: 1px solid var(--workspace-border);
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  min-block-size: var(--workspace-header-height);
+  padding: 0.65rem 0.75rem 0.65rem 1rem;
+}
+
+.stage-panel__header h2,
+.stage-panel__header p {
+  margin: 0;
+}
+
+.stage-panel__header h2 {
+  color: var(--workspace-text);
+  font-size: 0.95rem;
+}
+
+.stage-panel__header p {
+  color: var(--workspace-text-muted);
+  font-size: 0.7rem;
+  margin-block-start: 0.18rem;
+}
+
+.stage-panel__close {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+  --btn-border-radius: 0.45rem;
+  --btn-padding: 0;
+  --btn-size: 2rem;
+  --hover-color: transparent;
+
+  aspect-ratio: 1;
+  flex: none;
+}
+
+.stage-panel__close:hover,
+.stage-panel__close:focus-visible {
+  --btn-background: var(--workspace-sidebar-hover);
+}
+
+.stage-panel__content {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem 0.75rem 1rem;
+}
+
+.stage-panel__controls {
+  border-block-end: 1px solid var(--workspace-border);
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding-block-end: 0.75rem;
+}
+
+.stage-panel__note {
+  color: var(--workspace-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.stage-panel__group + .stage-panel__group {
+  margin-block-start: 1rem;
+}
+
+.stage-panel__group-heading {
+  color: var(--workspace-text-muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  margin: 0;
+  padding: 0.35rem 0.2rem;
+  text-transform: uppercase;
+}
+
+.stage-panel__list {
+  display: grid;
+  gap: 0.15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stage-panel__member {
+  align-items: center;
+  border-radius: 0.45rem;
+  color: var(--workspace-text);
+  display: grid;
+  gap: 0.15rem 0.65rem;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  min-inline-size: 0;
+  padding: 0.38rem 0.45rem;
+}
+
+.stage-panel__member:hover {
+  background: var(--workspace-sidebar-hover);
+}
+
+.stage-panel__avatar {
+  --avatar-size: 2rem;
+
+  grid-row: span 2;
+}
+
+.stage-panel__identity {
+  display: grid;
+  line-height: 1.15;
+  min-inline-size: 0;
+}
+
+.stage-panel__identity strong {
+  display: block;
+  font-size: 0.84rem;
+}
+
+.stage-panel__role {
+  color: var(--workspace-text-muted);
+  font-size: 0.68rem;
+  margin-block-start: 0.2rem;
+}
+
+.stage-panel__hand-badge {
+  color: var(--workspace-accent-strong);
+  font-weight: 800;
+}
+
+.stage-panel__member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  grid-column: 2;
+}
+
+.stage-panel__member-actions:empty {
+  display: none;
+}
+
+/* The roster is one shared broadcast for every viewer, so host controls are
+   present for all viewers and hidden here for anyone who may not use them.
+   The endpoints enforce the same permissions regardless. */
+.stage-panel__body:not([data-viewer-can-manage="true"]) [data-requires-manage] {
+  display: none;
+}
+
+.stage-panel__action {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.stage-panel__empty {
+  color: var(--workspace-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+}
+
+/* Listeners publish nothing: the huddle panel trades its publish controls
+   for a note while they listen. */
+.huddle__listening {
+  color: var(--workspace-text-muted);
+  font-size: 0.82rem;
+  margin: 0;
+  padding: 0.5rem 0.25rem;
+  text-align: center;
+}

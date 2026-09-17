@@ -50,7 +50,9 @@
 
         <div id="shared_rooms" class="sidebar-list" data-controller="sorted-list">
           <% @other_memberships.each do |membership| %>
-            <%= render "users/sidebars/rooms/shared", room: membership.room, unread: membership.unread? %>
+            <% unless membership.room.stage? %>
+              <%= render "users/sidebars/rooms/shared", room: membership.room, unread: membership.unread? %>
+            <% end %>
           <% end %>
         </div>
       </section>
@@ -59,6 +61,9 @@
         <header class="sidebar-section__header">
           <h2 id="voice-heading">Voice</h2>
           <% if Current.user.administrator? || !Current.account.settings.restrict_room_creation_to_administrators? %>
+            <%= link_to new_rooms_stage_path, class: "btn sidebar-section__add", aria: { label: "New stage channel" }, title: "New stage channel" do %>
+              <%= image_tag "add.svg", size: 16, aria: { hidden: "true" } %>
+            <% end %>
             <%= link_to new_rooms_voice_path, class: "btn sidebar-section__add", aria: { label: "New voice channel" }, title: "New voice channel" do %>
               <%= image_tag "add.svg", size: 16, aria: { hidden: "true" } %>
             <% end %>
@@ -68,6 +73,11 @@
         <div id="voice_rooms" class="sidebar-list" data-controller="sorted-list">
           <% @voice_memberships.each do |membership| %>
             <%= render "users/sidebars/rooms/voice", room: membership.room, unread: membership.unread? %>
+          <% end %>
+          <% @other_memberships.each do |membership| %>
+            <% if membership.room.stage? %>
+              <%= render "users/sidebars/rooms/stage", room: membership.room, unread: membership.unread? %>
+            <% end %>
           <% end %>
         </div>
       </section>

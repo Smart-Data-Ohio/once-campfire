@@ -29,7 +29,7 @@ export default class extends Controller {
   static targets = [
     "activeControls", "camera", "cameraLabel", "cameraSelect", "cameras", "checkDevices",
     "checkError", "checkJoin", "checkRetry", "connection", "connectionDetails", "devicesBlock",
-    "devicesDone", "leaveLabel", "meter", "meterFill", "microphoneSelect", "mute", "muteLabel",
+    "devicesDone", "leaveLabel", "listeningNote", "meter", "meterFill", "microphoneSelect", "mute", "muteLabel",
     "noise", "noiseLabel", "notice", "participantCount", "participantList", "people",
     "prejoinMeter", "prejoinMeterFill", "preview", "previewWrap", "resumeAudio",
     "retry", "roomName", "screens", "settings", "settingsRow", "share", "shareLabel",
@@ -48,6 +48,7 @@ export default class extends Controller {
     this.roomId = null
     this.roomName = null
     this.identity = null
+    this.canPublish = true
     this.operation = 0
     this.state = "idle"
     this.roomListeners = new Map()
@@ -74,6 +75,7 @@ export default class extends Controller {
     const options = { signal: this.abortController.signal }
 
     window.addEventListener("huddle:join", this.join, options)
+    window.addEventListener("huddle:role-changed", this.roleChanged, options)
     window.addEventListener("huddle:query", this.broadcastState, options)
     window.addEventListener("huddle:expand-screen", this.viewSharedScreen, options)
     window.addEventListener("pagehide", this.pageHiding, options)
@@ -128,6 +130,7 @@ export default class extends Controller {
     this.roomId = requestedRoomId
     this.roomName = requestedRoomName
     this.identity = null
+    this.canPublish = true
     // Storage is the preference; a transient processor failure only turned it off
     // in memory, so a fresh join gets a fresh attempt.
     this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
@@ -160,7 +163,9 @@ export default class extends Controller {
       this.liveKit = liveKit
       this.roomName = credentials.room?.name || this.roomName
       this.identity = credentials.identity
+      this.canPublish = this.#tokenCanPublish(credentials.token)
       this.roomNameTarget.textContent = this.roomName
+      this.#updatePublishControls()
 
       room = new liveKit.Room(this.#roomOptions(liveKit))
       this.room = room
@@ -173,7 +178,11 @@ export default class extends Controller {
       }
 
       await room.startAudio().catch(() => {})
-      await room.localParticipant.setMicrophoneEnabled(true, this.#audioCaptureOptions())
+      // A listener's token cannot publish, so LiveKit would reject the
+      // microphone outright. They join subscribe-only instead.
+      if (this.canPublish) {
+        await room.localParticipant.setMicrophoneEnabled(true, this.#audioCaptureOptions())
+      }
       if (operation !== this.operation || room !== this.room) {
         await this.#disconnectRoom(room)
         return
@@ -208,6 +217,24 @@ export default class extends Controller {
     if (!this.roomId) return
 
     this.join({ detail: { roomId: this.roomId, roomName: this.roomName } })
+  }
+
+  // A stage role change revokes the old grant, so the affected browser leaves
+  // and rejoins the same room with a fresh token instead of updating LiveKit
+  // permissions in place. The prejoin check is skipped: this is a rejoin, not
+  // a first join. A failed panel rejoins too, so a demotion that the gateway
+  // enforced first still lands the member back in the call as a listener.
+  roleChanged = async ({ detail }) => {
+    const roomId = Number(detail?.roomId)
+    if (!Number.isInteger(roomId) || roomId <= 0) return
+    if (this.roomId !== roomId) return
+    if (![ ...ACTIVE_STATES, "failed" ].includes(this.state)) return
+
+    const operation = ++this.operation
+    await this.#disconnectCurrentRoom()
+    if (operation !== this.operation) return
+
+    await this.#connectRoom(operation)
   }
 
   confirmPrejoinJoin = async () => {
@@ -1740,6 +1767,28 @@ export default class extends Controller {
     return participant.name || participant.identity || "Participant"
   }
 
+  // A listener joins with the microphone, camera, and screen-share controls
+  // hidden and a note in their place. The token is the enforcement; hiding
+  // the buttons only keeps the panel honest about what the call allows.
+  #updatePublishControls() {
+    const listening = this.canPublish === false
+    const live = this.state === "connected" || this.state === "reconnecting"
+
+    this.muteTarget.hidden = listening
+    this.shareTarget.hidden = listening
+    this.cameraTarget.hidden = listening
+    this.listeningNoteTarget.hidden = !(live && listening)
+  }
+
+  #tokenCanPublish(token) {
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))
+      return payload?.video?.canPublish !== false
+    } catch (error) {
+      return true
+    }
+  }
+
   #updateMediaControls() {
     if (!this.room) return
 
@@ -1808,6 +1857,7 @@ export default class extends Controller {
     if (!connected && !reconnecting) this.#renderRoster()
     this.#updateNoiseSuppressionControl()
     this.#updateMediaControls()
+    this.#updatePublishControls()
     this.#renderSharingNotice()
   }
 

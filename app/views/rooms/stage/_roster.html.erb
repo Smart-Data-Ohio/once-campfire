@@ -1,0 +1,94 @@
+<% memberships = room.memberships.includes(:user).to_a %>
+<% hosts = memberships.select(&:host?).sort_by { |m| m.user.name.downcase } %>
+<% speakers = memberships.select(&:speaker?).sort_by { |m| m.user.name.downcase } %>
+<% listeners = memberships.select(&:listener?).sort_by { |m| [ m.hand_raised? ? 0 : 1, m.hand_raised_at || Time.at(0), m.user.name.downcase ] } %>
+<% sole_host = hosts.one? %>
+<div id="<%= dom_id(room, :stage_roster) %>" class="stage-panel__roster">
+  <section class="stage-panel__group" aria-label="Hosts">
+    <h3 class="stage-panel__group-heading">Hosts · <%= hosts.count %></h3>
+    <ul class="stage-panel__list">
+      <% hosts.each do |member| %>
+        <li id="<%= dom_id(member, :stage_row) %>" class="stage-panel__member">
+          <span class="avatar stage-panel__avatar">
+            <%= image_tag fresh_user_avatar_path(member.user), size: 32, aria: { hidden: "true" } %>
+          </span>
+          <span class="stage-panel__identity">
+            <strong class="overflow-ellipsis"><%= member.user.name %></strong>
+            <span class="stage-panel__role">Host</span>
+          </span>
+          <span class="stage-panel__member-actions" data-requires-manage>
+            <%= button_to "Move to speakers", room_stage_role_path(room, member.id), method: :patch,
+                  params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action",
+                  disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
+            <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
+                  params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action",
+                  disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
+          </span>
+        </li>
+      <% end %>
+    </ul>
+  </section>
+
+  <section class="stage-panel__group" aria-label="Speakers">
+    <h3 class="stage-panel__group-heading">Speakers · <%= speakers.count %></h3>
+    <% if speakers.any? %>
+      <ul class="stage-panel__list">
+        <% speakers.each do |member| %>
+          <li id="<%= dom_id(member, :stage_row) %>" class="stage-panel__member">
+            <span class="avatar stage-panel__avatar">
+              <%= image_tag fresh_user_avatar_path(member.user), size: 32, aria: { hidden: "true" } %>
+            </span>
+            <span class="stage-panel__identity">
+              <strong class="overflow-ellipsis"><%= member.user.name %></strong>
+              <span class="stage-panel__role">Speaker</span>
+            </span>
+            <span class="stage-panel__member-actions" data-requires-manage>
+              <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
+                    params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action" %>
+              <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
+                    params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="stage-panel__empty">Nobody is speaking yet.</p>
+    <% end %>
+  </section>
+
+  <section class="stage-panel__group" aria-label="Listeners">
+    <h3 class="stage-panel__group-heading">Listeners · <%= listeners.count %></h3>
+    <% if listeners.any? %>
+      <ul class="stage-panel__list">
+        <% listeners.each do |member| %>
+          <li id="<%= dom_id(member, :stage_row) %>" class="stage-panel__member">
+            <span class="avatar stage-panel__avatar">
+              <%= image_tag fresh_user_avatar_path(member.user), size: 32, aria: { hidden: "true" } %>
+            </span>
+            <span class="stage-panel__identity">
+              <strong class="overflow-ellipsis"><%= member.user.name %></strong>
+              <span class="stage-panel__role">
+                Listener<% if member.hand_raised? %> · <span class="stage-panel__hand-badge">Hand raised</span><% end %>
+              </span>
+            </span>
+            <span class="stage-panel__member-actions" data-requires-manage>
+              <% if member.hand_raised? %>
+                <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
+                      params: { stage_role: "speaker" }, class: "btn btn--reversed stage-panel__action" %>
+                <%= button_to "Lower hand", room_stage_hand_path(room), method: :delete,
+                      params: { membership_id: member.id }, class: "btn btn--plain stage-panel__action" %>
+              <% else %>
+                <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
+                      params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action" %>
+              <% end %>
+              <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
+                    params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="stage-panel__empty">Nobody is listening yet.</p>
+    <% end %>
+  </section>
+</div>
