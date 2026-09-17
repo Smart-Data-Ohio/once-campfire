@@ -61,6 +61,7 @@ module Authentication
         Current.agent = credential.agent
         Current.user = credential.agent.user
         credential.record_use!(request.remote_ip)
+        credential.agent.touch_last_seen!
         set_authenticated_by(:agent_token)
       else
         head :unauthorized

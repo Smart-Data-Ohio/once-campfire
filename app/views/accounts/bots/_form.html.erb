@@ -29,4 +29,36 @@
   </label>
 </div>
 
+<% if (agent = bot.agent) %>
+  <%= fields_for agent do |agent_fields| %>
+    <% if agent.errors.any? %>
+      <div class="txt-small" style="color: var(--color-negative)">
+        <%= agent.errors.full_messages.to_sentence %>
+      </div>
+    <% end %>
+
+    <div class="flex align-center gap">
+      <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+        <%= agent_fields.text_field :provider, class: "input", placeholder: "Provider (e.g. OpenAI)", autocomplete: "off",
+              data: { "1p-ignore": true } %>
+        <%= image_tag "bot.svg", aria: { hidden: "true" }, size: 24, class: "colorize--black" %>
+      </label>
+    </div>
+
+    <div class="flex align-center gap">
+      <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+        <%= agent_fields.text_field :runtime, class: "input", placeholder: "Runtime (e.g. Codex CLI 0.9)", autocomplete: "off",
+              data: { "1p-ignore": true } %>
+        <%= image_tag "laptop.svg", aria: { hidden: "true" }, size: 24, class: "colorize--black" %>
+      </label>
+    </div>
+
+    <div class="flex align-center gap">
+      <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+        <%= agent_fields.text_area :description, class: "input", placeholder: "What this agent does (max 500 characters)", rows: 3, maxlength: 500 %>
+      </label>
+    </div>
+  <% end %>
+<% end %>
+
 <%= profile_form_submit_button %>

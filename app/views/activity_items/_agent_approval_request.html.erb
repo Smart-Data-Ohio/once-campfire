@@ -1,0 +1,26 @@
+<article id="<%= dom_id(item) %>" class="activity-item activity-item--<%= item.state %>">
+  <div class="activity-item__meta">
+    <span class="activity-item__kind"><%= activity_item_event_label(item) %></span>
+    <%= message_timestamp(approval, class: "activity-item__time") %>
+  </div>
+
+  <div class="activity-item__content">
+    <%= render "agent_approvals/card", approval: approval %>
+  </div>
+
+  <div class="activity-item__actions">
+    <%= button_to "Open", open_activity_item_path(item), method: :post, class: "btn btn--primary", form: { class: "activity-item__action-form" } %>
+
+    <% if item.unread? %>
+      <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+    <% else %>
+      <%= button_to "Mark unread", read_activity_item_path(item), method: :patch, params: { state: "unread", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+    <% end %>
+
+    <% if item.handled? %>
+      <%= button_to "Clear handled", handled_activity_item_path(item), method: :patch, params: { state: "unhandled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+    <% else %>
+      <%= button_to "Mark handled", handled_activity_item_path(item), method: :patch, params: { state: "handled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+    <% end %>
+  </div>
+</article>

@@ -25,7 +25,7 @@ The first activity inbox, human-owned work threads, one-to-one DM Huddles, and n
 
 The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events, plus native event invitations, updates, cancellations, and reminders; agent and GitHub sources follow their integrations.
 
-The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`read_messages`, `post_messages`, and `react` enforced; the rest stored for later) with immediate cascade revocation, and event delivery with an activity ledger, polling, rate limits, and loop prevention. See [AI agents](docs/agents.md). Approvals follow separately.
+The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`read_messages`, `post_messages`, and `react` enforced; the rest stored for later) with immediate cascade revocation, and event delivery with an activity ledger, polling, rate limits, and loop prevention, plus agent profiles, an agent directory, and self-reported live status. See [AI agents](docs/agents.md). Approvals follow separately.
 
 GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication, and subscribed rooms now receive selected PR events as GitHub bot messages with review requests in the linked reviewer's inbox. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
 
@@ -70,6 +70,8 @@ Done for the first slice when two members can start and join a Huddle from their
 
 Done for the first slice when a personal agent and a workspace agent can independently join an allowed channel, receive an event, reply under their own identities, and lose access immediately when revoked. External actions use explicitly granted authority.
 
+Approval requests are live: an agent asks for human authority with `POST /agents/approvals`, the owner and administrators decide from the activity inbox, and the decision returns through event polling and webhooks. See [AI agents](docs/agents.md#approvals).
+
 ### 4. GitHub work inside conversations
 
 - First-class PR cards: repository, author, summary, branch, review state, and checks.
@@ -100,9 +102,11 @@ Done for the calendar slice when an opted-in attendee receives a calendar entry 
 
 Done for the first slice when one Drive workflow and one selected Smart App workflow work end to end without exposing private source content to unauthorized channel members.
 
+**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). Still open: file discovery, attachments, and the first selected Smart App workflow.
+
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources, and PR review requests already land in the reviewer's inbox. Other agent and GitHub sources follow their integrations.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.
@@ -133,7 +137,7 @@ Done for the first slice when members can turn a channel thread into work, assig
 
 Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
 
-**Status:** first slice shipped. Twenty-seven brand icons (Simple Icons, CC0) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Still open: Microsoft, Amazon, AWS, xAI, and DeepSeek are not in the vendored set and need another source, and uploaded workspace icons are not started.
+**Status:** first slice shipped and the listed companies are covered. Thirty-three brand icons from two sources (Simple Icons, CC0; LobeHub `@lobehub/icons-static-svg`, MIT) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Amazon (retail) has no usable icon in either source. Still open: uploaded workspace icons are not started.
 
 ## Proposed additions
 

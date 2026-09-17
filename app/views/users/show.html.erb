@@ -22,6 +22,47 @@
     </div>
 
     <% if @user.bot? %>
+      <div class="flex flex-column gap" style="--row-gap: calc(var(--block-space) / 3)">
+        <h1 class="txt-x-large txt-tight-lines margin-none"><%= @user.name %></h1>
+
+        <% if (agent = @user.agent) %>
+          <%= turbo_stream_from AgentsChannel::STREAM_NAME, channel: "AgentsChannel" %>
+
+          <div class="txt-small"><%= agent.kind_description %></div>
+
+          <% if agent.provider.present? || agent.runtime.present? %>
+            <div class="txt-small"><%= [ agent.provider, agent.runtime ].compact_blank.join(" · ") %></div>
+          <% end %>
+
+          <% if agent.description.present? %>
+            <div><%= agent.description %></div>
+          <% end %>
+
+          <div class="txt-small">
+            <%= render "agents/status_badge", agent: agent %>
+          </div>
+
+          <div class="txt-small">
+            <%= agent.last_seen_at ? "last seen #{time_ago_in_words(agent.last_seen_at)} ago" : "never" %>
+          </div>
+
+          <% agent_rooms = agent.user.rooms.ordered %>
+          <% if agent_rooms.exists? %>
+            <% shared_rooms = agent_rooms.where(id: Current.user.rooms.select(:id)).to_a %>
+            <% hidden_room_count = agent_rooms.count - shared_rooms.size %>
+            <div class="txt-small">
+              Rooms: <%= safe_join(shared_rooms.map { |room| link_to(room_display_name(room), room_path(room)) }, ", ") %><% if hidden_room_count.positive? %><%= ", " if shared_rooms.any? %>and <%= hidden_room_count %> more<% end %>
+            </div>
+          <% end %>
+
+          <div class="txt-small">Grants: <%= agent.grants_summary %></div>
+
+          <% if Current.user.administrator? || agent.owner == Current.user %>
+            <div class="txt-small">Last 24 hours: <%= agent.activity_summary %></div>
+          <% end %>
+        <% end %>
+      </div>
+
       <div class="pad-double--inline push--inline push--block-start">
         <% if @user.active? %>
           <%= button_to_direct_room_with @user%>
@@ -37,6 +78,12 @@
                 <%= link_to agent_events_path(@user.agent), class: "btn full-width" do %>
                   <%= image_tag "messages-outlined.svg", aria: { hidden: "true" }, size: 20 %>
                   View activity ledger
+                <% end %>
+              </div>
+              <div class="margin-block-start">
+                <%= link_to agent_approvals_path(@user.agent), class: "btn full-width" do %>
+                  <%= image_tag "check.svg", aria: { hidden: "true" }, size: 20 %>
+                  View approval requests
                 <% end %>
               </div>
             <% end %>

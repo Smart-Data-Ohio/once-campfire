@@ -14,7 +14,8 @@ class Agents::EventsController < ApplicationController
   # GET /agents/events?since=<id>&limit=<n> (Bearer-only, JSON). Returns the
   # agent's own deliverable rows ordered by id. Readability (message exists,
   # membership, read grant) filters in SQL before the limit applies, so
-  # revoked rows can never hide newer readable rows.
+  # revoked rows can never hide newer readable rows. Approval decision rows
+  # carry no message and render an approval payload instead.
   def index
     no_store_response!
 
@@ -29,6 +30,9 @@ class Agents::EventsController < ApplicationController
       .ordered
       .limit(limit)
       .includes(:room, :actor, message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .to_a
+
+    @approval_cache = AgentApproval.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["approval_id"] }).index_by(&:id)
 
     render json: events.filter_map { |event| poll_payload(agent, event) }
   end
@@ -81,6 +85,15 @@ class Agents::EventsController < ApplicationController
         return
       end
 
+      # Approval decisions carry no message and are always ackable by their
+      # own agent. Clearing the room forces the capability check below to
+      # the workspace-wide form, matching the polling endpoint.
+      if @agent_event.event_type == "approval_decided"
+        @room = nil
+        @message = nil
+        return
+      end
+
       # Ack requires the row's message to be currently readable by the agent
       # under the same rule as polling: the message exists and the agent's
       # user is still a member of its room. A surviving workspace grant
@@ -97,6 +110,10 @@ class Agents::EventsController < ApplicationController
     end
 
     def poll_payload(agent, event)
+      if event.event_type == "approval_decided" || event.message_id.nil? && event.metadata.is_a?(Hash) && event.metadata["approval_id"]
+        return approval_poll_payload(event)
+      end
+
       message = event.message
       room = event.room
       return if message.nil? || room.nil?
@@ -112,6 +129,33 @@ class Agents::EventsController < ApplicationController
         room: { id: room.id, name: room.name },
         actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
         message: message_payload(message)
+      }.compact
+    end
+
+    def approval_poll_payload(event)
+      metadata = event.metadata.is_a?(Hash) ? event.metadata : {}
+      approval = @approval_cache&.dig(metadata["approval_id"]) || AgentApproval.find_by(id: metadata["approval_id"])
+      return if approval.nil? || approval.agent_id != Current.agent.id
+
+      room = event.room
+      {
+        id: event.id,
+        event_type: event.event_type,
+        outcome: event.outcome,
+        created_at: event.created_at&.utc,
+        room: room ? { id: room.id, name: room.name } : nil,
+        actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
+        approval: {
+          id: approval.id,
+          approval_id: approval.id,
+          action: approval.action,
+          summary: approval.summary,
+          status: approval.effective_status,
+          decided_by: approval.decided_by&.name || metadata["decided_by"],
+          note: approval.decision_note || metadata["note"],
+          expires_at: approval.expires_at&.utc,
+          room_id: approval.room_id
+        }.compact
       }.compact
     end
 end

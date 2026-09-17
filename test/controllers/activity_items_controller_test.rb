@@ -225,6 +225,23 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal room_event_path(event.room, event), payload.dig("source", "path")
   end
 
+  test "agent approval items carry the approval in the JSON payload" do
+    agent = agents(:bender_agent)
+    approval = AgentApproval.create!(agent: agent, room: rooms(:designers), action: "deploy", summary: "Ship it")
+    item = ActivityItem.find_by!(user: users(:david), source: approval)
+
+    get activity_items_url, as: :json
+
+    assert_response :success
+    payload = response.parsed_body.fetch("activity_items").find { |entry| entry.fetch("id") == item.id }
+    assert_equal "AgentApproval", payload.dig("source", "type")
+    assert_equal approval.id, payload.dig("source", "id")
+    assert_equal rooms(:designers).id, payload.dig("source", "room_id")
+    assert_equal "pending", payload.dig("source", "status")
+    assert_equal "Ship it", payload.dig("source", "body")
+    assert_equal agent_approvals_path(agent), payload.dig("source", "path")
+  end
+
   private
     def start_dm_huddle_for(recipient)
       starter = (rooms(:david_and_jason).user_ids - [ recipient.id ]).first

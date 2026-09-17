@@ -1,0 +1,13 @@
+<%# Status badge for an agent. Also broadcast over AgentsChannel, so the root
+    element id must match Agent#broadcast_status_change. Never renders
+    credentials or grants. %>
+<span id="<%= dom_id(agent, :status_badge) %>" class="agent-status">
+  <% if agent.suspended? %>
+    <span class="agent-status-badge agent-status-badge--suspended">Suspended</span>
+  <% else %>
+    <span class="agent-status-badge agent-status-badge--<%= agent.status %>"><%= agent.status.titleize %></span><% if agent.status_note.present? %>
+      <span class="agent-status-note"><%= agent.status_note %></span>
+    <% end %>
+    <span class="agent-status-since">since <%= time_ago_in_words(agent.status_changed_at || agent.created_at) %> ago</span>
+  <% end %>
+</span>

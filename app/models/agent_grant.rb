@@ -5,7 +5,7 @@ class AgentGrant < ApplicationRecord
   # bot/agent endpoints, reading through event polling and delivery). The
   # rest are storable and displayed but not yet enforced; see
   # AgentAuthorization.
-  ENFORCED_CAPABILITIES = %w[ read_messages post_messages react ].freeze
+  ENFORCED_CAPABILITIES = %w[ read_messages post_messages react external_action ].freeze
 
   belongs_to :agent
   belongs_to :room, optional: true

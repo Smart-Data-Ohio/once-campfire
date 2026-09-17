@@ -1,6 +1,6 @@
 # Built-in brand icons for :name: shortcodes.
 #
-# Each entry maps a shortcode name to a vendored Simple Icons SVG (see
+# Each entry maps a shortcode name to a vendored brand SVG (see
 # app/assets/images/icons/brands/LICENSE.md for provenance). Names are
 # lowercase [a-z0-9_]+. Brand names win over gemoji emoji aliases on conflict.
 - name: openai
@@ -90,3 +90,25 @@
 - name: linear
   file: linear.svg
   title: Linear
+- name: microsoft
+  file: microsoft.svg
+  title: Microsoft
+  aliases:
+    - msft
+- name: azure
+  file: azure.svg
+  title: Microsoft Azure
+- name: aws
+  file: aws.svg
+  title: Amazon Web Services
+  aliases:
+    - amazonaws
+- name: xai
+  file: xai.svg
+  title: xAI
+- name: grok
+  file: grok.svg
+  title: Grok
+- name: deepseek
+  file: deepseek.svg
+  title: DeepSeek

@@ -75,6 +75,25 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
   end
 
+  create_table "agent_approvals", force: :cascade do |t|
+    t.string "action", null: false
+    t.integer "agent_credential_id"
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "decided_at"
+    t.integer "decided_by_id"
+    t.string "decision_note"
+    t.datetime "expires_at", null: false
+    t.string "external_id"
+    t.text "payload"
+    t.integer "room_id"
+    t.string "status", default: "pending", null: false
+    t.text "summary", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "external_id"], name: "index_agent_approvals_on_agent_id_and_external_id", unique: true, where: "external_id IS NOT NULL"
+    t.index ["agent_id", "status"], name: "index_agent_approvals_on_agent_id_and_status"
+  end
+
   create_table "agent_credentials", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
@@ -120,11 +139,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
 
   create_table "agents", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.string "description"
+    t.text "description"
     t.string "kind", default: "personal", null: false
+    t.datetime "last_seen_at"
     t.integer "owner_id"
     t.string "provider"
     t.string "runtime"
+    t.string "status", default: "idle", null: false
+    t.datetime "status_changed_at"
+    t.string "status_note"
     t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -284,6 +307,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.string "disconnected_reason"
     t.string "email", null: false
     t.string "refresh_token"
+    t.string "scopes"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["user_id"], name: "index_google_accounts_on_user_id", unique: true

@@ -63,10 +63,18 @@ Rails.application.routes.draw do
     resources :icons, only: :index
   end
 
+  get "agents", to: "agents/directory#index"
   get "agents/me", to: "agents#me", defaults: { format: :json }
+  patch "agents/me", to: "agents#update", defaults: { format: :json }
   get "agents/events", to: "agents/events#index", defaults: { format: :json }
   post "agents/events/:id/ack", to: "agents/events#ack", defaults: { format: :json }, as: :ack_agents_event
   get "agents/:id/events", to: "agents/events#ledger", as: :agent_events
+  get "agents/approvals", to: "agents/approvals#index", defaults: { format: :json }
+  post "agents/approvals", to: "agents/approvals#create", defaults: { format: :json }
+  get "agents/approvals/:id", to: "agents/approvals#show", defaults: { format: :json }
+  delete "agents/approvals/:id", to: "agents/approvals#destroy", defaults: { format: :json }
+  get "agents/:id/approvals", to: "agents/approvals#for_agent", as: :agent_approvals
+  patch "agent_approvals/:id", to: "agent_approvals#update", as: :agent_approval
   post "rooms/:room_id/agents/messages", to: "agents/messages#create", defaults: { format: :json }, as: :room_agent_messages
 
   direct :fresh_user_avatar do |user, options|
@@ -167,6 +175,7 @@ Rails.application.routes.draw do
     post "connect", to: "connections#connect"
     get "callback", to: "connections#callback"
     delete "connection", to: "connections#destroy"
+    get "drive/files/:id", to: "drive_files#show", as: :drive_file
   end
 
   get "webmanifest"    => "pwa#manifest"
