@@ -308,7 +308,9 @@ never the title.
 
 The per-viewer decision is cached for ten minutes per repository, grants
 and denials alike, so a page of cards from one repository costs at most
-one GitHub request per viewer per window. The card content itself still
+one GitHub request per viewer per window. Linking, relinking, or repairing
+the connected account retires that member's cached decisions at once,
+because the cache key carries the account's `updated_at`. The card content itself still
 comes from the stored record fetched with the workspace token; only the
 gate is per viewer. Likewise, subscribing a room to a private repository
 makes its PR titles visible to the whole room through the posted

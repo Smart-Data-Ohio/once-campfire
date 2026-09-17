@@ -95,9 +95,8 @@ resolve with their own credentials as with pasted Drive links.
 ## Attachments
 
 Members with Drive previews enabled can also **attach** Drive files to a
-room message (thread composers only insert links for now). Every picker
-row carries an **Attach** button next to the
-click-to-insert row: it pins the file as a chip in a strip above the
+room or thread message. Every picker row carries an **Attach** button next
+to the click-to-insert row: it pins the file as a chip in a strip above the
 composer (showing the same name and kind icon the row showed), and sending
 the message stores the attachment with it. A message with attachments and
 no text is valid. Up to 10 files per message.
@@ -115,7 +114,17 @@ involved, and the file name is never logged.
 
 The message's edit form lists the current attachments as removable chips
 (the author can drop all of them; only the existing edit permission
-applies). Attachment changes touch the message so caches refresh.
+applies). Editing in the composer shows the same current attachments as
+removable chips in the composer's own strip, and saving sends the edited
+set with the same replace semantics, so removal and re-adding work without
+leaving the room. Forwarding a message copies its attachment ids onto the
+forward, whose block then behaves like any other. Attachment changes touch
+the message so caches refresh.
+
+Thread messages accept the same `message[drive_file_ids][]` set as room
+messages on create and update — stored, replaced, left alone when absent,
+cleared by the blank sentinel, 422 on an invalid id or a scalar — and a
+thread edit rebroadcasts the attachments block over the thread stream.
 
 The JSON message shape and the agent delivery payload carry the set as:
 
