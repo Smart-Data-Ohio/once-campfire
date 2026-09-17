@@ -100,6 +100,23 @@ class Google::ClientTest < ActiveSupport::TestCase
     assert_raises(Google::Client::Error) { @client.delete_event("some-id") }
   end
 
+  test "a timeout maps to Unavailable" do
+    stub_request(:post, GOOGLE_EVENTS_URL).to_timeout
+
+    error = assert_raises(Google::Client::Unavailable) { @client.insert_event({}) }
+
+    assert Google::Client::Unavailable < Google::Client::Error
+    assert_equal "Google Calendar request failed (Net::OpenTimeout)", error.message
+  end
+
+  test "a malformed response body maps to Unavailable" do
+    stub_request(:post, GOOGLE_EVENTS_URL).to_return(status: 200, body: "{oops")
+
+    error = assert_raises(Google::Client::Unavailable) { @client.insert_event({}) }
+
+    assert_equal "Google Calendar request failed (JSON::ParserError)", error.message
+  end
+
   test "email_from_id_token returns the verified email" do
     assert_equal "david@gmail.test", Google::Client.email_from_id_token(google_id_token)
   end

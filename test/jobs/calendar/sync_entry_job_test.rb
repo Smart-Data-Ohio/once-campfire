@@ -251,6 +251,17 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_includes entry.last_error, "500"
   end
 
+  test "a transport failure records an Unavailable last_error without raising" do
+    connect_google!(@david)
+    stub_request(:post, GOOGLE_EVENTS_URL).to_timeout
+
+    Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
+
+    entry = EventCalendarEntry.find_by!(event: @event, user: @david)
+    assert_nil entry.synced_at
+    assert_equal "Unavailable: Google Calendar request failed (Net::OpenTimeout)", entry.last_error
+  end
+
   test "a failed delete keeps the row with last_error for a retry" do
     connect_google!(@david)
     entry = EventCalendarEntry.create!(event: @event, user: @david, google_event_id: SecureRandom.hex(16))

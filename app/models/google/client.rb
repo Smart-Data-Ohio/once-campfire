@@ -1,5 +1,6 @@
 require "net/http"
 require "base64"
+require "openssl"
 
 module Google
   # Minimal Google OAuth + Calendar client over Net::HTTP. All network access
@@ -15,9 +16,18 @@ module Google
     ID_TOKEN_ISSUERS = %w[ https://accounts.google.com accounts.google.com ].freeze
 
     class Error < StandardError; end
+    class Unavailable < Error; end
     class Unauthorized < Error; end
     class NotFound < Error; end
     class Conflict < Error; end
+
+    # Timeouts, connection failures, and malformed bodies surface as
+    # Unavailable so callers and last_error see one shape. Messages carry
+    # only the error class, never response bytes that could hold tokens.
+    TRANSPORT_ERRORS = [
+      Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout,
+      SocketError, OpenSSL::SSL::SSLError, JSON::ParserError
+    ].freeze
 
     class << self
       def configured?
@@ -55,6 +65,8 @@ module Google
         else
           raise Error, "Google token exchange failed (#{response.code} #{token_error_code(response)})".squish
         end
+      rescue *TRANSPORT_ERRORS => error
+        raise Unavailable, "Google Calendar request failed (#{error.class})"
       end
 
       # Shared token-endpoint POST for the code exchange and refreshes.
@@ -139,6 +151,8 @@ module Google
         end
         raise Error, "Google token refresh failed (#{response.code})"
       end
+    rescue *TRANSPORT_ERRORS => error
+      raise Unavailable, "Google Calendar request failed (#{error.class})"
     end
 
     private
@@ -163,6 +177,8 @@ module Google
         else
           raise Error, "Google Calendar request failed (#{response.code})"
         end
+      rescue *TRANSPORT_ERRORS => error
+        raise Unavailable, "Google Calendar request failed (#{error.class})"
       end
 
       def send_api_request(method, path, payload)

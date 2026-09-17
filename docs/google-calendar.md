@@ -62,6 +62,12 @@ to remove are logged and forgotten. Deleting a room destroys its local
 entry rows; copies already in Google Calendar are left for the member to
 remove.
 
+Deactivating a member removes their room memberships, marks their Google
+account disconnected ("Account deactivated") so no further syncs run for
+it, and enqueues one cleanup sync per calendar entry; the reconciler sees
+no membership and drops the local rows. Copies already in Google Calendar
+are left for the member to remove, as with room deletion.
+
 ## Token storage
 
 Refresh and access tokens are stored encrypted (`encrypts` on
