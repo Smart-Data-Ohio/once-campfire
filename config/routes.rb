@@ -156,6 +156,12 @@ Rails.application.routes.draw do
     post "webhooks", to: "webhooks#create"
   end
 
+  namespace :google do
+    post "connect", to: "connections#connect"
+    get "callback", to: "connections#callback"
+    delete "connection", to: "connections#destroy"
+  end
+
   get "webmanifest"    => "pwa#manifest"
   get "service-worker" => "pwa#service_worker"
 

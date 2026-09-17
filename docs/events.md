@@ -36,6 +36,7 @@ Deleting a room removes its events, attendances, and their inbox items.
 
 ## Follow-ups (not in this slice)
 
-- Google Calendar sync (one-way publishing or two-way synchronization, attendee consent, and the source of truth).
+Events a member is going or maybe to can appear in their Google Calendar; see [Google Calendar](google-calendar.md).
+
 - Recurring events.
 - Linking an event to a voice or Stage channel.

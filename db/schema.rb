@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -196,6 +196,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
     t.index ["event_id", "user_id"], name: "index_event_attendances_on_event_id_and_user_id", unique: true
   end
 
+  create_table "event_calendar_entries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "event_id", null: false
+    t.string "google_event_id", null: false
+    t.string "last_error"
+    t.datetime "synced_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["event_id", "user_id"], name: "index_event_calendar_entries_on_event_id_and_user_id", unique: true
+    t.index ["event_id"], name: "index_event_calendar_entries_on_event_id"
+    t.index ["user_id"], name: "index_event_calendar_entries_on_user_id"
+  end
+
   create_table "events", force: :cascade do |t|
     t.datetime "cancelled_at"
     t.datetime "created_at", null: false
@@ -266,6 +279,18 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
     t.string "event"
     t.datetime "updated_at", null: false
     t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
+  end
+
+  create_table "google_accounts", force: :cascade do |t|
+    t.string "access_token"
+    t.datetime "access_token_expires_at"
+    t.datetime "created_at", null: false
+    t.string "disconnected_reason"
+    t.string "email", null: false
+    t.string "refresh_token"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_google_accounts_on_user_id", unique: true
   end
 
   create_table "huddle_cleanups", force: :cascade do |t|
@@ -461,12 +486,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "event_calendar_entries", "events"
+  add_foreign_key "event_calendar_entries", "users"
   add_foreign_key "github_notifications", "github_repository_subscriptions", column: "subscription_id", on_delete: :cascade
   add_foreign_key "github_notifications", "messages", on_delete: :nullify
   add_foreign_key "github_pull_request_references", "github_pull_requests"
   add_foreign_key "github_pull_request_references", "messages"
   add_foreign_key "github_repository_subscriptions", "rooms", on_delete: :cascade
   add_foreign_key "github_repository_subscriptions", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "google_accounts", "users"
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify

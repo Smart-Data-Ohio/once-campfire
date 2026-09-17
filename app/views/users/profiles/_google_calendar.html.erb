@@ -1,0 +1,17 @@
+<section class="margin-block pad-inline pad-block fill-shade border-radius" aria-labelledby="google-calendar-title">
+  <h2 id="google-calendar-title" class="txt-large">Google Calendar</h2>
+
+  <% if !Google::Client.configured? %>
+    <p>Google Calendar is not configured for this workspace</p>
+  <% elsif user.google_account&.connected? %>
+    <p>Connected as <%= user.google_account.email %></p>
+    <%= button_to "Disconnect", google_connection_path, method: :delete, class: "btn btn--negative",
+          form: { data: { turbo_confirm: "Disconnect Google Calendar? Your published event entries will be removed." } } %>
+  <% elsif user.google_account %>
+    <p>Google rejected the connection, reconnect</p>
+    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn" %>
+  <% else %>
+    <p>Publish events you are going or maybe to to your Google Calendar.</p>
+    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn" %>
+  <% end %>
+</section>

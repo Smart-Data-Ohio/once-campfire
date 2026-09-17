@@ -54,6 +54,10 @@
     </div>
   <% end %>
 
+  <% if @event.calendar_entries.exists?(user_id: Current.user.id) %>
+    <p class="room-events__calendar-note" role="status">Added to your Google Calendar</p>
+  <% end %>
+
   <section class="room-events__response" aria-labelledby="event-response-title">
     <h2 id="event-response-title" class="room-events__heading">Your response</h2>
     <% if @event.respondable_by?(Current.user) %>

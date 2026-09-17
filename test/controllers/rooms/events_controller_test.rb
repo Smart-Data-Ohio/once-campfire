@@ -175,4 +175,24 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to room_event_path(@room, @event)
     assert_predicate @event.reload, :cancelled?
   end
+
+  test "show notes the Google Calendar copy when an entry exists for the viewer" do
+    get room_event_url(@room, @event)
+
+    assert_not_includes response.body, "Added to your Google Calendar"
+
+    EventCalendarEntry.create!(event: @event, user: users(:david), google_event_id: SecureRandom.hex(16))
+
+    get room_event_url(@room, @event)
+
+    assert_includes response.body, "Added to your Google Calendar"
+  end
+
+  test "show hides another member's Google Calendar copy" do
+    EventCalendarEntry.create!(event: @event, user: users(:jason), google_event_id: SecureRandom.hex(16))
+
+    get room_event_url(@room, @event)
+
+    assert_not_includes response.body, "Added to your Google Calendar"
+  end
 end
