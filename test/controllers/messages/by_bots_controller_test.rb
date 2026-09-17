@@ -97,7 +97,7 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     json_message = response.parsed_body.find { |item| item["id"] == message.id }
     assert_equal source, json_message.dig("body", "markdown_source")
-    assert_match %r{<div class="markdown-body"><h2>Status</h2>}, json_message.dig("body", "html")
+    assert_match %r{<div class="markdown-body" data-controller="drive-link"><h2>Status</h2>}, json_message.dig("body", "html")
     assert_no_match /<script/, json_message.dig("body", "html")
   end
 
