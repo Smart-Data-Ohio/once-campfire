@@ -22,6 +22,7 @@ class Room < ApplicationRecord
   has_many :root_messages, -> { where(thread_id: nil) }, class_name: "Message", foreign_key: :room_id
   has_many :channel_threads, dependent: :destroy
   has_many :events, dependent: :destroy
+  has_many :hosted_events, class_name: "Event", foreign_key: :venue_room_id, dependent: :nullify
   has_many :github_repository_subscriptions, class_name: "Github::RepositorySubscription", dependent: :destroy
 
   belongs_to :creator, class_name: "User", default: -> { Current.user }
