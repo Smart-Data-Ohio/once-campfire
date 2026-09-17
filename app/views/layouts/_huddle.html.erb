@@ -58,6 +58,15 @@
     Play huddle audio
   </button>
 
+  <label class="huddle__stream-quality" data-huddle-target="streamQualityRow" hidden>
+    <span>Stream quality</span>
+    <select class="input" data-huddle-target="streamQuality" data-action="huddle#streamQualityChanged">
+      <option value="auto">Auto</option>
+      <option value="low">Low</option>
+      <option value="high">High</option>
+    </select>
+  </label>
+
   <div class="huddle__screens" data-huddle-target="screens" aria-label="Shared screens" hidden></div>
 
   <div class="huddle__cameras" data-huddle-target="cameras" aria-label="Cameras" hidden></div>

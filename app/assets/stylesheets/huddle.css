@@ -481,6 +481,34 @@
   font-size: 0.75rem;
 }
 
+/* Streaming: the viewer's quality choice above the screens, and the watcher
+   count on the expanded stream. */
+.huddle__stream-quality {
+  align-items: center;
+  display: flex;
+  font-size: 0.8rem;
+  gap: var(--inline-space-half);
+  justify-content: space-between;
+}
+
+.huddle__stream-quality[hidden] {
+  display: none;
+}
+
+.huddle__stream-quality select {
+  inline-size: auto;
+}
+
+.huddle__watching {
+  color: var(--workspace-text-muted);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.huddle__watching[hidden] {
+  display: none;
+}
+
 .huddle-share-indicator[hidden] {
   display: none;
 }

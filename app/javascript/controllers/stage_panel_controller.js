@@ -33,4 +33,31 @@ export default class extends Controller {
   wasClosed() {
     this.toggleTarget.setAttribute("aria-expanded", "false")
   }
+
+  // A successful Go live submits the stream over Turbo first; only then does
+  // the huddle panel start sharing at the chosen quality. A failed submit —
+  // a listener's 403, a 409 while someone else is live — dispatches nothing.
+  streamSubmitted(event) {
+    const form = event.target
+    if (!(form instanceof HTMLFormElement) || event.detail?.success !== true) return
+
+    const roomId = Number(form.dataset.roomId)
+    const quality = form.querySelector("select[name='quality']")?.value
+    if (!Number.isInteger(roomId) || roomId <= 0) return
+
+    window.dispatchEvent(new CustomEvent("huddle:stream-start", { detail: { roomId, quality } }))
+  }
+
+  // Stop stream ends the server state through the form's own DELETE; once it
+  // lands, the presenting browser stops sharing too. Ordering it after the
+  // DELETE keeps a failed stop consistent: the share keeps going while live.
+  streamStopSubmitted(event) {
+    const form = event.target
+    if (!(form instanceof HTMLFormElement) || event.detail?.success !== true) return
+
+    const roomId = Number(form.dataset.roomId)
+    if (!Number.isInteger(roomId) || roomId <= 0) return
+
+    window.dispatchEvent(new CustomEvent("huddle:stream-stop", { detail: { roomId } }))
+  }
 }
