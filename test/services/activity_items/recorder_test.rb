@@ -286,6 +286,25 @@ class ActivityItems::RecorderTest < ActiveSupport::TestCase
     assert_equal "work_assignment", ActivityItem.find_by!(user: @recipient).event_type
   end
 
+  test "a caller-authorized record skips the source check but keeps idempotency" do
+    thread = ChannelThread.create!(room: @room, creator: @author, name: "Board-like thread")
+    ThreadMembership.join!(thread, @author)
+    message = thread.post_message!(creator: @author,
+      attributes: { body: "Opening", client_message_id: "activity-skip-check" })
+
+    # David follows the room but never joined the thread, so the message
+    # alone authorizes nothing for him.
+    assert_nil ActivityItems::Recorder.record!(recipient: @recipient, source: message, event_type: "thread_activity")
+
+    assert_difference -> { ActivityItem.where(user: @recipient, source: message).count }, 1 do
+      2.times do
+        ActivityItems::Recorder.record!(recipient: @recipient, source: message,
+          event_type: "thread_activity", skip_source_check: true)
+      end
+    end
+    assert_equal "thread_activity", ActivityItem.find_by!(user: @recipient, source: message).event_type
+  end
+
   test "recording the same source twice is idempotent" do
     message = @room.messages.create!(
       creator: @author,

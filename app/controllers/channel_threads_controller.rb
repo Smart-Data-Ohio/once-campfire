@@ -278,7 +278,9 @@ class ChannelThreadsController < ApplicationController
 
     # A new post notifies board members following everything, plus the
     # assigned human owner whatever their involvement, sourced at the
-    # opening message so the inbox can open its exact context.
+    # opening message so the inbox can open its exact context. The items go
+    # through the recorder for grouping and idempotency; the recipients are
+    # authorized here because room followers are not thread members yet.
     def notify_board_post_created!(thread, message)
       memberships = thread.room.memberships.includes(:user).to_a
 
@@ -289,7 +291,8 @@ class ChannelThreadsController < ApplicationController
         next if membership.involved_in_invisible?
         next unless membership.involved_in_everything? || user.id == thread.work_owner_id
 
-        ActivityItem.create!(user:, source: message, event_type: "thread_activity")
+        ActivityItems::Recorder.record!(recipient: user, source: message,
+          event_type: "thread_activity", skip_source_check: true)
       end
     end
 

@@ -140,6 +140,30 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     assert_equal post.messages.sole.id, ActivityItem.find_by!(user: users(:jason)).source_id
     assert_equal 1, ActivityItem.where(user: users(:kevin), event_type: "thread_activity").count
     assert_empty ActivityItem.where(user: @creator)
+
+    event = post.work_thread_events.ordered.first
+    assert_equal "work_assignment", event.event_type
+    assert_nil event.from_owner_id
+    assert_equal users(:kevin).id, event.to_owner_id
+    assert_equal @creator.id, event.actor_id
+  end
+
+  test "a messageless post with an owner still writes the assignment event and notifies the owner" do
+    sign_in :jz
+    post room_threads_url(@room, format: :json), params: {
+      thread: { name: "Owned but quiet", work_owner_id: users(:kevin).id }
+    }
+    assert_response :created
+
+    post = ChannelThread.find(response.parsed_body.dig("thread", "id"))
+    event = post.work_thread_events.ordered.first
+    assert_equal "work_assignment", event.event_type
+    assert_nil event.from_owner_id
+    assert_equal users(:kevin).id, event.to_owner_id
+    assert_equal @creator.id, event.actor_id
+    assert_equal 1, ActivityItem.where(user: users(:kevin), event_type: "work_assignment").count
+    assert_empty ActivityItem.where(user: users(:kevin), event_type: "thread_activity")
+    assert_empty ActivityItem.where(user: users(:david))
   end
 
   test "a messageless post creates no inbox items but marks the board unread" do

@@ -38,7 +38,7 @@ Both renderings filter by owner (anyone, you, agents, or one member) and tag; th
 
 ## Inbox behaviour
 
-Status and owner changes produce work inbox items as in channels. A result edit produces a work-update item for the post's creator and owner other than the editor. A new post with an opening message notifies board members following everything, plus the assigned human owner whatever their involvement.
+Status and owner changes produce work inbox items as in channels. A result edit produces a work-update item for the post's creator and owner other than the editor. Creating a post with an owner always writes the assignment event (from no owner to the owner, with the creator as actor) whether or not the post has a first message, so a human owner gets its work-assignment inbox item and an agent owner its work-assigned ledger event in both cases. Thread-activity items for members following everything are recorded only when a first message exists.
 
 The **Work threads** page lists board posts alongside channel work, links each board row to its post, and filters to **Boards only**.
 
