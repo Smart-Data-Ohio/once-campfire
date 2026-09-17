@@ -21,7 +21,7 @@ class Event::ReferenceSyncTest < ActiveSupport::TestCase
   test "absolute URLs on any host match" do
     message = @room.messages.create!(
       creator: users(:david),
-      markdown_source: "see https://campfire.example.test/rooms/999/events/#{@event.id}?x=1#frag",
+      markdown_source: "see https://smartfire.example.test/rooms/999/events/#{@event.id}?x=1#frag",
       client_message_id: "evt-ref-absolute"
     )
 

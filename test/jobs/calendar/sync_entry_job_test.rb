@@ -36,7 +36,7 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
       payload = JSON.parse(request.body)
       payload["id"] == entry.google_event_id &&
         payload["summary"] == "Launch party planning" &&
-        payload["description"] == "Finalize the launch checklist.\n\nFrom Campfire: #{event_url}" &&
+        payload["description"] == "Finalize the launch checklist.\n\nFrom Smartfire: #{event_url}" &&
         payload["start"] == { "dateTime" => rfc3339(@event.starts_at), "timeZone" => "America/New_York" } &&
         payload["end"] == { "dateTime" => rfc3339(@event.ends_at), "timeZone" => "America/New_York" } &&
         payload["reminders"] == { "useDefault" => true } &&
@@ -56,7 +56,7 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_requested(:post, GOOGLE_EVENTS_URL) do |request|
       payload = JSON.parse(request.body)
       payload["location"] == "Lounge" &&
-        payload["description"] == "Finalize the launch checklist.\n\nFrom Campfire: #{event_url}\n\nJoin: #{venue_url}"
+        payload["description"] == "Finalize the launch checklist.\n\nFrom Smartfire: #{event_url}\n\nJoin: #{venue_url}"
     end
   end
 

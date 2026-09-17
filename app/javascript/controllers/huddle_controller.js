@@ -1133,7 +1133,7 @@ export default class extends Controller {
       adaptiveStream: true,
       dynacast: true,
       // Spelled out rather than inherited so a future SDK upgrade cannot quietly
-      // change what Campfire asks the browser to do with a microphone.
+      // change what Smartfire asks the browser to do with a microphone.
       audioCaptureDefaults: this.#audioCaptureOptions(),
       // The 720p/30 camera target from docs/huddle-quality.md, step 5. This is
       // the SDK's own `videoDefaults` written out, so it changes no behavior

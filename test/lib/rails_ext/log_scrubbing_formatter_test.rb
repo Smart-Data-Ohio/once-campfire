@@ -10,7 +10,7 @@ class LogScrubbingFormatterTest < ActiveSupport::TestCase
   end
 
   test "redacts the bot key reflected in a pagination Link header" do
-    line = format(%(Link: <https://campfire.example.com/rooms/42/7-Zt9QmK1xz3Ab/messages?before=99>; rel="next"))
+    line = format(%(Link: <https://smartfire.example.com/rooms/42/7-Zt9QmK1xz3Ab/messages?before=99>; rel="next"))
     assert_includes line, "/rooms/42/[FILTERED]/messages?before=99"
     assert_not_includes line, "Zt9QmK1xz3Ab"
   end

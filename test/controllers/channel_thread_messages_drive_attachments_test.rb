@@ -6,7 +6,7 @@ class ChannelThreadMessagesDriveAttachmentsTest < ActionDispatch::IntegrationTes
   FILE_C = "3CdeFghIjKlMnOpQrStUv"
 
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
     sign_in :jz
     @room = rooms(:designers)
     @thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Thread attachments")

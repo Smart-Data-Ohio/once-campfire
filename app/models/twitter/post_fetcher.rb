@@ -85,7 +85,7 @@ module Twitter
         response = nil
         body = nil
         Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
-          request = Net::HTTP::Get.new(uri.request_uri, { "User-Agent" => "Campfire-X-Post-Cards", "Accept" => "application/json" })
+          request = Net::HTTP::Get.new(uri.request_uri, { "User-Agent" => "Smartfire-X-Post-Cards", "Accept" => "application/json" })
           http.request(request) do |streamed|
             response = streamed
             body = read_capped_body(streamed)

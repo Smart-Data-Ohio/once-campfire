@@ -2,7 +2,7 @@ require "test_helper"
 
 class MessageForwardsControllerTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
     sign_in :jz
     @room = rooms(:designers)
     @message = messages(:third)

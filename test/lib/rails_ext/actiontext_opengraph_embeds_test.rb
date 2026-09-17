@@ -19,11 +19,11 @@ class ActionText::Attachment::OpengraphEmbedTest < ActiveSupport::TestCase
     end
   end
 
-  test "drops a link and an image on this Campfire's own host, however it is spelled" do
-    Current.set request: ActionDispatch::TestRequest.create("HTTP_HOST" => "once.campfire.test") do
-      [ "https://once.campfire.test/rooms/1", "http://once.campfire.test/rooms/1",
-        "https://ONCE.Campfire.Test/rooms/1", "https://once.campfire.test./rooms/1",
-        "https://%6fnce.campfire.test/rooms/1", "https://%77ww.example.com/x.png" ].each do |value|
+  test "drops a link and an image on this Smartfire's own host, however it is spelled" do
+    Current.set request: ActionDispatch::TestRequest.create("HTTP_HOST" => "smartfire.test") do
+      [ "https://smartfire.test/rooms/1", "http://smartfire.test/rooms/1",
+        "https://SMARTFIRE.TEST/rooms/1", "https://smartfire.test./rooms/1",
+        "https://%73martfire.test/rooms/1", "https://%77ww.example.com/x.png" ].each do |value|
         embed = embed_from href: value, url: value
 
         assert_nil embed.href, "expected #{value.inspect} to be dropped as a link"

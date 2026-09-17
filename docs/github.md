@@ -210,7 +210,7 @@ action name and summary the decider saw, so an agent cannot approve one
 thing and execute another.
 
 ```sh
-curl -X POST https://campfire.example.com/rooms/1/agents/github/pull_request_actions \
+curl -X POST https://smartfire.example.com/rooms/1/agents/github/pull_request_actions \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pull_request_id":7,"kind":"comment","body":"Nice work","external_id":"review-123"}'

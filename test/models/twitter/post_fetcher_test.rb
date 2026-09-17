@@ -192,7 +192,7 @@ class Twitter::PostFetcherTest < ActiveSupport::TestCase
       tweet["quote"] = quote if quote
 
       stub_request(:get, "https://api.fxtwitter.com/#{handle}/status/#{status}")
-        .with(headers: { "User-Agent" => "Campfire-X-Post-Cards" })
+        .with(headers: { "User-Agent" => "Smartfire-X-Post-Cards" })
         .to_return(status: 200, body: { code: 200, message: "OK", tweet: tweet }.to_json,
           headers: { "Content-Type" => "application/json" })
     end

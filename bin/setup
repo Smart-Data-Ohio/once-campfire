@@ -51,7 +51,7 @@ redis_running() {
 
 echo
 gum style --foreground 214 "    )  "
-gum style --foreground 208 "   ) \\  campfire"
+gum style --foreground 208 "   ) \\  smartfire"
 gum style --foreground 202 "  ( ( ("
 gum style --foreground 94  "  .^^^."
 echo

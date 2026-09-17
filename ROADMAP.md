@@ -1,10 +1,10 @@
-# Smart Data Campfire roadmap
+# Smartfire roadmap
 
 Updated September 15, 2026. This is a direction and sequencing document, not a delivery-date commitment. Items under Planned are requests; items under Proposed are additional ideas to evaluate.
 
 ## Direction
 
-Build Smart Data's shared workspace for people, AI agents, conversations, and work. Continue moving toward a Discord-like experience while connecting the Smart Apps ecosystem. Campfire is the starting point for an independently maintained product fork; staying feature-compatible with upstream is not a goal.
+Build Smart Data's shared workspace for people, AI agents, conversations, and work. Continue moving toward a Discord-like experience while connecting the Smart Apps ecosystem. Basecamp's Campfire is the starting point for an independently maintained product fork; staying feature-compatible with upstream is not a goal.
 
 Keep the upstream remote and license/attribution. Review upstream security fixes and useful changes selectively. Release our own tested, pinned images; do not automatically replace the app with upstream images. The fork's default branch should become the canonical integration branch after review of the deployed work.
 
@@ -37,7 +37,7 @@ GitHub's first read-only slice is live: messages linking a pull request URL rend
 - Branch checks and the repeatable release workflow exist. `CI` runs the server and browser suites, lint, security scan, and the workflow audit on every pull request to `main`. [Publish image to Artifact Registry](.github/workflows/publish-gcp-image.yml) builds and pins a `git-<source sha>` image on every push to `main`, and [Deploy to GCP](.github/workflows/deploy-gcp.yml) performs the write freeze, backup, boot-disk snapshot, cutover, preservation checks, and automatic rollback described in [deploy/gcp/README.md](deploy/gcp/README.md). Production deployments require a reviewed `main` ancestor, a green `CI` run for that exact revision, and an environment reviewer.
 - Remaining: require those checks as branch protection rules on `main`, and settle a release-notes convention on top of the release record the deploy workflow already emits.
 - Keep this roadmap in the repository and turn selected milestones into scoped issues with acceptance criteria.
-- Decide product name and branding when useful; a rename is not a prerequisite for feature work.
+- Product name and branding decided: Smartfire; applying the rename across the brand layer.
 
 Done when a contributor can clone the default branch, run the app and checks, and identify the code behind the live release.
 
@@ -104,7 +104,7 @@ Done for the calendar slice when an opted-in attendee receives a calendar entry 
 
 Done for the first slice when one Drive workflow and one selected Smart App workflow work end to end without exposing private source content to unauthorized channel members.
 
-**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). File discovery shipped as well: members with Drive previews enabled can find a file by name or from recents in the composer and insert its link without leaving Campfire. Attachments shipped as well: members attach Drive files from the picker, only the file id is stored, and each viewer resolves the name with their own credentials; see [Google Drive attachments](docs/google-drive.md#attachments). Still open: the first selected Smart App workflow.
+**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). File discovery shipped as well: members with Drive previews enabled can find a file by name or from recents in the composer and insert its link without leaving Smartfire. Attachments shipped as well: members attach Drive files from the picker, only the file id is stored, and each viewer resolves the name with their own credentials; see [Google Drive attachments](docs/google-drive.md#attachments). Still open: the first selected Smart App workflow.
 
 ### 7. Unified activity inbox
 

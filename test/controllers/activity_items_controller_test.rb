@@ -2,7 +2,7 @@ require "test_helper"
 
 class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
     @original_api_secret = ENV["LIVEKIT_API_SECRET"]
     ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
     @room = rooms(:designers)

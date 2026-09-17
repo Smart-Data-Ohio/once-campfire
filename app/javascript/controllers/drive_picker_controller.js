@@ -4,7 +4,7 @@ import { debounce } from "helpers/timing_helpers"
 
 // Composer popover listing the viewer's Google Drive files, recent first and
 // filterable by name, so a file link can be inserted without leaving
-// Campfire. The button renders only when the layout carries the
+// Smartfire. The button renders only when the layout carries the
 // google-drive-previews meta tag; connect double-checks so a stale page
 // sends zero requests. Choosing a row inserts the file's webViewLink at the
 // caret; the existing preview chip renders it once the message is sent.

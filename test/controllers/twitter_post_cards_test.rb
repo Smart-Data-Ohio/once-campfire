@@ -8,7 +8,7 @@ load Rails.root.join("lib/tasks/twitter.rake")
 
 class TwitterPostCardsTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
 
     sign_in :david
     @room = rooms(:designers)

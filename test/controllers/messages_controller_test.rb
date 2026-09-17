@@ -2,7 +2,7 @@ require "test_helper"
 
 class MessagesControllerTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
 
     sign_in :david
     @room = rooms(:watercooler)
@@ -53,12 +53,12 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_rendered_turbo_stream_broadcast @room, :messages, action: "append", target: [ @room, :messages ] do
       assert_select ".message__body", text: /New one/
-      assert_copy_link_button room_at_message_url(@room, Message.last, host: "once.campfire.test")
+      assert_copy_link_button room_at_message_url(@room, Message.last, host: "smartfire.test")
     end
   end
 
   test "broadcast message actions preserve a nonstandard request port" do
-    origin = "http://once.campfire.test:3443"
+    origin = "http://smartfire.test:3443"
     post "#{origin}#{room_messages_path(@room, format: :turbo_stream)}", params: {
       message: { markdown_source: "A live message", client_message_id: "broadcast-port" }
     }
