@@ -31,8 +31,8 @@ the `AgentAuthorization` concern (`require_agent_capability`) on the bot
 message endpoints, the bot boost endpoints,
 `POST /rooms/:room_id/agents/messages` (JSON, Bearer-only), and the event
 polling endpoints below; `external_action` is enforced on the approval
-endpoints (see Approvals). `manage_threads` is storable and shown in the
-UI marked "not yet enforced". Enforcement reads the database on every
+endpoints (see Approvals), and `manage_threads` is enforced on the agent
+work endpoints (see Work threads). Enforcement reads the database on every
 request; nothing is cached.
 
 Room membership still applies on top of grants: every endpoint returns 404 for
@@ -70,7 +70,8 @@ its next post immediately.
 messages) with `agent_id`, `event_type`, optional `room_id`, `message_id`,
 `agent_credential_id`, `actor_id`, `outcome`, `detail`, JSON `metadata`, and
 `created_at`, indexed on `[agent_id, created_at]`. Deliverable types are
-`mention`, `direct_message`, and `reply`; ledger-only types are `posted`
+`mention`, `direct_message`, `reply`, `approval_decided`, `work_assigned`,
+and `work_unassigned`; ledger-only types are `posted`
 (written whenever the agent posts through any endpoint) and the suppression
 rows `delivery_suppressed_rate_limit`, `delivery_suppressed_hop_limit`, and
 `delivery_suppressed_revoked`. Outcomes are `pending`, `delivered`,
@@ -263,3 +264,69 @@ works on it. The webhook posts when configured with the same additive
 `agent` key plus an `approval` key carrying the same fields. Agent
 cancellation appends no event. Rate limits and the hop guard do not apply
 to these rows.
+
+## Work threads
+
+A work thread can be owned by an agent. The thread's starter, the
+channel's creator, or an administrator assigns an agent from the
+**Agents** group in **Update work**; the agent's progress then appears
+in Work history and the activity inbox like any owner's. See [Activity
+inbox and work threads](activity-workspace.md#work-threads) for the
+human side.
+
+### Eligibility
+
+A bot user is an eligible work owner when it has an `Agent` row that is
+active, belongs to the thread's room, and holds `post_messages` there
+(`Agent#can?(:post_messages, room)`). Suspending the agent or revoking
+its membership leaves the assignment visible as unavailable, exactly
+like an inactive human owner; there is no separate unassign path.
+
+### Assignment events
+
+Assigning an agent writes a `work_assigned` row to its event ledger in
+the same transaction as the work change, with `room_id` set, `actor_id`
+the human who assigned it, and `metadata: { thread_id, title,
+work_status, assigned_by }`. Unassigning it — clearing the owner,
+reassigning to a human, or stopping work tracking — writes
+`work_unassigned` the same way. Both are deliverable types, but neither
+is a message type, so rate limits and the hop guard ignore them.
+
+`GET /agents/events` returns these rows with a `work` payload instead
+of `message`:
+
+```json
+{ "thread_id": 7, "room_id": 2, "title": "Ship the fix", "status": "planned", "url": "/rooms/2?thread=7", "assigned_by": "David" }
+```
+
+`url` is the workspace permalink path for the thread. Rows for threads
+the agent can no longer read (membership or `read_messages` revoked)
+are omitted, like message rows. The webhook posts when configured with
+the same additive `agent` key plus `event_type` and the `work` key,
+also gated on `read_messages`. `ack` works on these rows.
+
+### Agent API (Bearer-only, JSON)
+
+- `GET /agents/work` lists the threads the agent currently owns (`id`,
+  `room_id`, `title`, `work_status`, `url`, `updated_at`), newest
+  first, max 100, filtered to rooms where the agent holds
+  `read_messages`.
+- `GET /agents/work/:id` returns one owned thread, or 404 for anything
+  the agent does not own.
+- `PATCH /agents/work/:id` updates the status of an owned thread. It
+  takes `work_status` (one of `planned`, `in_progress`, `blocked`,
+  `done`) and an optional plain-text `note` (max 500 characters),
+  stored in the work event and shown in Work history. Anything the
+  agent does not own is 404; a missing `manage_threads` grant in the
+  thread's room is 403. Agents cannot reassign, convert, or stop
+  tracking.
+
+```sh
+curl -X PATCH https://campfire.example.com/agents/work/7 \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"work_status":"in_progress","note":"Reproducing the bug"}'
+```
+
+This is the first enforcement of `manage_threads`: the status update
+requires it in the thread's room, with the standard 403 error shape.
