@@ -28,6 +28,16 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match "Legacy access", response.body
   end
 
+  test "index renders a fallback for grants whose room was deleted" do
+    AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
+    rooms(:watercooler).destroy!
+
+    get account_bot_grants_url(@bot)
+
+    assert_response :ok
+    assert_match "Deleted room", response.body
+  end
+
   test "create grants a room capability" do
     assert_difference -> { AgentGrant.count }, +1 do
       post account_bot_grants_url(@bot), params: {
