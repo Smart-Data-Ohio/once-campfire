@@ -19,8 +19,7 @@ class Github::PullRequestThread < ApplicationRecord
   rescue ActiveRecord::RecordNotUnique
     reuse_winner!(pull_request: pull_request, room: room, channel_thread: channel_thread)
   rescue ActiveRecord::RecordInvalid => error
-    raise unless error.record.is_a?(Github::PullRequestThread) &&
-      error.record.errors.of_kind?(:github_pull_request_id, :taken)
+    raise unless error.record.is_a?(Github::PullRequestThread) && lost_race_only?(error.record)
 
     reuse_winner!(pull_request: pull_request, room: room, channel_thread: channel_thread)
   end
@@ -31,6 +30,16 @@ class Github::PullRequestThread < ApplicationRecord
     end
   end
   private_class_method :reuse_winner!
+
+  # Only a lost race qualifies for reuse: the PR-per-room uniqueness must be
+  # the sole failure. Any other error alongside it (say, a thread already
+  # mapped to a different PR) means the supplied thread is not a provisional
+  # loser and must not be destroyed.
+  def self.lost_race_only?(record)
+    record.errors.attribute_names == [ :github_pull_request_id ] &&
+      record.errors.where(:github_pull_request_id).all? { |error| error.type == :taken }
+  end
+  private_class_method :lost_race_only?
 
   # The pull_request object for agent delivery payloads: the PR's context
   # when the message lives in a PR thread, nil everywhere else.

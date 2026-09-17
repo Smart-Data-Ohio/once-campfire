@@ -106,6 +106,28 @@ class Github::PullRequestThreadTest < ActiveSupport::TestCase
     assert ChannelThread.exists?(thread.id)
   end
 
+  test "create_or_reuse! reraises when the PR uniqueness failure is not the only error" do
+    other_pr = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 13)
+    populated = ChannelThread.create!(room: @room, creator: users(:david), name: "Other PR chat", parent_message: @parent)
+    Github::PullRequestThread.create!(pull_request: other_pr, room: @room, channel_thread: populated)
+
+    other_parent = @room.messages.create!(
+      creator: users(:david), markdown_source: "https://github.com/rails/rails/pull/12 winner",
+      client_message_id: "pr-thread-model-combined"
+    )
+    winner_thread = ChannelThread.create!(room: @room, creator: users(:david), name: "Winner", parent_message: other_parent)
+    Github::PullRequestThread.create!(pull_request: @pull_request, room: @room, channel_thread: winner_thread)
+
+    # Both uniqueness validations fail: the PR already has a winner in this
+    # room, and the supplied thread already discusses a different PR. That
+    # thread is not a provisional loser, so it must survive.
+    assert_raises(ActiveRecord::RecordInvalid) do
+      Github::PullRequestThread.create_or_reuse!(pull_request: @pull_request, room: @room, channel_thread: populated)
+    end
+    assert ChannelThread.exists?(populated.id)
+    assert_equal other_pr, populated.reload.pull_request_thread.pull_request
+  end
+
   test "the unique index rejects a duplicate mapping without validations" do
     thread = ChannelThread.create!(room: @room, creator: users(:david), name: "PR chat", parent_message: @parent)
     Github::PullRequestThread.create!(pull_request: @pull_request, room: @room, channel_thread: thread)
