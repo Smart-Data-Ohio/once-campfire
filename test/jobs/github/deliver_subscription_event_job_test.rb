@@ -268,6 +268,38 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_includes ActivityItem.accessible_to(users(:kevin)), item
   end
 
+  test "an update for a locked PR thread falls back to a root room message" do
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-locked")
+    thread.lock_conversation!
+
+    assert_difference -> { @room.root_messages.count }, 1 do
+      assert_no_difference -> { thread.messages.count } do
+        Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
+      end
+    end
+
+    bot = User.active_bots.find_by!(name: "GitHub")
+    message = @room.root_messages.order(:created_at).last
+    assert_equal bot, message.creator
+    assert_equal "**alice** opened pull request #12: Fix login\nhttps://github.com/rails/rails/pull/12", message.markdown_source
+    assert_predicate thread.reload, :locked?
+  end
+
+  test "an update for a closed PR thread still lands in the thread" do
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-closed")
+    thread.close!
+
+    assert_difference -> { thread.messages.count }, 1 do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
+    end
+
+    bot = User.active_bots.find_by!(name: "GitHub")
+    assert_empty @room.root_messages.where(creator: bot)
+    assert_predicate thread.reload, :active?
+    reply = thread.messages.order(:created_at).last
+    assert_equal "**alice** opened pull request #12: Fix login\nhttps://github.com/rails/rails/pull/12", reply.markdown_source
+  end
+
   test "thread updates broadcast to the thread stream" do
     thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-broadcast")
     stream = thread_messages_stream_name(thread)
