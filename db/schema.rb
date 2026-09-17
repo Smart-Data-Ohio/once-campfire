@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -156,6 +156,31 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
     t.index ["room_id", "last_activity_at"], name: "index_channel_threads_on_room_id_and_last_activity_at"
     t.index ["room_id", "work_status", "last_activity_at"], name: "index_channel_threads_on_room_and_work_status_and_activity"
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
+  end
+
+  create_table "event_attendances", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "event_id", null: false
+    t.string "response", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["event_id", "user_id"], name: "index_event_attendances_on_event_id_and_user_id", unique: true
+  end
+
+  create_table "events", force: :cascade do |t|
+    t.datetime "cancelled_at"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.datetime "ends_at"
+    t.integer "organizer_id", null: false
+    t.datetime "reminded_at"
+    t.integer "room_id", null: false
+    t.datetime "starts_at", null: false
+    t.string "time_zone", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organizer_id"], name: "index_events_on_organizer_id"
+    t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
   end
 
   create_table "github_pull_request_references", force: :cascade do |t|

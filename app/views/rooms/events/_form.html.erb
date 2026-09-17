@@ -1,0 +1,72 @@
+<% zone = event.time_zone.presence || "UTC" %>
+<% starts_value = event.starts_at&.in_time_zone(zone)&.strftime("%Y-%m-%dT%H:%M") %>
+<% ends_value = event.ends_at&.in_time_zone(zone)&.strftime("%Y-%m-%dT%H:%M") %>
+
+<%= form_with model: event, url:, class: "flex flex-column gap" do |form| %>
+  <% if event.errors.any? %>
+    <div class="room-events__errors" role="alert">
+      <h2><%= pluralize(event.errors.count, "error") %> kept this event from being saved:</h2>
+      <ul>
+        <% event.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div>
+    <%= form.label :title, "Title" %>
+    <%= form.text_field :title, class: "input", required: true, autofocus: true, autocomplete: "off", maxlength: 255 %>
+  </div>
+
+  <div>
+    <%= form.label :description, "Description (optional)" %>
+    <%= form.text_area :description, class: "input", rows: 4 %>
+  </div>
+
+  <div class="room-events__time-fields">
+    <div>
+      <%= form.label :starts_at, "Starts" %>
+      <%= form.datetime_field :starts_at, class: "input", required: true, value: starts_value %>
+    </div>
+
+    <div>
+      <%= form.label :ends_at, "Ends (optional)" %>
+      <%= form.datetime_field :ends_at, class: "input", value: ends_value %>
+    </div>
+  </div>
+
+  <% if event.persisted? %>
+    <p class="room-events__hint">
+      Times are in <%= zone %>, the time zone this event was scheduled in.
+      Attendees see them converted to their own.
+    </p>
+  <% else %>
+    <%= form.hidden_field :time_zone, value: zone, data: { event_time_zone: true } %>
+    <p class="room-events__hint">
+      Times are saved in your time zone (<span data-event-time-zone-label><%= zone %></span>).
+      Attendees see them converted to their own.
+    </p>
+  <% end %>
+
+  <div>
+    <%= form.submit event.persisted? ? "Save changes" : "Schedule event", class: "btn btn--primary" %>
+  </div>
+<% end %>
+
+<% unless event.persisted? %>
+<script>
+  (function () {
+    var field = document.querySelector("[data-event-time-zone]");
+    if (!field) return;
+    try {
+      var zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (zone) {
+        field.value = zone;
+        var label = document.querySelector("[data-event-time-zone-label]");
+        if (label) label.textContent = zone;
+      }
+    } catch (error) { /* keep the UTC fallback */ }
+  })();
+</script>
+<% end %>

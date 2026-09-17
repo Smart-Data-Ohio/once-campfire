@@ -1,0 +1,23 @@
+launch_party:
+  room: designers
+  organizer: david
+  title: Launch party planning
+  description: Finalize the launch checklist.
+  starts_at: <%= 2.days.from_now %>
+  ends_at: <%= 2.days.from_now + 1.hour %>
+  time_zone: America/New_York
+
+retro:
+  room: designers
+  organizer: jason
+  title: Sprint retro
+  starts_at: <%= 1.day.from_now %>
+  time_zone: UTC
+  cancelled_at: <%= 1.hour.ago %>
+
+watercooler_sync:
+  room: watercooler
+  organizer: david
+  title: Watercooler sync
+  starts_at: <%= 3.days.from_now %>
+  time_zone: UTC
