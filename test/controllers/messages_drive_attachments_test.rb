@@ -102,6 +102,19 @@ class MessagesDriveAttachmentsTest < ActionDispatch::IntegrationTest
     assert_empty message.reload.drive_attachments
   end
 
+  test "removing every attachment from a textless message answers 422 and keeps the set" do
+    message = @room.messages.new(creator: users(:david), markdown_source: "", client_message_id: "drive-bare")
+    message.drive_attachments.build(file_id: FILE_A)
+    message.save!
+
+    put room_message_url(@room, message), params: {
+      message: { markdown_source: "", drive_file_ids: [ "" ] }
+    }
+
+    assert_response :unprocessable_content
+    assert_equal [ FILE_A ], message.reload.drive_attachments.map(&:file_id)
+  end
+
   test "update with an invalid id answers 422 and keeps the stored set" do
     message = @room.messages.create!(creator: users(:david), markdown_source: "before", client_message_id: "drive-bad-update")
     message.drive_attachments.create!(file_id: FILE_A)

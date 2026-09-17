@@ -57,6 +57,8 @@ class DriveAttachmentsTest < ApplicationSystemTestCase
     visit edit_room_message_path(rooms(:designers), Message.last)
     assert_selector ".drive-attachment-chip", text: "Google Drive file"
 
+    # The message is textless, so dropping its only attachment needs replacement text.
+    fill_in "Message", with: "the file moved elsewhere"
     click_on "Remove Google Drive file"
     assert_no_selector ".drive-attachment-chip"
 
