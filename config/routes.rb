@@ -63,6 +63,9 @@ Rails.application.routes.draw do
   end
 
   get "agents/me", to: "agents#me", defaults: { format: :json }
+  get "agents/events", to: "agents/events#index", defaults: { format: :json }
+  post "agents/events/:id/ack", to: "agents/events#ack", defaults: { format: :json }, as: :ack_agents_event
+  get "agents/:id/events", to: "agents/events#ledger", as: :agent_events
   post "rooms/:room_id/agents/messages", to: "agents/messages#create", defaults: { format: :json }, as: :room_agent_messages
 
   direct :fresh_user_avatar do |user, options|
@@ -112,6 +115,7 @@ Rails.application.routes.draw do
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
+      resources :github_subscriptions, only: %i[ create update destroy ]
     end
 
     get "@:message_id", to: "rooms#show", as: :at_message

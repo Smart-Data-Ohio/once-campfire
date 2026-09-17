@@ -15,10 +15,32 @@
       <p class="huddle__status" data-huddle-target="status" role="status" aria-live="polite">Not in a huddle</p>
     </div>
 
-    <button type="button" class="btn btn--plain huddle__leave" data-action="huddle#leave">
-      <span data-huddle-target="leaveLabel">Leave</span>
-    </button>
+    <div class="huddle__header-actions">
+      <button type="button"
+              class="btn btn--plain huddle__connection"
+              data-huddle-target="connection"
+              data-action="huddle#toggleConnectionDetails"
+              data-quality="fair"
+              aria-expanded="false"
+              aria-label="Connection quality: fair. Show details."
+              hidden>
+        <span class="huddle__connection-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+      </button>
+
+      <button type="button" class="btn btn--plain huddle__leave" data-action="huddle#leave">
+        <span data-huddle-target="leaveLabel">Leave</span>
+      </button>
+    </div>
   </header>
+
+  <dl class="huddle__connection-details" data-huddle-target="connectionDetails" hidden>
+    <div><dt>Round-trip time</dt><dd data-huddle-target="statRtt">–</dd></div>
+    <div><dt>Packet loss</dt><dd data-huddle-target="statLoss">–</dd></div>
+    <div><dt>Jitter</dt><dd data-huddle-target="statJitter">–</dd></div>
+    <div><dt>Received</dt><dd data-huddle-target="statRx">–</dd></div>
+    <div><dt>Sent</dt><dd data-huddle-target="statSent">–</dd></div>
+    <div><dt>Transport</dt><dd data-huddle-target="statTransport">–</dd></div>
+  </dl>
 
   <p class="huddle__notice" data-huddle-target="notice" role="alert" hidden></p>
 
@@ -47,9 +69,19 @@
   </div>
 
   <div class="huddle__controls" data-huddle-target="activeControls" hidden>
-    <button type="button" class="btn huddle__mute" data-huddle-target="mute" data-action="huddle#toggleMute" aria-pressed="false">
-      <span data-huddle-target="muteLabel">Mute</span>
-    </button>
+    <div class="huddle__mute-group">
+      <button type="button" class="btn huddle__mute" data-huddle-target="mute" data-action="huddle#toggleMute" aria-pressed="false">
+        <span data-huddle-target="muteLabel">Mute</span>
+      </button>
+      <span class="huddle__meter"
+            data-huddle-target="meter"
+            role="meter"
+            aria-label="Microphone level"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            hidden><span class="huddle__meter-fill" data-huddle-target="meterFill"></span></span>
+    </div>
     <button type="button" class="btn" data-huddle-target="share" data-action="huddle#toggleScreenShare" aria-pressed="false">
       <span data-huddle-target="shareLabel">Share screen</span>
     </button>
@@ -59,13 +91,62 @@
   </div>
 
   <div class="huddle__settings" data-huddle-target="settings" hidden>
-    <button type="button"
-            class="btn btn--plain huddle__noise"
-            data-huddle-target="noise"
-            data-action="huddle#toggleNoiseSuppression"
-            aria-pressed="true">
-      <span data-huddle-target="noiseLabel">Noise suppression on</span>
-    </button>
+    <div class="huddle__devices" data-huddle-target="devicesBlock" hidden>
+      <h3 class="huddle__devices-heading">Check your devices</h3>
+
+      <label class="huddle__device">
+        <span>Microphone</span>
+        <select class="input" data-huddle-target="microphoneSelect" data-action="huddle#microphoneChanged"></select>
+      </label>
+
+      <label class="huddle__device" data-huddle-target="speakerRow">
+        <span>Speaker</span>
+        <select class="input" data-huddle-target="speakerSelect" data-action="huddle#speakerChanged"></select>
+      </label>
+
+      <label class="huddle__device">
+        <span>Camera</span>
+        <select class="input" data-huddle-target="cameraSelect" data-action="huddle#cameraChanged"></select>
+      </label>
+
+      <div class="huddle__preview-wrap" data-huddle-target="previewWrap" hidden>
+        <video class="huddle__preview" data-huddle-target="preview" autoplay playsinline muted></video>
+      </div>
+
+      <span class="huddle__meter huddle__meter--prejoin"
+            data-huddle-target="prejoinMeter"
+            role="meter"
+            aria-label="Microphone level"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            hidden><span class="huddle__meter-fill" data-huddle-target="prejoinMeterFill"></span></span>
+
+      <p class="huddle__check-error" data-huddle-target="checkError" role="alert" hidden></p>
+
+      <div class="huddle__devices-actions">
+        <button type="button" class="btn btn--reversed" data-huddle-target="checkJoin" data-action="huddle#confirmPrejoinJoin" disabled>Join</button>
+        <button type="button" class="btn btn--plain" data-huddle-target="checkRetry" data-action="huddle#retryPrejoin" hidden>Try again</button>
+        <button type="button" class="btn btn--plain" data-huddle-target="devicesDone" data-action="huddle#closeDevices" hidden>Done</button>
+      </div>
+    </div>
+
+    <div class="huddle__settings-row" data-huddle-target="settingsRow" hidden>
+      <button type="button"
+              class="btn btn--plain huddle__noise"
+              data-huddle-target="noise"
+              data-action="huddle#toggleNoiseSuppression"
+              aria-pressed="true">
+        <span data-huddle-target="noiseLabel">Noise suppression on</span>
+      </button>
+      <button type="button"
+              class="btn btn--plain huddle__check-devices"
+              data-huddle-target="checkDevices"
+              data-action="huddle#toggleDevices"
+              aria-expanded="false">
+        Check devices
+      </button>
+    </div>
   </div>
 
   <button type="button" class="btn btn--reversed huddle__retry" data-huddle-target="retry" data-action="huddle#retry" hidden>

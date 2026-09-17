@@ -2,13 +2,16 @@ class Users::ProfilesController < ApplicationController
   before_action :set_user
 
   def show
-    @direct_memberships, @shared_memberships =
-      Current.user.memberships.with_ordered_room.partition { |m| m.room.direct? }
+    set_memberships
   end
 
   def update
-    @user.update user_params
-    redirect_to user_profile_url, notice: update_notice
+    if @user.update(user_params)
+      redirect_to user_profile_url, notice: update_notice
+    else
+      set_memberships
+      render :show, status: :unprocessable_entity
+    end
   end
 
   private
@@ -16,8 +19,13 @@ class Users::ProfilesController < ApplicationController
       @user = Current.user
     end
 
+    def set_memberships
+      @direct_memberships, @shared_memberships =
+        Current.user.memberships.with_ordered_room.partition { |m| m.room.direct? }
+    end
+
     def user_params
-      params.require(:user).permit(:name, :avatar, :email_address, :password, :bio).compact
+      params.require(:user).permit(:name, :avatar, :email_address, :password, :bio, :github_login).compact
     end
 
     def update_notice

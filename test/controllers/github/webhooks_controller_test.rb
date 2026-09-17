@@ -121,6 +121,55 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "subscribed repositories enqueue subscription delivery and post once" do
+    Github::RepositorySubscription.create!(room: @room, owner: "rails", repo: "rails", created_by: users(:david))
+    body = subscription_pull_request_payload(action: "opened").to_json
+
+    assert_enqueued_jobs 1, only: Github::DeliverSubscriptionEventJob do
+      post github_webhooks_url, params: body, headers: webhook_headers(event: "pull_request", body: body)
+      assert_response :success
+    end
+
+    assert_difference -> { @room.messages.count }, 1 do
+      perform_enqueued_jobs only: Github::DeliverSubscriptionEventJob
+    end
+
+    message = @room.messages.order(:created_at).last
+    assert_equal User.active_bots.find_by!(name: "GitHub"), message.creator
+    assert_includes message.markdown_source, "https://github.com/rails/rails/pull/12"
+    assert_equal [ 12 ], message.github_pull_requests.map(&:number)
+  end
+
+  test "redelivered subscription events post nothing" do
+    Github::RepositorySubscription.create!(room: @room, owner: "rails", repo: "rails", created_by: users(:david))
+    body = subscription_pull_request_payload(action: "opened").to_json
+    headers = webhook_headers(event: "pull_request", body: body)
+
+    post github_webhooks_url, params: body, headers: headers
+    assert_response :success
+    perform_enqueued_jobs only: Github::DeliverSubscriptionEventJob
+    assert_equal 1, @room.messages.where("markdown_source LIKE ?", "%opened pull request%").count
+
+    assert_no_enqueued_jobs only: Github::DeliverSubscriptionEventJob do
+      post github_webhooks_url, params: body, headers: headers
+      assert_response :success
+    end
+  end
+
+  test "unsubscribed repositories enqueue no delivery and create no bot user" do
+    body = subscription_pull_request_payload(action: "opened").to_json
+
+    assert_no_difference -> { User.count } do
+      assert_no_enqueued_jobs only: Github::DeliverSubscriptionEventJob do
+        post github_webhooks_url, params: body, headers: webhook_headers(event: "pull_request", body: body)
+        assert_response :success
+      end
+    end
+
+    assert_nil User.active_bots.find_by(name: "GitHub")
+    assert_empty Github::Notification.all
+  end
+
   test "check events without PR links and status events for other branches are ignored" do
     @pull_request.update!(head_branch: "shiny")
 
@@ -150,6 +199,22 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
         "repository" => { "full_name" => "rails/rails" },
         "pull_request" => {
           "number" => number,
+          "base" => { "repo" => { "full_name" => "rails/rails" } }
+        }
+      }
+    end
+
+    def subscription_pull_request_payload(action:, number: 12)
+      {
+        "action" => action,
+        "sender" => { "login" => "alice" },
+        "repository" => { "full_name" => "rails/rails" },
+        "pull_request" => {
+          "number" => number,
+          "title" => "Fix login",
+          "html_url" => "https://github.com/rails/rails/pull/#{number}",
+          "merged" => false,
+          "closed_at" => "2026-09-17T12:00:00Z",
           "base" => { "repo" => { "full_name" => "rails/rails" } }
         }
       }

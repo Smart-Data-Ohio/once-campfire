@@ -143,7 +143,11 @@ class MessagesController < ApplicationController
 
 
     def deliver_webhooks_to_bots
-      bots_eligible_for_webhook.excluding(@message.creator).each { |bot| bot.deliver_webhook_later(@message) }
+      # Agent-backed bots are delivered only through Agent::DeliveryJob (see
+      # Message::AgentDelivery); the legacy webhook bypasses grant, rate, and
+      # hop checks, so it serves bots without an Agent row only.
+      bots_eligible_for_webhook.excluding(@message.creator).where.missing(:agent)
+        .each { |bot| bot.deliver_webhook_later(@message) }
     end
 
     def bots_eligible_for_webhook

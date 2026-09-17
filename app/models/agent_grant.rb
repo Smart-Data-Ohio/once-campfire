@@ -1,10 +1,11 @@
 class AgentGrant < ApplicationRecord
   CAPABILITIES = %w[ read_messages post_messages react manage_threads external_action ].freeze
 
-  # Only these are enforced in this slice (posting and boosting through the
-  # bot/agent endpoints). The rest are storable and displayed but not yet
-  # enforced; see AgentAuthorization.
-  ENFORCED_CAPABILITIES = %w[ post_messages react ].freeze
+  # Only these are enforced so far (posting and boosting through the
+  # bot/agent endpoints, reading through event polling and delivery). The
+  # rest are storable and displayed but not yet enforced; see
+  # AgentAuthorization.
+  ENFORCED_CAPABILITIES = %w[ read_messages post_messages react ].freeze
 
   belongs_to :agent
   belongs_to :room, optional: true

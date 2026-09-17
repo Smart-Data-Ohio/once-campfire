@@ -1,5 +1,5 @@
 class ActivityItem < ApplicationRecord
-  EVENT_TYPES = %w[ mention reply thread_activity work_update work_assignment huddle_started huddle_missed event_invitation event_update event_cancelled event_reminder ].freeze
+  EVENT_TYPES = %w[ mention reply thread_activity work_update work_assignment huddle_started huddle_missed event_invitation event_update event_cancelled event_reminder pr_review_request ].freeze
   HUDDLE_EVENT_TYPES = %w[ huddle_started huddle_missed ].freeze
   FILTERS = %w[ unread read handled ].freeze
 

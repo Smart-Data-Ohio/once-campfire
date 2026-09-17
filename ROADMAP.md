@@ -25,9 +25,9 @@ The first activity inbox, human-owned work threads, one-to-one DM Huddles, and n
 
 The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events, plus native event invitations, updates, cancellations, and reminders; agent and GitHub sources follow their integrations.
 
-The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`post_messages` and `react` enforced; the rest stored for later) with immediate cascade revocation. See [AI agents](docs/agents.md). Event delivery, activity ledger, and approvals follow separately.
+The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`read_messages`, `post_messages`, and `react` enforced; the rest stored for later) with immediate cascade revocation, and event delivery with an activity ledger, polling, rate limits, and loop prevention. See [AI agents](docs/agents.md). Approvals follow separately.
 
-GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
+GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication, and subscribed rooms now receive selected PR events as GitHub bot messages with review requests in the linked reviewer's inbox. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
 
 ## Planned
 
@@ -100,7 +100,7 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources. Agent and GitHub sources follow their integrations.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources, and PR review requests already land in the reviewer's inbox. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.
@@ -121,6 +121,15 @@ The first human-owned slice is live, including status/owner history, completion 
 - Reuse channel permissions for the conversation and separately respect access rules on linked external objects.
 
 Done for the first slice when members can turn a channel thread into work, assign an eligible owner, update its status, find it again, and complete or reopen it without losing messages. Following a discussion and owning its work remain distinct choices.
+
+### 9. Custom icons and emoji shortcodes
+
+- Ship a built-in icon set for the major technology companies and AI labs (OpenAI, Anthropic, Google, Microsoft, Apple, Meta, Amazon, NVIDIA, GitHub, xAI, Mistral, DeepSeek, Hugging Face, Cursor, and similar) that members can use in messages and reactions.
+- Adopt Discord-style `:icon_name:` shortcodes as the standard way to insert custom icons and standard emoji alike, with autocomplete in the composer after typing `:`.
+- Custom icons render inline at text size, work in light and dark themes, and appear in reaction chips.
+- Later: administrator-uploaded workspace icons with their own names, and room or agent avatars drawn from the same set.
+
+Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
 
 ## Proposed additions
 

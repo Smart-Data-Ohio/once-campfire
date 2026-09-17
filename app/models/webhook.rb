@@ -6,8 +6,8 @@ class Webhook < ApplicationRecord
 
   belongs_to :user
 
-  def deliver(message)
-    post(payload(message)).tap do |response|
+  def deliver(message, agent: nil, delivery_id: nil)
+    post(payload(message, agent: agent, delivery_id: delivery_id)).tap do |response|
       if text = extract_text_from(response)
         receive_text_reply_to(message.room, text: text)
       elsif attachment = extract_attachment_from(response)
@@ -38,12 +38,16 @@ class Webhook < ApplicationRecord
       @uri ||= URI(url)
     end
 
-    def payload(message)
-      {
+    def payload(message, agent: nil, delivery_id: nil)
+      hash = {
         user:    { id: message.creator.id, name: message.creator.name },
         room:    { id: message.room.id, name: message.room.name, path: room_bot_messages_path(message) },
         message: { id: message.id, body: { html: message.body.body, plain: without_recipient_mentions(message.plain_text_body) }, path: message_path(message) }
-      }.to_json
+      }
+      if agent
+        hash[:agent] = { id: agent.id, name: agent.user.name, owner: agent.owner&.name, delivery_id: delivery_id }
+      end
+      hash.to_json
     end
 
     def message_path(message)
