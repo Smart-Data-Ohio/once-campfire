@@ -95,7 +95,8 @@ resolve with their own credentials as with pasted Drive links.
 ## Attachments
 
 Members with Drive previews enabled can also **attach** Drive files to a
-message. Every picker row carries an **Attach** button next to the
+room message (thread composers only insert links for now). Every picker
+row carries an **Attach** button next to the
 click-to-insert row: it pins the file as a chip in a strip above the
 composer (showing the same name and kind icon the row showed), and sending
 the message stores the attachment with it. A message with attachments and

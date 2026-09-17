@@ -17,6 +17,9 @@ let pickerCount = 0
 export default class extends Controller {
   static targets = [ "button", "panel", "search", "results", "status" ]
 
+  // attach: false hides the Attach buttons (thread composers only insert links).
+  static values = { attach: { type: Boolean, default: true } }
+
   initialize() {
     this.search = debounce(this.search.bind(this), 300)
   }
@@ -196,6 +199,9 @@ export default class extends Controller {
     button.append(icon, text)
     button.addEventListener("click", () => this.#insert(file))
 
+    item.append(button)
+    if (!this.attachValue) return item
+
     const attach = document.createElement("button")
     attach.type = "button"
     attach.className = "drive-picker__attach"
@@ -206,7 +212,7 @@ export default class extends Controller {
       this.#attach(file)
     })
 
-    item.append(button, attach)
+    item.append(attach)
     return item
   }
 
