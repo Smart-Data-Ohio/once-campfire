@@ -30,6 +30,23 @@ class UserTest < ActiveSupport::TestCase
     end
   end
 
+  test "github logins are unique among present values" do
+    users(:david).update!(github_login: "david-gh")
+    users(:jason).github_login = "David-GH"
+
+    assert_not users(:jason).valid?
+    assert_equal [ "is already linked to another user" ], users(:jason).errors[:github_login]
+
+    users(:jason).github_login = nil
+    assert users(:jason).valid?
+  end
+
+  test "skipping the open room grant leaves memberships unmanaged" do
+    assert_no_difference -> { Membership.count } do
+      User.create_bot!(name: "Managed Bot", skip_open_room_grant: true)
+    end
+  end
+
   private
     def create_new_user
       User.create!(name: "User", email_address: "user@example.com", password: "secret123456")

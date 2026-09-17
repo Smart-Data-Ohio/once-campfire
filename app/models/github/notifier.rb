@@ -57,12 +57,10 @@ module Github
 
       private
         def create_bot_user
-          User.create_bot!(name: BOT_NAME).tap do |bot|
-            # A new user joins every open room; the GitHub bot only belongs
-            # to rooms with a subscription, so drop those grants. Each
-            # subscription re-adds the bot to its own room.
-            bot.memberships.delete_all
-          end
+          # A new user joins every open room; the GitHub bot only belongs to
+          # rooms with a subscription, so it skips that grant. Each
+          # subscription adds the bot to its own room instead.
+          User.create_bot!(name: BOT_NAME, skip_open_room_grant: true)
         end
 
         def dedupe_key(subscription, post)

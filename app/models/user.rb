@@ -32,7 +32,11 @@ class User < ApplicationRecord
 
   has_secure_password validations: false
 
-  after_create_commit :grant_membership_to_open_rooms
+  # Users whose memberships are managed explicitly (like the GitHub bot)
+  # skip the automatic open-room grant at creation.
+  attr_accessor :skip_open_room_grant
+
+  after_create_commit :grant_membership_to_open_rooms, unless: :skip_open_room_grant
 
   scope :ordered, -> { order("LOWER(name)") }
   scope :filtered_by, ->(query) { where("name like ?", "%#{query}%") }
