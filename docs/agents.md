@@ -26,12 +26,13 @@ path is frozen and unchanged.
 a partial unique index over active rows. Capabilities are `read_messages`,
 `post_messages`, `react`, `manage_threads`, and `external_action`.
 
-Only `post_messages` and `react` are enforced so far, through the
-`AgentAuthorization` concern (`require_agent_capability`) on the bot message
-endpoints, the bot boost endpoints, and `POST /rooms/:room_id/agents/messages`
-(JSON, Bearer-only). The other capabilities are storable and shown in the UI
-marked "not yet enforced". Enforcement reads the database on every request;
-nothing is cached.
+`read_messages`, `post_messages`, and `react` are enforced so far, through
+the `AgentAuthorization` concern (`require_agent_capability`) on the bot
+message endpoints, the bot boost endpoints,
+`POST /rooms/:room_id/agents/messages` (JSON, Bearer-only), and the event
+polling endpoints below. The other capabilities are storable and shown in
+the UI marked "not yet enforced". Enforcement reads the database on every
+request; nothing is cached.
 
 Room membership still applies on top of grants: every endpoint returns 404 for
 rooms the agent's user is not a member of, so a workspace-wide grant never
@@ -62,8 +63,65 @@ Revocation persists in the same transaction as the triggering change:
 Removing an agent from a closed room or revoking its grant therefore forbids
 its next post immediately.
 
+## Event delivery and activity ledger
+
+`agent_events` is an append-only ledger (never backfilled from historical
+messages) with `agent_id`, `event_type`, optional `room_id`, `message_id`,
+`agent_credential_id`, `actor_id`, `outcome`, `detail`, JSON `metadata`, and
+`created_at`, indexed on `[agent_id, created_at]`. Deliverable types are
+`mention`, `direct_message`, and `reply`; ledger-only types are `posted`
+(written whenever the agent posts through any endpoint) and the suppression
+rows `delivery_suppressed_rate_limit`, `delivery_suppressed_hop_limit`, and
+`delivery_suppressed_revoked`. Outcomes are `pending`, `delivered`,
+`acknowledged`, and `suppressed`.
+
+A message creates one pending event per recipient agent: mentions of the
+agent's user, replies to the agent's messages (a reply wins over a mention
+when both apply), and any message in a direct room with the agent. The
+agent never receives its own messages, and bots without an agent row keep
+the legacy webhook path only.
+
+`Agent::DeliveryJob` re-checks room membership and the `read_messages`
+grant at perform time, then marks the row `delivered` and posts the
+agent's webhook when one is configured. Polling is the primary path, so a
+missing webhook still delivers. Revocation between enqueue and perform
+writes `delivery_suppressed_revoked`; a message deleted before delivery
+marks the row suppressed without a new row.
+
+### Polling
+
+`GET /agents/events?since=<id>&limit=<n>` (Bearer-only, JSON, ordered by
+id, max 100) returns the agent's own deliverable rows with the message
+payload resolved at query time. Rows for messages the agent can no longer
+read (membership or grant revoked, message deleted) are omitted.
+`POST /agents/events/:id/ack` marks a row `acknowledged` and is idempotent.
+Both require `read_messages` (`Agent#has_capability_anywhere?` at the
+endpoint, per-room `Agent#can?` per row and per ack).
+
+### Rate limit and loop guard
+
+At most 20 deliveries per agent per room per minute, counted from
+`agent_events`; excess writes `delivery_suppressed_rate_limit` and is
+dropped, not queued. Agent-to-agent chains carry `metadata.hop`: human
+messages start at 0, an agent's message continues its triggering event's
+hop plus one (the replied-to event for replies, otherwise the sender's most
+recent incoming event in the room; a spontaneous agent message is a new
+root at 0). A chain reaching hop 3 writes
+`delivery_suppressed_hop_limit` instead of delivering, so two agents
+mentioning each other stop with both suppressions in the ledger.
+
+### Webhooks
+
+The webhook payload gains an additive
+`agent: { id, name, owner, delivery_id }` key (`owner` is the owner's name
+or null) when posted through event delivery. The legacy bot webhook path
+sends the unchanged payload without that key.
+
 ## Management
 
 Admins and the agent's owner manage grants from the bot edit page ("Manage
 capability grants"): grant a capability in one of the agent's rooms or
-workspace-wide, and revoke. Anyone else gets 403.
+workspace-wide, and revoke. Anyone else gets 403. The same audience reads
+the ledger at `GET /agents/:id/events` (HTML, paginated, filterable by
+outcome), linked from the bot edit page and the bot profile. There is no
+public exposure.
