@@ -226,8 +226,11 @@ class StreamingTest < ApplicationSystemTestCase
     wait_for_condition("the cancelled capture did not DELETE the stream") do
       page.evaluate_script("window.__streamDeleteSeen.length") > 0
     end
+    # The server commits the end on another connection; a first read here
+    # that lands before the commit would poison the query cache and read
+    # stale for the whole wait, so poll uncached.
     wait_for_condition("the cancelled capture left the stream live") do
-      Stream.find_by(room_id: room.id)&.ended_at.present?
+      Stream.uncached { Stream.find_by(room_id: room.id)&.ended_at.present? }
     end
 
     assert_no_selector ".stage-live__badge"
