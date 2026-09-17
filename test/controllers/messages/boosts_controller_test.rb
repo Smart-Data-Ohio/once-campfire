@@ -35,6 +35,48 @@ class Messages::BoostsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a quick reaction sent as a shortcode toggles instead of duplicating" do
+    assert_difference -> { @message.boosts.where(content: "👍").count }, 1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":thumbsup:" } }
+    end
+
+    assert_difference -> { @message.boosts.where(content: "👍").count }, -1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":thumbsup:" } }
+    end
+  end
+
+  test "create accepts a brand shortcode and renders its icon" do
+    assert_difference -> { @message.boosts.count }, 1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":openai:" } }
+      assert_redirected_to message_boosts_url(@message)
+    end
+
+    get message_boosts_url(@message)
+
+    assert_response :success
+    icon = Nokogiri::HTML5.fragment(response.body).at_css("img.icon--brand")
+    assert icon, "expected an icon image in #{response.body}"
+    assert_match %r{\A/assets/icons/brands/openai-[a-z0-9]+\.svg\z}, icon["src"]
+    assert_equal ":openai:", icon["alt"]
+  end
+
+  test "create stores an unknown shortcode as literal text" do
+    assert_turbo_stream_broadcasts [ @message.room, :messages ], count: 1 do
+      assert_difference -> { @message.boosts.count }, 1 do
+        post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":lol:" } }
+        assert_redirected_to message_boosts_url(@message)
+      end
+    end
+
+    assert_equal ":lol:", @message.boosts.last.content
+
+    get message_boosts_url(@message)
+
+    assert_response :success
+    assert_includes response.body, ":lol:"
+    assert_empty Nokogiri::HTML5.fragment(response.body).css("img.icon--brand")
+  end
+
   test "action metadata groups reaction counts by distinct reactor" do
     emoji = "👍"
     Boost.create!(message: @message, booster: users(:david), content: emoji)

@@ -18,6 +18,8 @@ On a desktop, Enter sends, Shift+Enter inserts a line break, and Ctrl/Cmd+Enter 
 
 Type `@` to find a member of the current room. Selecting a suggestion inserts `@[Display Name]`. Only an exact, unique, active room member is resolved to a mention. Ambiguous names and names outside the room stay plain text. Mentions inside code or links do not notify anyone. The resolved identity is saved with the message, so a later display-name change does not redirect an existing mention.
 
+Discord-style shortcodes such as `:openai:` or `:thumbsup:` render inline as brand icons or emoji, with `:` autocomplete in the composer and the reaction input. Shortcodes inside code or link labels stay literal. See [Brand icons and emoji shortcodes](icons.md).
+
 Editing a Markdown message restores its original source in the same plain-text editor. Messages created before Markdown was introduced keep their existing rich-text editor when edited.
 
 If sending fails, the composer keeps the draft. **Restore draft** recovers a failed message while preserving any newer text you have started writing.

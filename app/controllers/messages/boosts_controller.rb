@@ -9,7 +9,7 @@ class Messages::BoostsController < ApplicationController
   end
 
   def create
-    content = boost_params[:content]
+    content = Boost.resolve_content(boost_params[:content])
     @message.with_lock do
       @message.reload
       existing = @message.boosts.where(booster: Current.user, content:).to_a if EmojiHelper::REACTIONS.key?(content)
@@ -26,6 +26,8 @@ class Messages::BoostsController < ApplicationController
     end
 
     broadcast_reactions
+    redirect_to message_boosts_url(@message)
+  rescue ActiveRecord::RecordInvalid
     redirect_to message_boosts_url(@message)
   end
 

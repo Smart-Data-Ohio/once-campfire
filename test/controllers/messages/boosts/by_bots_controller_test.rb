@@ -55,6 +55,29 @@ class Messages::Boosts::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_response :created
   end
 
+  test "create stores an unknown shortcode as literal text" do
+    assert_difference -> { Boost.count }, +1 do
+      post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +":lol:"
+      assert_response :created
+    end
+
+    assert_equal ":lol:", @message.boosts.last.content
+  end
+
+  test "create renders validation errors when the boost cannot be saved" do
+    failures = ActiveModel::Errors.new(Boost.new)
+    failures.add(:content, "is invalid")
+    Boost.any_instance.stubs(:save).returns(false)
+    Boost.any_instance.stubs(:errors).returns(failures)
+
+    assert_no_difference -> { Boost.count } do
+      post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +"👀"
+      assert_response :unprocessable_content
+    end
+
+    assert_equal [ "Content is invalid" ], response.parsed_body.fetch("errors")
+  end
+
   test "create without content" do
     assert_no_difference -> { Boost.count } do
       post room_bot_message_boosts_url(@room, @bot.bot_key, @message)

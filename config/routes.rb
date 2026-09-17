@@ -60,6 +60,7 @@ Rails.application.routes.draw do
 
   namespace :autocompletable do
     resources :users, only: :index
+    resources :icons, only: :index
   end
 
   get "agents/me", to: "agents#me", defaults: { format: :json }

@@ -1,0 +1,92 @@
+# Built-in brand icons for :name: shortcodes.
+#
+# Each entry maps a shortcode name to a vendored Simple Icons SVG (see
+# app/assets/images/icons/brands/LICENSE.md for provenance). Names are
+# lowercase [a-z0-9_]+. Brand names win over gemoji emoji aliases on conflict.
+- name: openai
+  file: openai.svg
+  title: OpenAI
+  aliases:
+    - gpt
+- name: anthropic
+  file: anthropic.svg
+  title: Anthropic
+- name: claude
+  file: claude.svg
+  title: Claude
+- name: googlegemini
+  file: googlegemini.svg
+  title: Google Gemini
+  aliases:
+    - gemini
+- name: google
+  file: google.svg
+  title: Google
+- name: apple
+  file: apple.svg
+  title: Apple
+- name: meta
+  file: meta.svg
+  title: Meta
+- name: nvidia
+  file: nvidia.svg
+  title: NVIDIA
+- name: github
+  file: github.svg
+  title: GitHub
+- name: x
+  file: x.svg
+  title: X
+- name: mistralai
+  file: mistralai.svg
+  title: Mistral AI
+- name: huggingface
+  file: huggingface.svg
+  title: Hugging Face
+  aliases:
+    - hf
+- name: perplexity
+  file: perplexity.svg
+  title: Perplexity
+- name: cursor
+  file: cursor.svg
+  title: Cursor
+- name: slack
+  file: slack.svg
+  title: Slack
+- name: discord
+  file: discord.svg
+  title: Discord
+- name: linux
+  file: linux.svg
+  title: Linux
+- name: docker
+  file: docker.svg
+  title: Docker
+- name: kubernetes
+  file: kubernetes.svg
+  title: Kubernetes
+- name: githubcopilot
+  file: githubcopilot.svg
+  title: GitHub Copilot
+- name: ollama
+  file: ollama.svg
+  title: Ollama
+- name: vercel
+  file: vercel.svg
+  title: Vercel
+- name: cloudflare
+  file: cloudflare.svg
+  title: Cloudflare
+- name: stripe
+  file: stripe.svg
+  title: Stripe
+- name: notion
+  file: notion.svg
+  title: Notion
+- name: figma
+  file: figma.svg
+  title: Figma
+- name: linear
+  file: linear.svg
+  title: Linear
