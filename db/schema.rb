@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_150000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -194,6 +194,14 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
     t.index ["room_id", "last_activity_at"], name: "index_channel_threads_on_room_id_and_last_activity_at"
     t.index ["room_id", "work_status", "last_activity_at"], name: "index_channel_threads_on_room_and_work_status_and_activity"
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
+  end
+
+  create_table "drive_attachments", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "file_id", null: false
+    t.integer "message_id", null: false
+    t.index ["message_id", "file_id"], name: "index_drive_attachments_on_message_id_and_file_id", unique: true
+    t.index ["message_id"], name: "index_drive_attachments_on_message_id"
   end
 
   create_table "event_attendances", force: :cascade do |t|
@@ -598,6 +606,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "drive_attachments", "messages"
   add_foreign_key "event_calendar_entries", "events"
   add_foreign_key "event_calendar_entries", "users"
   add_foreign_key "event_references", "events"

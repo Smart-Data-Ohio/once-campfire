@@ -24,10 +24,13 @@ class Message < ApplicationRecord
   has_many :event_references, dependent: :destroy
   has_many :events, through: :event_references
 
+  has_many :drive_attachments, -> { order(:id) }, dependent: :destroy
+
   has_rich_text :body
 
   validates :markdown_source, length: { maximum: Markdown::SOURCE_LIMIT }, allow_nil: true
   validate :markdown_source_or_attachment, if: :markdown?
+  validate :drive_attachments_within_limit
 
   before_validation :render_markdown_body, if: :will_save_change_to_markdown_source?
   before_create -> { self.client_message_id ||= Random.uuid } # Bots don't care
@@ -61,7 +64,7 @@ class Message < ApplicationRecord
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, :github_pull_requests, events: [ :room, :organizer, :venue ],
+      .preload(:room, :github_pull_requests, :drive_attachments, events: [ :room, :organizer, :venue ],
         reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply
@@ -72,7 +75,7 @@ class Message < ApplicationRecord
     with_creator
       .with_rich_text_body_and_embeds
       .with_attached_attachment
-      .preload(:room, :thread, :channel_thread, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, :thread, :channel_thread, :drive_attachments, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
 
   class << self
@@ -244,9 +247,21 @@ class Message < ApplicationRecord
     end
 
     def markdown_source_or_attachment
-      if markdown_source.blank? && !attachment.attached?
+      if markdown_source.blank? && !attachment.attached? && kept_drive_attachments.empty?
         errors.add :markdown_source, "can't be blank"
       end
+    end
+
+    def drive_attachments_within_limit
+      if kept_drive_attachments.size > DriveAttachment::MAX_PER_MESSAGE
+        errors.add :drive_attachments, "are limited to #{DriveAttachment::MAX_PER_MESSAGE} per message"
+      end
+    end
+
+    # In-memory view of the set being saved: built records count, records
+    # marked for destruction do not.
+    def kept_drive_attachments
+      drive_attachments.reject(&:marked_for_destruction?)
     end
 
     validate :validate_conversation_links
