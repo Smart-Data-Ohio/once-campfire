@@ -42,6 +42,20 @@ class AgentApprovalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "pending", approval.reload.status
   end
 
+  test "switching approvals off keeps the approvals page available" do
+    @agent.update!(owner: users(:kevin))
+    users(:kevin).update!(inbox_preferences: { "agent_approvals" => false })
+    approval = AgentApproval.create!(agent: @agent, room: @room, action: "deploy", summary: "Ship it")
+    sign_in users(:kevin)
+
+    assert_not ActivityItem.exists?(user: users(:kevin), source: approval)
+
+    get agent_approvals_path(@agent)
+
+    assert_response :success
+    assert_includes response.body, "Ship it"
+  end
+
   test "agent Bearer [REDACTED] 404" do
     approval = AgentApproval.create!(agent: @agent, room: @room, action: "deploy", summary: "Ship it")
 

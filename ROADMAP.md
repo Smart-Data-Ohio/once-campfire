@@ -102,11 +102,11 @@ Done for the calendar slice when an opted-in attendee receives a calendar entry 
 
 Done for the first slice when one Drive workflow and one selected Smart App workflow work end to end without exposing private source content to unauthorized channel members.
 
-**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). Still open: file discovery, attachments, and the first selected Smart App workflow.
+**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). File discovery shipped as well: members with Drive previews enabled can find a file by name or from recents in the composer and insert its link without leaving Campfire. Still open: attachments and the first selected Smart App workflow.
 
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Other agent and GitHub sources follow their integrations.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Per-channel involvement controls, per-integration notification switches, thread-update grouping, and type filters have shipped as well. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.
@@ -118,7 +118,7 @@ Done for the first slice when a member can find a mention or reply, open its exa
 
 ### 8. Work threads
 
-The first human-owned slice is live, including status/owner history, completion and reopening, the global work list, and activity inbox updates. Agent assignment and external integration links remain planned.
+The first human-owned slice is live, including status/owner history, completion and reopening, the global work list, and activity inbox updates. Agent assignment is live; richer external integration links remain planned.
 
 - Extend conversations into trackable work with a title, owner, status, and linked PRs, files, or events; keep the conversation and its history together.
 - Show human and agent progress, blockers, and the next action so ongoing work is easy to resume.
@@ -127,6 +127,8 @@ The first human-owned slice is live, including status/owner history, completion 
 - Reuse channel permissions for the conversation and separately respect access rules on linked external objects.
 
 Done for the first slice when members can turn a channel thread into work, assign an eligible owner, update its status, find it again, and complete or reopen it without losing messages. Following a discussion and owning its work remain distinct choices.
+
+**Status:** agent assignment shipped. Eligible agents can own work threads, learn about assignments through their event ledger and webhooks, and update status through the agent API with progress visible in Work history and the activity inbox; see `docs/agents.md#work-threads`. Still open: richer links to PRs, Drive files, and Events.
 
 ### 9. Custom icons and emoji shortcodes
 

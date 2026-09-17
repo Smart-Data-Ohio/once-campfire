@@ -2,6 +2,23 @@ class ActivityItem < ApplicationRecord
   EVENT_TYPES = %w[ mention reply thread_activity work_update work_assignment huddle_started huddle_missed event_invitation event_update event_cancelled event_reminder pr_review_request agent_approval_request ].freeze
   HUDDLE_EVENT_TYPES = %w[ huddle_started huddle_missed ].freeze
   FILTERS = %w[ unread read handled ].freeze
+  TYPE_FILTERS = {
+    "all" => "All",
+    "mentions" => "Mentions and replies",
+    "threads" => "Threads and work",
+    "events" => "Events",
+    "agents" => "Agents",
+    "github" => "GitHub",
+    "huddles" => "Huddles"
+  }.freeze
+  TYPE_FILTER_EVENT_TYPES = {
+    "mentions" => %w[ mention reply ],
+    "threads" => %w[ thread_activity work_update work_assignment ],
+    "events" => %w[ event_invitation event_update event_cancelled event_reminder ],
+    "agents" => %w[ agent_approval_request ],
+    "github" => %w[ pr_review_request ],
+    "huddles" => %w[ huddle_started huddle_missed ]
+  }.freeze
 
   belongs_to :user
   belongs_to :source, polymorphic: true
@@ -11,12 +28,18 @@ class ActivityItem < ApplicationRecord
   after_create_commit :broadcast_created
   after_update_commit :broadcast_updated
 
-  # The cursor is the last item ID, so keep the ordering on that same stable
-  # key. Event timestamps can be supplied by imports or delayed transactions.
-  scope :ordered, -> { order(id: :desc) }
+  # Grouped thread and work updates refresh their item in place, so the
+  # inbox orders by recency with the id as the stable tie-break. The
+  # pagination cursor stays the last item ID; the controller resolves its
+  # updated_at to page this ordering correctly.
+  scope :ordered, -> { order(updated_at: :desc, id: :desc) }
   scope :unread, -> { where(read_at: nil, handled_at: nil) }
   scope :read, -> { where.not(read_at: nil).where(handled_at: nil) }
   scope :handled, -> { where.not(handled_at: nil) }
+  scope :with_type_filter, ->(type_filter) {
+    event_types = TYPE_FILTER_EVENT_TYPES[type_filter.to_s]
+    event_types ? where(event_type: event_types) : all
+  }
   scope :message_sources, -> { where(source_type: Message.polymorphic_name) }
   scope :supported_sources, -> { where(source_type: [ Message.polymorphic_name, "WorkThreadEvent", HuddleGrant.polymorphic_name, Event.polymorphic_name, AgentApproval.polymorphic_name ]) }
 

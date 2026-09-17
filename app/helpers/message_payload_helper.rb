@@ -105,19 +105,36 @@ module MessagePayloadHelper
     def work_owner_payload(owner)
       return if owner.blank?
 
-      user_payload(owner).merge(active: owner.active?, human: !owner.bot?)
+      user_payload(owner).merge(active: owner.active?, human: !owner.bot?, agent: owner.bot?)
+    end
+
+    def work_agent_owner_payload(user, agent)
+      work_owner_payload(user).merge(provider: agent.provider, description: agent.description).compact
     end
 
     def work_owner_options(thread)
-      thread.room.memberships
-        .includes(:user)
-        .filter_map do |membership|
-          user = membership.user
-          next unless user&.active? && !user.bot?
+      memberships = thread.room.memberships.includes(:user).to_a
+      agents_by_user_id = Agent.where(user_id: memberships.map(&:user_id)).index_by(&:user_id)
+      humans = []
+      agents = []
 
-          work_owner_payload(user)
+      memberships.each do |membership|
+        user = membership.user
+        next unless user&.active?
+
+        if user.bot?
+          agent = agents_by_user_id[user.id]
+          next unless agent&.active? && agent.can?(:post_messages, thread.room)
+
+          agents << work_agent_owner_payload(user, agent)
+        else
+          humans << work_owner_payload(user)
         end
-        .sort_by { |owner| owner[:name].to_s.downcase }
+      end
+
+      humans.sort_by! { |owner| owner[:name].to_s.downcase }
+      agents.sort_by! { |owner| owner[:name].to_s.downcase }
+      humans + agents
     end
 
     def work_thread_event_payloads(thread)
@@ -128,7 +145,8 @@ module MessagePayloadHelper
           created_at: event.created_at&.utc,
           actor: user_payload(event.actor),
           before: event.before_state,
-          after: event.after_state
+          after: event.after_state,
+          note: event.note
         }.compact
       end
     end

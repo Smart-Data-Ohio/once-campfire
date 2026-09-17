@@ -8,7 +8,7 @@
       <% owner = @thread.work_owner %>
       <% owner_label = owner.blank? ? "Unassigned" : @thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
       <p aria-label="Work status">
-        Work: <%= @thread.work_status_label %> · <%= owner_label %>
+        Work: <%= @thread.work_status_label %> · <%= owner_label %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %>
       </p>
       <% if @thread.work_thread_events.any? %>
         <details>
@@ -25,6 +25,9 @@
                   <% if event.status_changed? %> · <% end %>
                   owner <%= event.from_owner_name || "Unassigned" %>
                   → <%= event.to_owner_name || "Unassigned" %>
+                <% end %>
+                <% if event.note.present? %>
+                  · Note: <%= event.note %>
                 <% end %>
               </li>
             <% end %>

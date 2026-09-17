@@ -107,6 +107,30 @@
         <p class="txt-small margin-none">Link your GitHub username to receive review requests in your activity inbox.</p>
       <% end %>
 
+      <fieldset class="margin-none">
+        <legend class="txt-large">Notifications</legend>
+        <p class="txt-small margin-none">Choose which updates land in your activity inbox. Turning one off never hides the page where the work lives.</p>
+        <% User::InboxPreferences::KEYS.each do |key| %>
+          <div class="flex align-start gap pad-block-half">
+            <label class="switch flex-item-no-shrink">
+              <%= hidden_field_tag "user[inbox_preferences][#{key}]", "0", id: nil %>
+              <%= check_box_tag "user[inbox_preferences][#{key}]", "1", @user.inbox_preferences[key], id: "user_inbox_preferences_#{key}", class: "switch__input" %>
+              <span class="switch__btn round"></span>
+              <span class="for-screen-reader"><%= User::InboxPreferences::LABELS.fetch(key) %></span>
+            </label>
+            <span>
+              <span class="txt-medium"><%= User::InboxPreferences::LABELS.fetch(key) %></span><br>
+              <span class="txt-small"><%= User::InboxPreferences::DESCRIPTIONS.fetch(key) %></span>
+            </span>
+          </div>
+        <% end %>
+        <% @user.errors.each do |error| %>
+          <% if error.attribute.to_s.start_with?("inbox_preferences") %>
+            <p class="txt-small margin-none" style="color: var(--color-negative)"><%= error.full_message %></p>
+          <% end %>
+        <% end %>
+      </fieldset>
+
       <%= profile_form_submit_button %>
     </div>
   <% end %>

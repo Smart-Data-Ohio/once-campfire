@@ -35,20 +35,20 @@ class AgentEventTest < ActiveSupport::TestCase
     assert_nil event.message_id
   end
 
-  test "deliverable scope covers message types and approval decisions" do
-    %w[ mention direct_message reply approval_decided ].each do |event_type|
+  test "deliverable scope covers message types, approval decisions, and work assignments" do
+    %w[ mention direct_message reply approval_decided work_assigned work_unassigned ].each do |event_type|
       AgentEvent.create!(agent: @agent, event_type: event_type, outcome: "pending")
     end
     %w[ delivery_suppressed_rate_limit delivery_suppressed_hop_limit delivery_suppressed_revoked posted ].each do |event_type|
       AgentEvent.create!(agent: @agent, event_type: event_type, outcome: "suppressed")
     end
 
-    assert_equal %w[ approval_decided direct_message mention reply ].sort,
+    assert_equal %w[ approval_decided direct_message mention reply work_assigned work_unassigned ].sort,
       @agent.agent_events.deliverable.pluck(:event_type).sort
   end
 
-  test "message_deliverable scope excludes approval decisions" do
-    %w[ mention direct_message reply approval_decided ].each do |event_type|
+  test "message_deliverable scope excludes approval decisions and work assignments" do
+    %w[ mention direct_message reply approval_decided work_assigned work_unassigned ].each do |event_type|
       AgentEvent.create!(agent: @agent, event_type: event_type, outcome: "pending")
     end
 

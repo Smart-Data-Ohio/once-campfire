@@ -56,6 +56,45 @@ class EventTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: @organizer, source: event)
   end
 
+  test "members with notifications off or invisible get no invitation" do
+    memberships(:jason_designers).update!(involvement: "nothing")
+    memberships(:jz_designers).update!(involvement: "invisible")
+
+    event = create_event!
+
+    assert_not ActivityItem.exists?(user: users(:jason), source: event)
+    assert_not ActivityItem.exists?(user: users(:jz), source: event)
+    assert_equal "event_invitation", ActivityItem.find_by!(user: users(:kevin), source: event).event_type
+  end
+
+  test "members with notifications off keep their invitation through updates and cancellations" do
+    event = create_event!
+    event.attendances.create!(user: users(:jason), response: :going)
+    memberships(:jason_designers).update!(involvement: "nothing")
+
+    event.update_with_announcement!({ starts_at: 3.days.from_now }, actor: @organizer)
+
+    jason_item = ActivityItem.find_by!(user: users(:jason), source: event)
+    assert_equal "event_invitation", jason_item.event_type
+
+    assert event.cancel!(actor: @organizer)
+
+    assert_equal "event_invitation", jason_item.reload.event_type
+    assert_not ActivityItem.exists?(user: users(:jason), source: event, event_type: "event_cancelled")
+  end
+
+  test "a mentions member is notified through updates and cancellations" do
+    event = create_event!
+    event.attendances.create!(user: users(:jason), response: :going)
+    memberships(:jason_designers).update!(involvement: "mentions")
+
+    event.update_with_announcement!({ starts_at: 3.days.from_now }, actor: @organizer)
+    assert_equal "event_update", ActivityItem.find_by!(user: users(:jason), source: event).event_type
+
+    assert event.cancel!(actor: @organizer)
+    assert_equal "event_cancelled", ActivityItem.find_by!(user: users(:jason), source: event).event_type
+  end
+
   test "invitations exclude bots" do
     event = rooms(:watercooler).events.create!(
       organizer: @organizer, title: "Watercooler hang", starts_at: 1.day.from_now, time_zone: "UTC"

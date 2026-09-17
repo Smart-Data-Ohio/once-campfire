@@ -57,7 +57,9 @@ export default class extends Controller {
     this.#hide()
 
     // Joining answers the call, so the invitation is handled immediately
-    // rather than waiting for the missed-huddle resolution.
+    // rather than waiting for the missed-huddle resolution. A banner-only
+    // ring carries an empty handled path, which reads as "no item": never
+    // fetch, so Dismiss/Join can never issue a request to a null path.
     if (handledPath) await this.#patch(handledPath)
     if (!roomId) return
 
@@ -76,6 +78,8 @@ export default class extends Controller {
 
     const readPath = this.readPathValue
     this.#hide()
+    // A banner-only ring carries an empty read path ("no item"): hiding
+    // the banner is the whole dismissal, so return without fetching.
     if (!readPath) return
 
     await this.#patch(readPath)
@@ -129,12 +133,15 @@ export default class extends Controller {
     // Never ring for a call the user is already in.
     if (Number(invitation.roomId) === this.huddleRoomId && ACTIVE_HUDDLE_STATES.includes(this.huddleState)) return
 
-    this.activityItemIdValue = invitation.activityItemId
+    // The banner-only payload sends 0 and empty strings for the missing
+    // item; coerce here so a null would still read as "no item" instead
+    // of the literal "null" path and a NaN id in these typed values.
+    this.activityItemIdValue = invitation.activityItemId || 0
     this.roomIdValue = invitation.roomId
     this.roomNameValue = invitation.roomName
     this.roomPathValue = invitation.roomPath
-    this.readPathValue = invitation.readPath
-    this.handledPathValue = invitation.handledPath
+    this.readPathValue = invitation.readPath || ""
+    this.handledPathValue = invitation.handledPath || ""
     this.titleTarget.textContent = `${invitation.callerName} started a huddle`
     this.descriptionTarget.textContent = `Join the huddle in ${invitation.roomName}`
     this.element.hidden = false

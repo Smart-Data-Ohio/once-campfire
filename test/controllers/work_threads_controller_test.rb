@@ -61,6 +61,32 @@ class WorkThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".work-threads__empty", text: /No completed work yet/
   end
 
+  test "owned-by-agents filter lists agent-owned work with the agent badge" do
+    bot = User.create_bot!(name: "Filter Worker Bot")
+    agent = bot.create_agent!(kind: :workspace, owner: users(:david))
+    @room.memberships.grant_to(bot)
+    AgentGrant.create!(agent: agent, room: @room, granted_by: users(:david), capability: "post_messages")
+
+    agent_thread = ChannelThread.create!(room: @room, creator: @creator, name: "Agent owned work")
+    ThreadMembership.join!(agent_thread, @creator)
+    agent_thread.update_work!(actor: @creator, work_status: "in_progress", work_owner_id: bot.id)
+
+    sign_in :jz
+
+    get work_threads_url(state: "agents", format: :json)
+    assert_response :success
+    assert_equal [ agent_thread.id ], response.parsed_body.fetch("threads").pluck("id")
+
+    get work_threads_url(state: "all", format: :json)
+    assert_response :success
+    assert_includes response.parsed_body.fetch("threads").pluck("id"), agent_thread.id
+
+    get work_threads_url(state: "agents")
+    assert_response :success
+    assert_select ".work-threads__filter.active", text: "Owned by agents"
+    assert_select ".work-threads__owner .agent-badge", text: "agent"
+  end
+
   test "global work access requires an active human room member" do
     inactive = @creator.dup
     inactive.status = :deactivated
