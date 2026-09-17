@@ -4,6 +4,14 @@
 # members chosen by an administrator or the creator, plus a per-member stage
 # role. The room creator becomes the first host.
 class Rooms::Stage < Room
+  has_many :streams, dependent: :destroy
+
+  # The room's current live stream, if any. Queried fresh every time: streams
+  # start and end within a request, so a memoized value would go stale.
+  def live_stream
+    streams.live.first
+  end
+
   class << self
     def create_for(attributes, users:)
       super.tap do |room|
