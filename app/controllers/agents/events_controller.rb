@@ -30,7 +30,7 @@ class Agents::EventsController < ApplicationController
       .where(outcome: %w[ pending delivered acknowledged ])
       .ordered
       .limit(limit)
-      .includes(:room, :actor, message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .includes(:room, :actor, message: [ :room, :rich_text_body, { creator: :avatar_attachment }, { thread: { pull_request_thread: :pull_request } } ])
       .to_a
 
     @approval_cache = AgentApproval.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["approval_id"] }).index_by(&:id)
@@ -127,6 +127,8 @@ class Agents::EventsController < ApplicationController
       return unless Membership.exists?(user_id: agent.user_id, room_id: room.id)
       return unless agent.can?(:read_messages, room)
 
+      # pull_request merges after compact so it stays an explicit null
+      # outside PR threads instead of disappearing from the payload.
       {
         id: event.id,
         event_type: event.event_type,
@@ -136,7 +138,7 @@ class Agents::EventsController < ApplicationController
         room: { id: room.id, name: room.name },
         actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
         message: message_payload(message)
-      }.compact
+      }.compact.merge(pull_request: Github::PullRequestThread.payload_for_message(message))
     end
 
     def work_poll_payload(agent, event)
