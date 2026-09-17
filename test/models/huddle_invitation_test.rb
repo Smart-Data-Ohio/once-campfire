@@ -67,22 +67,47 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     end
 
     assert_broadcast_on(ActivityChannel.stream_name_for(users(:jason).id), {
-      activityItemId: nil,
+      activityItemId: 0,
       huddleInvitation: {
-        activityItemId: nil,
+        activityItemId: 0,
         eventType: "huddle_started",
         state: "unread",
         roomId: @room.id,
         roomName: "David",
         roomPath: Rails.application.routes.url_helpers.room_path(@room),
         callerName: "David",
-        readPath: nil,
-        handledPath: nil
+        readPath: "",
+        handledPath: ""
       }
     })
 
     travel 46.seconds do
       Huddle::InvitationResolver.resolve_overdue!
+    end
+    assert_not ActivityItem.exists?(user: users(:jason))
+
+    mention = rooms(:designers).messages.create!(
+      creator: users(:david),
+      body: "Hey #{mention_attachment_for(:jason)}",
+      client_message_id: "huddle-switch-neighbour"
+    )
+    assert_equal "mention", ActivityItem.find_by!(user: users(:jason), source: mention).event_type
+  end
+
+  test "a switched-off user hears one banner across reissues inside the window and a fresh one after" do
+    users(:jason).update!(inbox_preferences: { "huddle_invitations" => false })
+
+    assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+    end
+    assert_not ActivityItem.exists?(user: users(:jason))
+
+    travel 3.minutes do
+      assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+        HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+      end
     end
     assert_not ActivityItem.exists?(user: users(:jason))
   end

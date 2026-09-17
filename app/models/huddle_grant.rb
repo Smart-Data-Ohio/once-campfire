@@ -203,6 +203,7 @@ class HuddleGrant < ApplicationRecord
       return unless recipient
       return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?
       return if recent_invitation?(recipient)
+      return if recent_grant_issuance?
 
       unless recipient.inbox_preferences.huddle_invitations
         broadcast_suppressed_invitation!(recipient)
@@ -256,6 +257,16 @@ class HuddleGrant < ApplicationRecord
         .exists?
     end
 
+    # The item query above cannot throttle the suppressed path, which never
+    # creates an item, so a second grant for this room and starter inside
+    # the same window also stays silent: rejoins and reconnects ring once.
+    def recent_grant_issuance?
+      HuddleGrant.where(room_id: room_id, user_id: user_id)
+        .where(created_at: INVITATION_DEDUP_WINDOW.ago..)
+        .where.not(id: id)
+        .exists?
+    end
+
     def open_invitations_for(user_id)
       invitations_for(user_id).where(handled_at: nil)
     end
@@ -273,23 +284,25 @@ class HuddleGrant < ApplicationRecord
 
     # With huddle inbox items switched off, the call still rings in-app
     # through a banner payload without an item. Join and Dismiss skip the
-    # read/handled round-trip that needs an item id.
+    # read/handled round-trip that needs an item id. The payload carries no
+    # nulls: empty paths and a zero id read as "no item" in the Stimulus
+    # guards, where nil would arrive as the string "null" and NaN.
     def broadcast_suppressed_invitation!(recipient)
       return unless ActivityItem.active_human?(recipient)
 
       routes = Rails.application.routes.url_helpers
       ActionCable.server.broadcast ActivityChannel.stream_name_for(recipient.id), {
-        activityItemId: nil,
+        activityItemId: 0,
         huddleInvitation: {
-          activityItemId: nil,
+          activityItemId: 0,
           eventType: "huddle_started",
           state: "unread",
           roomId: room.id,
           roomName: suppressed_invitation_room_name(recipient),
           roomPath: routes.room_path(room),
           callerName: user&.name || "Someone",
-          readPath: nil,
-          handledPath: nil
+          readPath: "",
+          handledPath: ""
         }
       }
     end
