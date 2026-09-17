@@ -1,9 +1,12 @@
 class Rooms::EventsController < ApplicationController
   include RoomScoped
 
+  rescue_from ActiveRecord::RecordNotFound, with: -> { head :not_found }
+
   before_action :ensure_active_human
   before_action :set_event, except: %i[ index new create ]
-  before_action :ensure_event_manager, only: %i[ edit update cancel ]
+  before_action :ensure_event_manager, only: %i[ edit update ]
+  before_action :ensure_event_canceller, only: :cancel
 
   def index
     @upcoming_events = @room.events.upcoming.ordered.includes(:organizer, :attendances)
@@ -58,6 +61,10 @@ class Rooms::EventsController < ApplicationController
 
     def ensure_event_manager
       head :forbidden unless @event.manageable_by?(Current.user)
+    end
+
+    def ensure_event_canceller
+      head :forbidden unless @event.cancellable_by?(Current.user)
     end
 
     def event_attributes

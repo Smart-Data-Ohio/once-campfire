@@ -8,5 +8,5 @@
 
 <section class="panel">
   <h1>Edit <%= @event.title %></h1>
-  <%= render "rooms/events/form", room: @room, event: @event %>
+  <%= render "rooms/events/form", event: @event, url: room_event_path(@room, @event) %>
 </section>

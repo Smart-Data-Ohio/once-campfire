@@ -2,7 +2,7 @@
 <% starts_value = event.starts_at&.in_time_zone(zone)&.strftime("%Y-%m-%dT%H:%M") %>
 <% ends_value = event.ends_at&.in_time_zone(zone)&.strftime("%Y-%m-%dT%H:%M") %>
 
-<%= form_with model: [ room, event ], class: "flex flex-column gap" do |form| %>
+<%= form_with model: event, url:, class: "flex flex-column gap" do |form| %>
   <% if event.errors.any? %>
     <div class="room-events__errors" role="alert">
       <h2><%= pluralize(event.errors.count, "error") %> kept this event from being saved:</h2>

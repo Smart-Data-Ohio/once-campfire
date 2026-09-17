@@ -28,8 +28,13 @@ class Event < ApplicationRecord
   end
 
   def manageable_by?(user)
-    return false unless user&.active? && !user.bot?
     return false if cancelled?
+
+    cancellable_by?(user)
+  end
+
+  def cancellable_by?(user)
+    return false unless user&.active? && !user.bot?
 
     organizer_id == user.id || user.administrator?
   end

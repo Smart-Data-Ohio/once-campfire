@@ -1,6 +1,8 @@
 class Rooms::Events::AttendancesController < ApplicationController
   include RoomScoped
 
+  rescue_from ActiveRecord::RecordNotFound, with: -> { head :not_found }
+
   before_action :ensure_active_human
   before_action :set_event
 
