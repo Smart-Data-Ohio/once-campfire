@@ -58,6 +58,11 @@ class User < ApplicationRecord
     transaction do
       close_remote_connections
 
+      # A sole stage host would otherwise vanish with every other membership
+      # below, bypassing the sole-host check and leaving listeners with no
+      # manager. Promote a successor first, in this same transaction.
+      promote_replacement_stage_hosts
+
       # delete_all skips the membership hook, so capture the entries now
       # for cleanup syncs after commit.
       calendar_event_ids = event_calendar_entries.pluck(:event_id)
@@ -78,6 +83,22 @@ class User < ApplicationRecord
   end
 
   private
+    # For every stage room where this user is the only host and other members
+    # remain, promote one remaining member to host before the memberships are
+    # deleted: an active administrator member is preferred, otherwise the
+    # earliest-created remaining membership. Rooms with another host already,
+    # and rooms left empty by the deactivation, are left alone.
+    def promote_replacement_stage_hosts
+      memberships.includes(:room).where(stage_role: :host).select { |membership| membership.room.stage? }.each do |host_membership|
+        remaining = host_membership.room.memberships.includes(:user).where.not(user_id: id).order(:created_at).to_a
+        next if remaining.empty?
+        next if remaining.any?(&:host?)
+
+        successor = remaining.find { |membership| membership.user.active? && membership.user.administrator? } || remaining.first
+        successor.change_stage_role!("host")
+      end
+    end
+
     def grant_membership_to_open_rooms
       Membership.insert_all(Rooms::Open.pluck(:id).collect { |room_id| { room_id: room_id, user_id: id } })
     end

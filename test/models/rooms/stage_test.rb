@@ -58,6 +58,34 @@ class Rooms::StageTest < ActiveSupport::TestCase
     assert_equal "Stage role can't demote the last host", error.record.errors.full_messages.to_sentence
   end
 
+  test "a host demotion checks for another host after locking the room in its transaction" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    host = room.memberships.find_by!(user: users(:david))
+    events = []
+
+    lock_method = Room.instance_method(:lock!)
+    Room.define_method(:lock!) do |*arguments|
+      events << :lock
+      lock_method.bind_call(self, *arguments)
+    end
+
+    exists_method = ActiveRecord::Relation.instance_method(:exists?)
+    ActiveRecord::Relation.define_method(:exists?) do |*arguments|
+      events << (ActiveRecord::Base.connection.transaction_open? ? :check_in_transaction : :check_outside_transaction)
+      exists_method.bind_call(self, *arguments)
+    end
+
+    begin
+      error = assert_raises(ActiveRecord::RecordInvalid) { host.change_stage_role!("listener") }
+    ensure
+      Room.define_method(:lock!, lock_method)
+      ActiveRecord::Relation.define_method(:exists?, exists_method)
+    end
+
+    assert_equal "Stage role can't demote the last host", error.record.errors.full_messages.to_sentence
+    assert_equal [ :lock, :check_in_transaction ], events
+  end
+
   test "a host can step down once another host exists" do
     room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
     room.memberships.find_by!(user: users(:jason)).change_stage_role!("host")
@@ -115,5 +143,46 @@ class Rooms::StageTest < ActiveSupport::TestCase
     users(:david).deactivate
 
     assert_not Membership.exists?(room: room, user: users(:david))
+  end
+
+  test "deactivating the sole host promotes an administrator member" do
+    users(:jason).update!(role: :member)
+    users(:kevin).update!(role: :administrator)
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
+
+    users(:david).deactivate
+
+    assert_equal "host", room.memberships.find_by!(user: users(:kevin)).stage_role
+    assert_equal "listener", room.memberships.find_by!(user: users(:jason)).stage_role
+  end
+
+  test "deactivating the sole host promotes the earliest remaining member without an administrator" do
+    users(:jason).update!(role: :member)
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    room.memberships.create!(user: users(:jason), created_at: 2.days.ago)
+    room.memberships.create!(user: users(:kevin), created_at: 1.day.ago)
+
+    users(:david).deactivate
+
+    assert_equal "host", room.memberships.find_by!(user: users(:jason)).stage_role
+    assert_equal "listener", room.memberships.find_by!(user: users(:kevin)).stage_role
+  end
+
+  test "deactivating a host promotes nobody when another host remains" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
+    room.memberships.find_by!(user: users(:jason)).change_stage_role!("host")
+
+    users(:david).deactivate
+
+    assert_equal "host", room.memberships.find_by!(user: users(:jason)).stage_role
+    assert_equal "listener", room.memberships.find_by!(user: users(:kevin)).stage_role
+  end
+
+  test "deactivating the last member of a stage leaves the emptied room alone" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+
+    users(:david).deactivate
+
+    assert_empty room.reload.users
   end
 end

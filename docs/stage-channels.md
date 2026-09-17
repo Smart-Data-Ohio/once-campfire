@@ -81,11 +81,16 @@ changes a role; hosts and administrators only.
 
 After a role change, a per-viewer roster is broadcast to every member's own
 rooms stream — host action forms render only for hosts and administrators —
-and a personalized panel is broadcast to the affected member's stream. That
-replacement carries a rejoin trigger, and a second rejoin event is appended
-to a persistent target inside the member's huddle panel, which exists on
-every page unlike the stage panel: the huddle panel leaves and rejoins the
-same room with a fresh token, skipping the prejoin check.
+and a personalized panel is broadcast to the affected member's stream. A
+rejoin event carrying the new role is appended to a persistent target inside
+the member's huddle panel, which exists on every page unlike the stage
+panel: the huddle panel leaves and rejoins the same room with a fresh token,
+skipping the prejoin check. The persistent event is the only reconnect
+trigger, so delayed delivery cannot reconnect twice. Consuming the event
+also refreshes the member's stored publishing hint and the join control on
+the current page, so a demoted speaker who retries a failed join — or leaves
+and rejoins without navigating — connects as a listener instead of entering
+microphone prejoin.
 
 ## Moderation
 
@@ -93,8 +98,14 @@ Removing a member from the stage uses the existing members UI, which already
 ends their session and drops their sidebar row and header stack. An edit that
 would remove the last host while members remain is rejected with 422 and an
 inline error naming the host to replace first; emptying the room entirely
-stays allowed. Role changes are the only stage moderation tool: there is no
-separate mute, kick, or ban.
+stays allowed. The members edit checks and revises inside one locked
+transaction, and host demotions re-check after locking the room, so
+concurrent removals cannot strand the room without a host. Deactivating the
+sole host of a stage promotes a replacement in the same transaction that
+deletes the memberships — an active administrator member when one remains,
+otherwise the earliest-joined remaining member — so the stage stays
+manageable; a stage left with no members at all is left empty. Role changes
+are the only stage moderation tool: there is no separate mute, kick, or ban.
 
 ## Deliberately not included
 
