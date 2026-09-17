@@ -28,10 +28,13 @@ class Rooms::OpensController < RoomsController
   end
 
   def update
-    @room.update! room_params
-
-    broadcast_update_room
-    redirect_to room_url(@room)
+    if @room.update(room_params)
+      broadcast_update_room
+      redirect_to room_url(@room)
+    else
+      @users = User.active.ordered
+      render :edit, status: :unprocessable_entity
+    end
   end
 
   private

@@ -26,10 +26,11 @@ class Accounts::BotsController < ApplicationController
 
     if @agent&.invalid?
       render :edit, status: :unprocessable_entity
-    else
-      @bot.update_bot! bot_params
+    elsif @bot.update_bot(bot_params)
       @agent&.save!
       redirect_to account_bots_url
+    else
+      render :edit, status: :unprocessable_entity
     end
   end
 

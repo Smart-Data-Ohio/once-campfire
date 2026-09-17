@@ -105,6 +105,16 @@ class UserTest < ActiveSupport::TestCase
     assert_equal [ "is not a known icon" ], bot.errors[:icon_name]
   end
 
+  test "unrelated saves succeed after the workspace icon is deleted" do
+    create_workspace_icon(name: "acme")
+    bot = users(:bender)
+    bot.update!(icon_name: "acme")
+    WorkspaceIcon.find_by!(name: "acme").destroy
+
+    assert bot.update(name: "Renamed Bot")
+    assert_equal "acme", bot.reload.icon_name
+  end
+
   private
     def create_new_user
       User.create!(name: "User", email_address: "user@example.com", password: "secret123456")

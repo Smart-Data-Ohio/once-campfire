@@ -23,19 +23,26 @@ class Rooms::VoicesController < RoomsController
   end
 
   def edit
-    selected_user_ids = @room.users.pluck(:id)
-    @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    set_member_lists
   end
 
   def update
-    @room.update! room_params
-    @room.memberships.revise(granted: grantees, revoked: revokees)
+    if @room.update(room_params)
+      @room.memberships.revise(granted: grantees, revoked: revokees)
 
-    broadcast_update_room
-    redirect_to room_url(@room)
+      broadcast_update_room
+      redirect_to room_url(@room)
+    else
+      set_member_lists
+      render :edit, status: :unprocessable_entity
+    end
   end
 
   private
+    def set_member_lists
+      selected_user_ids = @room.users.pluck(:id)
+      @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    end
     # Voice rooms keep their type: only voice rooms are in reach here, and the
     # open/closed namespaces keep voice rooms out of reach in return.
     def room_scope

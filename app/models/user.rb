@@ -30,7 +30,7 @@ class User < ApplicationRecord
   validate :inbox_preferences_must_be_boolean
 
   normalizes :icon_name, with: ->(name) { Icons.normalize_name(name) }
-  validate :icon_name_must_resolve
+  validate :icon_name_must_resolve, if: :icon_name_changed?
 
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true

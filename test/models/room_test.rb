@@ -69,4 +69,14 @@ class RoomTest < ActiveSupport::TestCase
     assert_not room.valid?
     assert_equal [ "is not a known icon" ], room.errors[:icon_name]
   end
+
+  test "unrelated saves succeed after the workspace icon is deleted" do
+    create_workspace_icon(name: "acme")
+    room = rooms(:pets)
+    room.update!(icon_name: "acme")
+    WorkspaceIcon.find_by!(name: "acme").destroy
+
+    assert room.update(name: "Renamed Room")
+    assert_equal "acme", room.reload.icon_name
+  end
 end

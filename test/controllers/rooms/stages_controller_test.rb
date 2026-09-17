@@ -134,6 +134,20 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ users(:david).id, users(:jason).id ].sort, room.reload.user_ids.sort
   end
 
+  test "update with an unknown icon re-renders the edit form without revising members" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    put rooms_stage_url(room), params: {
+      room: { name: "New Name", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil room.reload.icon_name
+    assert_equal "Town Hall", room.name
+    assert_equal [ users(:david).id, users(:jason).id ].sort, room.user_ids.sort
+  end
+
   test "a host removes themselves once another host exists" do
     room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
     room.memberships.find_by!(user: users(:jason)).change_stage_role!("host")

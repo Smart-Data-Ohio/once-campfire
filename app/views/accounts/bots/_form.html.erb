@@ -1,4 +1,9 @@
 <h1 class="for-screen-reader">Chat Bot Setup</h1>
+<% if bot.errors.any? %>
+  <div class="txt-small" style="color: var(--color-negative)">
+    <%= bot.errors.full_messages.to_sentence %>
+  </div>
+<% end %>
 <label class="align-center center avatar__form gap" data-controller="upload-preview">
   <div class="btn input--file">
     <%= image_tag "camera.svg", aria: { hidden: "true" }, size: 20 %>

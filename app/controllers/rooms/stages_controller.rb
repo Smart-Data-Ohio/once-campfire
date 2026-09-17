@@ -33,21 +33,32 @@ class Rooms::StagesController < RoomsController
     # transaction mode serializes writers, so the transaction plus a re-read
     # inside it is sufficient.
     removed_sole_host = nil
+    saved = false
 
     Room.transaction do
       @room.lock!
       removed_sole_host = sole_host_removed_by_update
 
       unless removed_sole_host
-        @room.update! room_params
-        @room.memberships.revise(granted: grantees, revoked: revokees)
-        @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
+        saved = @room.update(room_params)
+
+        if saved
+          @room.memberships.revise(granted: grantees, revoked: revokees)
+          @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
+        else
+          raise ActiveRecord::Rollback
+        end
       end
     end
 
     if removed_sole_host
       set_member_lists
       @room.errors.add(:base, "Promote another host before removing #{removed_sole_host.user.name}")
+      return render :edit, status: :unprocessable_entity
+    end
+
+    unless saved
+      set_member_lists
       return render :edit, status: :unprocessable_entity
     end
 

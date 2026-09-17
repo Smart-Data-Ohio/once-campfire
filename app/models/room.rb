@@ -31,7 +31,7 @@ class Room < ApplicationRecord
   validate :direct_rooms_keep_their_type, on: :update
 
   normalizes :icon_name, with: ->(name) { Icons.normalize_name(name) }
-  validate :icon_name_must_resolve
+  validate :icon_name_must_resolve, if: :icon_name_changed?
 
   scope :opens,           -> { where(type: "Rooms::Open") }
   scope :closeds,         -> { where(type: "Rooms::Closed") }

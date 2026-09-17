@@ -89,6 +89,21 @@ class Rooms::ClosedsControllerTest < ActionDispatch::IntegrationTest
     assert_empty capture_turbo_stream_broadcasts([ users(:bender), :rooms ])
   end
 
+  test "update with an unknown icon re-renders the edit form without revising members" do
+    room = rooms(:designers)
+    user_ids_before = room.user_ids.sort
+
+    put rooms_closed_url(room), params: {
+      room: { name: "New Name", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil room.reload.icon_name
+    assert_equal "Designers", room.name
+    assert_equal user_ids_before, room.user_ids.sort
+  end
+
   test "a direct room can't be converted to closed and have its participants revised" do
     sign_in :kevin
     direct = rooms(:bender_and_kevin)
