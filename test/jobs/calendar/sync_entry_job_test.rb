@@ -153,6 +153,17 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_not EventCalendarEntry.exists?(entry.id)
   end
 
+  test "an invalid_grant during sync disconnects and drops the local entry" do
+    account = connect_google!(@david)
+    account.update!(access_token_expires_at: 1.hour.ago)
+    stub_google_token_invalid_grant
+
+    Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
+
+    assert_equal "Google rejected the connection", account.reload.disconnected_reason
+    assert_not EventCalendarEntry.exists?(event: @event, user: @david)
+  end
+
   test "two runs for the same state make no second insert" do
     connect_google!(@david)
     insert = stub_google_event_insert

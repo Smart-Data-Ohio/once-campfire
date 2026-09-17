@@ -50,8 +50,9 @@ retries. The Google event id is deterministic per event and member
 reserved before the first request, so a retried insert reuses the same id
 and concurrent first runs converge through the insert-conflict path
 instead of creating duplicates. If Google reports the account's grant
-revoked (`invalid_grant`), the account is marked disconnected and the
-profile offers a reconnect instead of publishing.
+revoked (`invalid_grant`), the account is marked disconnected, the local
+entry being synced is destroyed immediately (its remote copy is
+unreachable), and the profile offers a reconnect instead of publishing.
 
 ## Disconnecting
 

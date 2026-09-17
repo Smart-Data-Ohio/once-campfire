@@ -86,9 +86,16 @@ module Calendar
           entry.last_error = nil
           entry.save!
         rescue StandardError => error
-          entry.last_error = error_summary(error)
-          entry.save!
-          Rails.logger.warn "Calendar::EntrySync failed for event #{@event.id} user #{@user.id}: #{error.class}"
+          if account.connected?
+            entry.last_error = error_summary(error)
+            entry.save!
+            Rails.logger.warn "Calendar::EntrySync failed for event #{@event.id} user #{@user.id}: #{error.class}"
+          else
+            # The account disconnected mid-sync: the remote copy is
+            # unreachable, so drop the local row instead of retrying it.
+            entry.destroy!
+            Rails.logger.warn "Calendar::EntrySync dropped entry for event #{@event.id} user #{@user.id}: account disconnected"
+          end
         end
       end
 
