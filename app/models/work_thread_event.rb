@@ -1,5 +1,5 @@
 class WorkThreadEvent < ApplicationRecord
-  EVENT_TYPES = %w[ work_update work_assignment ].freeze
+  EVENT_TYPES = %w[ work_update work_assignment result_updated ].freeze
 
   belongs_to :thread, class_name: "ChannelThread", foreign_key: :channel_thread_id, inverse_of: :work_thread_events
   belongs_to :actor, class_name: "User", optional: true
@@ -42,6 +42,26 @@ class WorkThreadEvent < ApplicationRecord
           },
           "actor" => actor_snapshot(actor),
           "note" => note.presence
+        }
+      )
+    end
+
+    def create_for_result!(thread:, actor:, excerpt:)
+      owner = thread.work_owner
+
+      create!(
+        thread:,
+        actor:,
+        event_type: "result_updated",
+        from_status: thread.work_status,
+        to_status: thread.work_status,
+        from_owner_id: owner&.id,
+        to_owner_id: owner&.id,
+        from_owner_name: owner&.name,
+        to_owner_name: owner&.name,
+        metadata: {
+          "excerpt" => excerpt.to_s,
+          "actor" => actor_snapshot(actor)
         }
       )
     end
@@ -117,8 +137,13 @@ class WorkThreadEvent < ApplicationRecord
   def recipient_user_ids
     room_memberships = thread.room.memberships.includes(:user).index_by(&:user_id)
     thread_memberships = thread.memberships.index_by(&:user_id)
+
+    # A result edit notifies the post's creator and owner only, not every
+    # thread follower; status and owner changes keep the wider rule below.
     candidate_ids = [ thread.creator_id, from_owner_id, to_owner_id ]
-    candidate_ids.concat(thread_memberships.values.select(&:involved_in_everything?).map(&:user_id))
+    unless event_type == "result_updated"
+      candidate_ids.concat(thread_memberships.values.select(&:involved_in_everything?).map(&:user_id))
+    end
 
     candidate_ids.uniq.filter_map do |user_id|
       next if user_id == actor_id
@@ -147,12 +172,16 @@ class WorkThreadEvent < ApplicationRecord
     def record_activity_items
       return unless defined?(ActivityItems::Recorder)
 
+      # The inbox has no result_updated item type; a result edit lands as a
+      # work_update item sourced at this event, grouped with other updates.
+      item_event_type = event_type == "result_updated" ? "work_update" : event_type
+
       recipient_user_ids.each do |recipient_id|
         recipient = User.active.without_bots.find_by(id: recipient_id)
         next unless recipient
         next if agent_assignment_for_opted_out_recipient?(recipient)
 
-        ActivityItems::Recorder.record!(recipient:, source: self, event_type:)
+        ActivityItems::Recorder.record!(recipient:, source: self, event_type: item_event_type)
       end
     end
 

@@ -261,7 +261,7 @@ module MessagePayloadHelper
         can_manage_work: thread.work? && work_manageable,
         can_update_work_status: thread.work? && thread.work_status_manageable_by?(Current.user),
         can_assign_work: thread.work? && work_assignment,
-        can_remove_work: thread.work? && work_assignment
+        can_remove_work: thread.work? && work_assignment && !thread.board_post?
       }
     end
 

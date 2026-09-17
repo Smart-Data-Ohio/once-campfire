@@ -1,0 +1,39 @@
+<% content_for :nav do %>
+  <%= render "rooms/show/header_identity", room: room %>
+
+  <div class="room-header__actions">
+    <button type="button"
+            class="btn room-header__action member-panel-toggle"
+            aria-controls="channel-members"
+            aria-expanded="false"
+            aria-label="Show members"
+            title="Show members"
+            data-member-panel-target="toggle"
+            data-action="member-panel#toggle">
+      <%= image_tag "everyone.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="member-panel-toggle__count" data-member-panel-target="toggleCount" aria-hidden="true"></span>
+    </button>
+
+    <%= link_to searches_path, class: "btn room-header__action", aria: { label: "Search messages" }, title: "Search messages" do %>
+      <%= image_tag "search.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="room-header__action-label">Search</span>
+    <% end %>
+
+    <%= link_to room_events_path(room), class: "btn room-header__action", aria: { label: "Show events" }, title: "Show events" do %>
+      <%= image_tag "calendar.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="room-header__action-label">Events</span>
+    <% end %>
+
+    <%= link_to new_room_thread_path(room), class: "btn room-header__action", aria: { label: "New post" }, title: "New post" do %>
+      <%= image_tag "add.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="room-header__action-label">New post</span>
+    <% end %>
+
+    <%= link_to_edit_room(room) do %>
+      <%= image_tag "settings.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="for-screen-reader">Settings for this board</span>
+    <% end %>
+
+    <%= render "rooms/involvements/bell", room: room %>
+  </div>
+<% end %>

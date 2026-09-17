@@ -1,6 +1,6 @@
 <% owner = thread.work_owner %>
 <div class="work-threads__item" role="listitem">
-  <%= link_to room_path(thread.room, thread: thread.id), class: "work-threads__item-link" do %>
+  <%= link_to thread.room.board? ? room_thread_path(thread.room, thread) : room_path(thread.room, thread: thread.id), class: "work-threads__item-link" do %>
     <div class="work-threads__item-heading">
       <strong class="work-threads__name"><%= thread.name %></strong>
       <span class="work-threads__status work-threads__status--<%= thread.work_status %>"><%= thread.work_status_label %></span>

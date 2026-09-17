@@ -24,6 +24,8 @@ class Rooms::InvolvementsController < ApplicationController
           broadcast_prepend_to @membership.user, :rooms, target: :voice_rooms, partial: "users/sidebars/rooms/stage", locals: { room: @room }
         elsif @room.voice?
           broadcast_prepend_to @membership.user, :rooms, target: :voice_rooms, partial: "users/sidebars/rooms/voice", locals: { room: @room }
+        elsif @room.board?
+          broadcast_prepend_to @membership.user, :rooms, target: :board_rooms, partial: "users/sidebars/rooms/board", locals: { room: @room }
         else
           broadcast_prepend_to @membership.user, :rooms, target: :shared_rooms, partial: "users/sidebars/rooms/shared", locals: { room: @room }
         end

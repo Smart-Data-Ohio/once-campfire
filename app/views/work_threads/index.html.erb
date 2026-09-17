@@ -29,6 +29,7 @@
       <%= link_to "Completed", work_threads_path(state: "done"), class: [ "btn", "work-threads__filter", "active": @state == "done" ] %>
       <%= link_to "All work", work_threads_path(state: "all"), class: [ "btn", "work-threads__filter", "active": @state == "all" ] %>
       <%= link_to "Owned by agents", work_threads_path(state: "agents"), class: [ "btn", "work-threads__filter", "active": @state == "agents" ] %>
+      <%= link_to "Boards only", work_threads_path(state: "boards"), class: [ "btn", "work-threads__filter", "active": @state == "boards" ] %>
     </nav>
   </header>
 
@@ -52,6 +53,8 @@
         No work threads yet. Track a channel thread as work and it will appear here.
       <% when "agents" %>
         No agent-owned work yet. Assign a work thread to an agent and it will appear here.
+      <% when "boards" %>
+        No board work yet. Create a post in one of your boards and it will appear here.
       <% else %>
         No open work yet. Track a channel thread as work and it will appear here.
       <% end %>
