@@ -125,6 +125,10 @@ Rails.application.routes.draw do
         patch :cancel, on: :member
         resource :attendance, only: :update, controller: "events/attendances"
       end
+      namespace :stage do
+        resource :hand, only: %i[ create destroy ], controller: "hands"
+        patch "roles/:membership_id", to: "roles#update", as: :role
+      end
       resource :huddle, only: %i[ show create ] do
         get :participants
       end
@@ -142,6 +146,7 @@ Rails.application.routes.draw do
     resources :closeds
     resources :directs
     resources :voices
+    resources :stages
   end
 
   resources :messages do

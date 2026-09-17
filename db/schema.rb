@@ -342,6 +342,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022902) do
     t.integer "room_id", null: false
     t.string "room_name", null: false
     t.integer "session_id", null: false
+    t.string "stage_role"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
@@ -357,12 +358,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022902) do
     t.datetime "connected_at"
     t.integer "connections", default: 0, null: false
     t.datetime "created_at", null: false
+    t.datetime "hand_raised_at"
     t.string "involvement", default: "mentions"
     t.integer "room_id", null: false
+    t.string "stage_role"
     t.datetime "unread_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["room_id", "created_at"], name: "index_memberships_on_room_id_and_created_at"
+    t.index ["room_id", "stage_role"], name: "index_memberships_on_room_id_and_stage_role"
     t.index ["room_id", "user_id"], name: "index_memberships_on_room_id_and_user_id", unique: true
     t.index ["room_id"], name: "index_memberships_on_room_id"
     t.index ["user_id"], name: "index_memberships_on_user_id"

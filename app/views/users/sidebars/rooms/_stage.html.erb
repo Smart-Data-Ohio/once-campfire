@@ -1,0 +1,12 @@
+<%= link_to_room room,
+      id: dom_id(room, :list), data: { sorted_list_name: room.name },
+      class: [ "sidebar-item room btn voice-room stage-room", "unread": local_assigns[:unread] ] do %>
+  <span class="sidebar-item__icon" aria-hidden="true"></span>
+  <span class="sidebar-item__label overflow-ellipsis"><%= room.name %></span>
+  <span class="voice-room__trailing">
+    <%= render "rooms/huddles/participants", room: room, placement: :sidebar %>
+    <% if local_assigns[:unread] %>
+      <span class="sidebar-item__status">New</span>
+    <% end %>
+  </span>
+<% end %>

@@ -1,0 +1,15 @@
+<div id="<%= dom_id(room, :stage_controls) %>" class="stage-panel__controls">
+  <% if membership.listener? %>
+    <% if membership.hand_raised? %>
+      <p class="stage-panel__note">Your hand is raised. A host can invite you to speak.</p>
+      <%= button_to "Lower hand", room_stage_hand_path(room), method: :delete, class: "btn stage-panel__hand" %>
+    <% else %>
+      <p class="stage-panel__note">You are in the audience.</p>
+      <%= button_to "Raise hand", room_stage_hand_path(room), method: :post, class: "btn stage-panel__hand" %>
+    <% end %>
+  <% elsif membership.speaker? %>
+    <p class="stage-panel__note">You are speaking. Join the stage to be heard.</p>
+  <% else %>
+    <p class="stage-panel__note">You are hosting this stage.</p>
+  <% end %>
+</div>

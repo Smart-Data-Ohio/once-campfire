@@ -51,6 +51,22 @@ class Rooms::InvolvementsControllerTest < ActionDispatch::IntegrationTest
     assert_match "voice-room", streams.first.to_html
   end
 
+  test "becoming visible again prepends a stage room as a stage row" do
+    room = Rooms::Stage.create_for({ name: "Town hall", creator: users(:david) }, users: [ users(:david) ])
+    membership = room.memberships.find_by!(user: users(:david))
+    membership.update!(involvement: "invisible")
+
+    put room_involvement_url(room), params: { involvement: "mentions" }
+    assert_redirected_to room_involvement_url(room)
+
+    streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+    assert_equal 1, streams.count
+    assert_equal "prepend", streams.first["action"]
+    assert_equal "voice_rooms", streams.first["target"]
+    assert_match "Town hall", streams.first.to_html
+    assert_match "stage-room", streams.first.to_html
+  end
+
   test "updating involvement does not send turbo update for direct rooms" do
     assert_no_turbo_stream_broadcasts [ users(:david), :rooms ] do
     assert_changes -> { memberships(:david_david_and_jason).reload.involvement }, from: "everything", to: "nothing" do

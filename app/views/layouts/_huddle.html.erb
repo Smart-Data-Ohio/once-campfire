@@ -44,6 +44,8 @@
 
   <p class="huddle__notice" data-huddle-target="notice" role="alert" hidden></p>
 
+  <p class="huddle__listening" data-huddle-target="listeningNote" hidden>You are listening</p>
+
   <div class="huddle__sharing" data-huddle-target="sharing" hidden>
     <span class="huddle__sharing-name overflow-ellipsis" data-huddle-target="sharingName">Someone is sharing a screen</span>
     <button type="button"
@@ -152,4 +154,6 @@
   <button type="button" class="btn btn--reversed huddle__retry" data-huddle-target="retry" data-action="huddle#retry" hidden>
     Try again
   </button>
+
+  <div id="huddle_role_events" data-huddle-target="roleEvents" hidden></div>
 </section>

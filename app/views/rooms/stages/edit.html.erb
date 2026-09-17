@@ -1,0 +1,4 @@
+<%= render layout: "rooms/layouts/edit", locals: { room: @room } do %>
+  <%= render "rooms/stages/form",
+        room: @room, selected_users: @selected_users, unselected_users: @unselected_users %>
+<% end %>
