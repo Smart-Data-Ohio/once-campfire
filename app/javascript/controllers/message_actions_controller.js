@@ -776,7 +776,25 @@ export default class extends Controller {
       source: source || this.#message.dataset.editSource || body?.dataset.messageEditSource || null,
       sourceFormat: this.#stringFromMetadata("edit_format", "editable_format", "editableFormat") || this.#message.dataset.editFormat || body?.dataset.messageEditFormat || "markdown",
       previewText: this.#fallbackText(body),
+      driveAttachments: this.#driveAttachments(),
     }
+  }
+
+  // The message's current Drive attachments for the composer edit flow: the
+  // file id from each block anchor's open?id= link, plus the display name
+  // and kind the drive-link controller already resolved for this viewer
+  // (generic when it has not). Names shown here are already on screen, so
+  // nothing new is revealed.
+  #driveAttachments() {
+    return Array.from(this.#message.querySelectorAll(".drive-attachments a.drive-attachment")).map((anchor) => {
+      const id = anchor.getAttribute("href")?.match(/[?&]id=([A-Za-z0-9_-]{10,})/)?.[1]
+      const chip = anchor.querySelector(".drive-chip")
+      return {
+        id,
+        name: anchor.querySelector(".drive-chip__name")?.textContent?.trim() || "Google Drive file",
+        kind: chip?.className.match(/drive-chip--([\w-]+)/)?.[1] || "file",
+      }
+    }).filter((attachment) => attachment.id)
   }
 
   #fallbackText(body) {
