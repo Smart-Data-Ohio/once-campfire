@@ -91,6 +91,20 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.index ["token_digest"], name: "index_agent_credentials_on_token_digest", unique: true
   end
 
+  create_table "agent_events", force: :cascade do |t|
+    t.integer "actor_id"
+    t.integer "agent_credential_id"
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.string "detail"
+    t.string "event_type", null: false
+    t.integer "message_id"
+    t.json "metadata"
+    t.string "outcome"
+    t.integer "room_id"
+    t.index ["agent_id", "created_at"], name: "index_agent_events_on_agent_id_and_created_at"
+  end
+
   create_table "agent_grants", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.string "capability", null: false
