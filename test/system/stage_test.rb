@@ -332,6 +332,66 @@ class StageTest < ApplicationSystemTestCase
     assert_equal 0, page.evaluate_script("window.__stageGumCalls")
   end
 
+  test "a demoted speaker retries as a listener without entering prejoin" do
+    room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:kevin) ])
+    room.memberships.find_by!(user: users(:kevin)).change_stage_role!("speaker")
+    sign_in "kevin@37signals.com"
+    visit room_path(room)
+    wait_for_cable_connection
+
+    assert_selector '.huddle-launcher[data-huddle-can-publish-param="true"]'
+
+    # A speaker with no microphone: the denial skips prejoin so the failed
+    # join surfaces through the usual failure notice with a retry.
+    page.execute_script(<<~JS)
+      window.__stageGumCalls = 0
+      window.__stageHuddleStates = []
+      new MutationObserver(() => {
+        window.__stageHuddleStates.push(document.getElementById("channel-huddle").dataset.state)
+      }).observe(document.getElementById("channel-huddle"), { attributes: true, attributeFilter: [ "data-state" ] })
+      navigator.permissions.query = () => Promise.resolve({ state: "denied" })
+      navigator.mediaDevices.getUserMedia = () => {
+        window.__stageGumCalls += 1
+        return Promise.reject(new DOMException("No microphone", "NotFoundError"))
+      }
+    JS
+
+    click_button "Join stage"
+    assert_selector "#channel-huddle[data-state='failed']", visible: :all, wait: 20
+
+    # The host demotes the speaker while the failed panel sits on the page.
+    # The persistent role event carries the new role; consuming it refreshes
+    # the stored retry hint and the page launcher, then rejoins once.
+    page.execute_script(<<~JS, room.id)
+      window.__stageHuddleStates = []
+      const event = document.createElement("div")
+      event.dataset.huddleRejoinRoomId = arguments[0]
+      event.dataset.huddleRejoinStageRole = "listener"
+      document.getElementById("huddle_role_events").appendChild(event)
+    JS
+
+    assert_selector '.huddle-launcher[data-huddle-can-publish-param="false"]', wait: 10
+    wait_for_condition("the demotion did not trigger a rejoin") do
+      page.evaluate_script("window.__stageHuddleStates").include?("connecting")
+    end
+    assert_selector "#channel-huddle[data-state='failed']", visible: :all, wait: 20
+
+    # A first-time listener with no microphone: without the refreshed hint,
+    # this retry would strand them in microphone prejoin.
+    page.execute_script(<<~JS)
+      window.__stageGumCalls = 0
+      window.__stageHuddleStates = []
+      navigator.permissions.query = () => Promise.resolve({ state: "prompt" })
+    JS
+
+    find("[data-huddle-target='retry']").click
+
+    assert_selector "#channel-huddle[data-state='failed']", visible: :all, wait: 20
+    assert_not_includes page.evaluate_script("window.__stageHuddleStates"), "prejoin"
+    assert_equal 0, page.evaluate_script("window.__stageGumCalls")
+    assert_selector '.huddle-launcher[data-huddle-can-publish-param="false"]'
+  end
+
   test "stage rooms carry ordinary text chat" do
     room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:jason) ])
     sign_in "jason@37signals.com"

@@ -270,8 +270,27 @@ export default class extends Controller {
     if (node?.nodeType !== Node.ELEMENT_NODE) return
 
     const roomId = Number(node.dataset.huddleRejoinRoomId)
+    const stageRole = node.dataset.huddleRejoinStageRole
     node.remove()
+    this.#updatePublishHint(roomId, stageRole)
     this.roleChanged({ detail: { roomId } })
+  }
+
+  // The persistent role event carries the member's new stage role. A demoted
+  // speaker's stored retry hint and page launcher would otherwise stay true,
+  // stranding them in microphone prejoin on retry or on leave-and-rejoin
+  // without navigating. Hosts and speakers publish; listeners do not. The
+  // token stays authoritative for actual publishing.
+  #updatePublishHint(roomId, stageRole) {
+    if (stageRole !== "listener" && stageRole !== "speaker" && stageRole !== "host") return
+
+    const canPublish = stageRole !== "listener"
+    if (roomId === this.roomId) this.canPublishHint = canPublish
+
+    const launcher = document.querySelector(
+      `[data-controller="huddle-launcher"][data-huddle-launcher-room-id-value="${roomId}"]`
+    )
+    if (launcher) launcher.dataset.huddleCanPublishParam = String(canPublish)
   }
 
   confirmPrejoinJoin = async () => {
