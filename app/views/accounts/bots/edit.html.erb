@@ -20,6 +20,13 @@
     <% end %>
   </div>
 
+  <div class="flex align-center gap justify-space-between margin-block-end">
+    <%= link_to account_bot_grants_path(@bot), class: "btn full-width txt--small" do %>
+      <%= image_tag "key.svg", aria: { hidden: "true" }, size: 20 %>
+      Manage capability grants
+    <% end %>
+  </div>
+
   <div class="flex align-center gap justify-space-between">
     <%= button_to account_bot_path(@bot), method: :delete, class: "btn txt--small btn--negative", aria: { label: "Delete this chat bot" },
           data: { turbo_confirm: "Are you sure you want to permanently remove this bot from the account? This can’t be undone." } do %>
