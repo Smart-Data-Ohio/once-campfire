@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022911) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -232,6 +232,16 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+  end
+
+  create_table "github_connected_accounts", force: :cascade do |t|
+    t.string "access_token", null: false
+    t.datetime "created_at", null: false
+    t.string "disconnected_reason"
+    t.string "github_login", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_github_connected_accounts_on_user_id", unique: true
   end
 
   create_table "github_notifications", force: :cascade do |t|
@@ -539,6 +549,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
   add_foreign_key "event_calendar_entries", "events"
   add_foreign_key "event_calendar_entries", "users"
+  add_foreign_key "github_connected_accounts", "users"
   add_foreign_key "github_notifications", "github_repository_subscriptions", column: "subscription_id", on_delete: :cascade
   add_foreign_key "github_notifications", "messages", on_delete: :nullify
   add_foreign_key "github_pull_request_references", "github_pull_requests"

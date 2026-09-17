@@ -13,6 +13,7 @@ class User < ApplicationRecord
   has_many :push_subscriptions, class_name: "Push::Subscription", dependent: :delete_all
 
   has_one :google_account, dependent: :destroy
+  has_one :github_connected_account, dependent: :destroy
   has_many :event_calendar_entries, dependent: :destroy
 
   has_many :boosts, dependent: :destroy, foreign_key: :booster_id
@@ -90,6 +91,7 @@ class User < ApplicationRecord
       searches.delete_all
       sessions.delete_all
       google_account&.mark_disconnected!("Account deactivated")
+      github_connected_account&.mark_disconnected!("Account deactivated")
 
       update! status: :deactivated, email_address: deactived_email_address
     end
