@@ -122,6 +122,15 @@ The first human-owned slice is live, including status/owner history, completion 
 
 Done for the first slice when members can turn a channel thread into work, assign an eligible owner, update its status, find it again, and complete or reopen it without losing messages. Following a discussion and owning its work remain distinct choices.
 
+### 9. Custom icons and emoji shortcodes
+
+- Ship a built-in icon set for the major technology companies and AI labs (OpenAI, Anthropic, Google, Microsoft, Apple, Meta, Amazon, NVIDIA, GitHub, xAI, Mistral, DeepSeek, Hugging Face, Cursor, and similar) that members can use in messages and reactions.
+- Adopt Discord-style `:icon_name:` shortcodes as the standard way to insert custom icons and standard emoji alike, with autocomplete in the composer after typing `:`.
+- Custom icons render inline at text size, work in light and dark themes, and appear in reaction chips.
+- Later: administrator-uploaded workspace icons with their own names, and room or agent avatars drawn from the same set.
+
+Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
+
 ## Proposed additions
 
 - **Agent handoffs:** move a task between a person and an agent, or between agents, with explicit context and responsibility.
