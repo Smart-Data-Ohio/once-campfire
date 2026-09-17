@@ -186,6 +186,51 @@ class HuddlePresenceTest < ApplicationSystemTestCase
       "back-to-back refreshes issued duplicate aggregate polls"
   end
 
+  test "a removed sidebar stack clears once but keeps accepting updates while the header latches" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
+    grant.record_seen!
+
+    visit room_path(@room)
+    wait_for_cable_connection
+
+    within "##{dom_id(@room, :list)}" do
+      assert_selector ".voice-stack--live .voice-stack__count", text: "1"
+    end
+    within ".room-header__actions" do
+      assert_selector ".voice-stack--live .voice-stack__count", text: "1"
+    end
+
+    # A 404 on one stack dispatches a removal for the shared participants
+    # URL; both stacks clear.
+    page.execute_script(<<~JS, participants_room_huddle_path(@room))
+      const [ url ] = arguments
+      window.dispatchEvent(new CustomEvent("huddle-participants:removed", { detail: { url } }))
+    JS
+
+    within "##{dom_id(@room, :list)}" do
+      assert_no_selector ".voice-stack--live"
+    end
+    within ".room-header__actions" do
+      assert_no_selector ".voice-stack--live"
+    end
+
+    # The next aggregate update revives the externally fed sidebar stack, but
+    # the polling header stack stays latched.
+    david = users(:david)
+    page.execute_script(<<~JS, participants_room_huddle_path(@room), [ { id: david.id, name: david.name, avatar_url: fresh_user_avatar_path(david) } ])
+      const [ url, participants ] = arguments
+      window.dispatchEvent(new CustomEvent("huddle-participants:updated", { detail: { url, participants } }))
+    JS
+
+    within "##{dom_id(@room, :list)}" do
+      assert_selector ".voice-stack--live .voice-stack__count", text: "1"
+      assert_selector "img.voice-stack__avatar[data-user-id='#{david.id}']"
+    end
+    within ".room-header__actions" do
+      assert_no_selector ".voice-stack--live"
+    end
+  end
+
   private
     # Records every Turbo Stream render as "action:target" so the test can
     # wait for a specific broadcast to land instead of sleeping a fixed time.

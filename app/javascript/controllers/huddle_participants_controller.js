@@ -10,8 +10,9 @@ class ParticipantsRevoked extends Error {}
 
 // Responses are shared across every stack watching the same room, so a room
 // page issues one fallback request per interval no matter how many stacks it
-// renders (sidebar, header). In-flight requests are shared too, and a 404
-// stops every stack at once.
+// renders (sidebar, header). In-flight requests are shared too. A 404 latches
+// the polling stacks; externally fed sidebar stacks only clear once, since
+// the aggregate poll keeps feeding them afterwards.
 const sharedResponses = new Map()
 const pendingRequests = new Map()
 
@@ -39,7 +40,15 @@ export default class extends Controller {
       if (detail.url === this.urlValue && !this.revoked) this.#render(detail.participants)
     }
     this.handleSharedRemoval = ({ detail }) => {
-      if (detail.url === this.urlValue) this.#handleRevoked()
+      if (detail.url !== this.urlValue) return
+
+      if (this.intervalValue === 0) {
+        // Externally fed stacks (sidebar rows) clear once but never latch:
+        // a peer's 404 must not deafen them to later aggregate updates.
+        this.#render([])
+      } else {
+        this.#handleRevoked()
+      }
     }
     window.addEventListener("huddle-participants:updated", this.handleSharedUpdate)
     window.addEventListener("huddle-participants:removed", this.handleSharedRemoval)
