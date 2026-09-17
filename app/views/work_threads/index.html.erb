@@ -28,6 +28,7 @@
       <%= link_to "Open work", work_threads_path(state: "open"), class: [ "btn", "work-threads__filter", "active": @state == "open" ] %>
       <%= link_to "Completed", work_threads_path(state: "done"), class: [ "btn", "work-threads__filter", "active": @state == "done" ] %>
       <%= link_to "All work", work_threads_path(state: "all"), class: [ "btn", "work-threads__filter", "active": @state == "all" ] %>
+      <%= link_to "Owned by agents", work_threads_path(state: "agents"), class: [ "btn", "work-threads__filter", "active": @state == "agents" ] %>
     </nav>
   </header>
 
@@ -49,6 +50,8 @@
         No completed work yet. Work shows up here once its status is set to Done.
       <% when "all" %>
         No work threads yet. Track a channel thread as work and it will appear here.
+      <% when "agents" %>
+        No agent-owned work yet. Assign a work thread to an agent and it will appear here.
       <% else %>
         No open work yet. Track a channel thread as work and it will appear here.
       <% end %>

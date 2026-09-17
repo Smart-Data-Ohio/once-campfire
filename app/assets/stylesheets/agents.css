@@ -30,6 +30,21 @@
   opacity: 0.7;
 }
 
+.agent-badge {
+  border: 1px solid var(--color-border-dark);
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  margin-inline-start: 0.3rem;
+  padding: 0 0.4rem;
+  text-transform: uppercase;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
 .agent-status-note {
   font-style: italic;
 }
