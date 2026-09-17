@@ -303,6 +303,10 @@ a:hover .drive-chip {
   flex-direction: column;
   gap: 0.5rem;
   margin-block-start: 0.5rem;
+
+  &:empty {
+    display: none;
+  }
 }
 
 .drive-attachment {

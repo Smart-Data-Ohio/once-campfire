@@ -69,6 +69,10 @@ class MessagesController < ApplicationController
     @message.save!
 
     @message.broadcast_replace_to @room, :messages, target: [ @message, :presentation ], partial: "messages/presentation", attributes: { maintain_scroll: true }
+    if drive_file_ids_key_present?
+      @message.broadcast_replace_to @room, :messages, target: [ @message, :drive_attachments ],
+        partial: "messages/drive_attachments", locals: { message: @message }, attributes: { maintain_scroll: true }
+    end
 
     respond_to do |format|
       format.html { redirect_to room_message_url(@room, @message) }
@@ -148,9 +152,13 @@ class MessagesController < ApplicationController
       params[:message].is_a?(ActionController::Parameters) && params[:message].key?(:drive_file_ids)
     end
 
+    # nil when the key is not an array (a scalar would otherwise permit to an
+    # empty set and silently remove everything).
     def normalized_drive_file_ids
-      Array(params.require(:message).permit(drive_file_ids: [])[:drive_file_ids])
-        .map { |id| id.to_s.strip }.reject(&:blank?).uniq
+      raw = params[:message][:drive_file_ids]
+      return nil unless raw.is_a?(Array)
+
+      raw.map { |id| id.to_s.strip }.reject(&:blank?).uniq
     end
 
     # Replaces the message's stored Drive set with the submitted ids, in
@@ -160,7 +168,7 @@ class MessagesController < ApplicationController
     def apply_drive_file_ids!(message)
       ids = normalized_drive_file_ids
 
-      if ids.reject { |id| Google::DriveLink.valid_id?(id) }.any?
+      if ids.nil? || ids.reject { |id| Google::DriveLink.valid_id?(id) }.any?
         message.errors.add :drive_attachments, "includes an invalid file id"
         raise ActiveRecord::RecordInvalid, message
       end

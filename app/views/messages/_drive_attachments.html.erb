@@ -3,10 +3,11 @@
     stored. The drive-link controller upgrades each anchor to the file's name,
     kind icon, modified time, and owner for viewers whose own Google account
     can open it; everyone else keeps the generic chip below. %>
-<% attachments = local_assigns[:message]&.drive_attachments.to_a %>
-<% if attachments.any? %>
-  <div class="drive-attachments" data-controller="drive-link">
-    <% attachments.each do |attachment| %>
+<%# The container always renders (empty when there are no attachments, hidden
+    by :empty) so an edit can replace it over the room stream by id. %>
+<% if (message = local_assigns[:message]) %>
+  <div id="<%= dom_id(message, :drive_attachments) %>" class="drive-attachments" data-controller="drive-link">
+    <% message.drive_attachments.each do |attachment| %>
       <%= link_to attachment.url, class: "drive-attachment", target: "_blank", rel: "noopener" do %>
         <span class="drive-attachment__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
         <span class="drive-attachment__text">

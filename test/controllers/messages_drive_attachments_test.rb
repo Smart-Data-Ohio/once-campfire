@@ -76,6 +76,40 @@ class MessagesDriveAttachmentsTest < ActionDispatch::IntegrationTest
     assert_equal "after", message.markdown_source
   end
 
+  test "update with a submitted set broadcasts the attachments block to the room" do
+    message = @room.messages.create!(creator: users(:david), markdown_source: "before", client_message_id: "drive-broadcast")
+    message.drive_attachments.create!(file_id: FILE_A)
+
+    broadcasts = capture_broadcasts(room_messages_stream_name(@room)) do
+      put room_message_url(@room, message), params: { message: { markdown_source: "after", drive_file_ids: [ "" ] } }
+    end
+
+    block = broadcasts.map(&:to_s).find { |html| html.include?("#{dom_id(message, :drive_attachments)}") }
+    assert block, "expected a replace for the attachments block"
+    assert_no_match FILE_A, block
+  end
+
+  test "update without the key does not broadcast the attachments block" do
+    message = @room.messages.create!(creator: users(:david), markdown_source: "before", client_message_id: "drive-nobroadcast")
+    message.drive_attachments.create!(file_id: FILE_A)
+
+    broadcasts = capture_broadcasts(room_messages_stream_name(@room)) do
+      put room_message_url(@room, message), params: { message: { markdown_source: "after" } }
+    end
+
+    assert_nil broadcasts.map(&:to_s).find { |html| html.include?("#{dom_id(message, :drive_attachments)}") }
+  end
+
+  test "update with a scalar drive_file_ids answers 422 and keeps the stored set" do
+    message = @room.messages.create!(creator: users(:david), markdown_source: "before", client_message_id: "drive-scalar")
+    message.drive_attachments.create!(file_id: FILE_A)
+
+    put room_message_url(@room, message), params: { message: { markdown_source: "after", drive_file_ids: FILE_B } }
+
+    assert_response :unprocessable_content
+    assert_equal [ FILE_A ], message.reload.drive_attachments.map(&:file_id)
+  end
+
   test "update without the key leaves the set alone" do
     message = @room.messages.create!(creator: users(:david), markdown_source: "before", client_message_id: "drive-untouched")
     message.drive_attachments.create!(file_id: FILE_A)
@@ -219,5 +253,10 @@ class MessagesDriveAttachmentsTest < ActionDispatch::IntegrationTest
   private
     def drive_attachments_html(body)
       Nokogiri::HTML(body).at_css("div.drive-attachments").to_html
+    end
+
+  private
+    def room_messages_stream_name(room)
+      Turbo::StreamsChannel.signed_stream_name([ room, :messages ]).then { |signed| Turbo::StreamsChannel.verified_stream_name(signed) }
     end
 end

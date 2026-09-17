@@ -108,7 +108,10 @@ otherwise. The object is `url`, `owner`, `repo`, `number`, `title`,
 `checks_state` (`checks_state` mirrors the card's check status). See
 [GitHub pull request cards](github.md#pull-request-threads).
 
-The `message` object itself carries `drive_attachments`: the message's
+An agent with the `post_messages` capability may also attach Drive files
+when it posts through the agent message API by sending
+`message[drive_file_ids][]`; only the ids are stored, exactly as for a
+member's post. The `message` object itself carries `drive_attachments`: the message's
 Drive attachments as `[{ file_id, url }]` (`url` is the
 `https://drive.google.com/open?id=...` link), `[]` when there are none.
 Never names: bots receive no Drive credentials. See
