@@ -47,12 +47,14 @@ class XPostCardsTest < ApplicationSystemTestCase
     join_room rooms(:designers)
 
     send_message "check https://x.com/jack/status/141 out"
+
+    assert_selector ".x-post-card__loading", text: "Loading post…"
     perform_enqueued_jobs
 
     assert_selector ".x-post-card__clamp", text: "Lorem ipsum"
     assert_selector ".x-post-card__details .x-post-card__text", visible: :hidden
 
-    click_on "Show more"
+    find(".x-post-card__summary", text: "Show more").click
 
     assert_selector ".x-post-card__details[open] .x-post-card__text", text: "Lorem ipsum"
   end
