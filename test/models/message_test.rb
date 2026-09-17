@@ -14,6 +14,13 @@ class MessageTest < ActiveSupport::TestCase
     assert_not Message.new(body: "Haha! 😄🤘").plain_text_body.all_emoji?
     assert_not Message.new(body: "🔥\nmultiple lines\n💯").plain_text_body.all_emoji?
     assert_not Message.new(body: "🔥 💯").plain_text_body.all_emoji?
+    assert ":openai:🔥".all_emoji?
+    assert ":openai::slack:".all_emoji?
+    assert_not ":openai: hello".all_emoji?
+    assert_not ":nope_not_real:".all_emoji?
+    # Raw emoji shortcodes never reach the check; bodies carry the character.
+    assert_not ":openai::fire:".all_emoji?
+    assert_not "12:30".all_emoji?
   end
 
   test "mentionees" do

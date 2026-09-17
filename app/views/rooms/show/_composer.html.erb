@@ -52,6 +52,7 @@
                         controller: "markdown-autocomplete",
                         action: "input->markdown-editor#resize input->markdown-autocomplete#search input->typing-notifications#start focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur keydown->markdown-editor#shortcut keydown->composer#submitByKeyboard",
                         markdown_autocomplete_url_value: autocompletable_users_path(room_id: room.id),
+                        markdown_autocomplete_icons_url_value: autocompletable_icons_path,
                         markdown_editor_target: "source",
                         composer_target: "markdown",
                         suggestion_results_placement: "above" } %>

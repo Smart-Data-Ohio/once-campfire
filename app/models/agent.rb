@@ -99,11 +99,19 @@ class Agent < ApplicationRecord
   end
 
   # Records agent activity without callbacks, validations, or broadcasts.
-  # Throttled to at most once per minute per agent.
+  # Throttled to at most once per minute per agent; the throttle check and
+  # the write are one conditional UPDATE so concurrent requests cannot both
+  # observe an expired value and write.
   def touch_last_seen!
-    return if last_seen_at.present? && last_seen_at > LAST_SEEN_THROTTLE.ago
+    now = Time.current
+    written = Agent.where(id: id)
+      .where("last_seen_at IS NULL OR last_seen_at <= ?", now - LAST_SEEN_THROTTLE)
+      .update_all(last_seen_at: now)
 
-    update_column(:last_seen_at, Time.current)
+    if written.positive?
+      write_attribute(:last_seen_at, now)
+      clear_attribute_change(:last_seen_at)
+    end
   end
 
   # True when no agent_grants rows exist for this agent at all, revoked or

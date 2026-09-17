@@ -14,7 +14,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 
 - Responsive channel workspace, light/dark themes, member presence, and Markdown composition.
 - Message context menus, quick/grouped reactions, normal-composer editing, replies with notification choice, forwarding, and channel threads.
-- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels and Stage channels remain future work.
+- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels with visible participants, join/leave controls, and text chat are live. Stage channels remain future work.
 - Personal activity inbox and human-owned work threads with status, change history, and a workspace-wide work list.
 - Open Roles feed and existing bot API. These do not yet provide the agent identity model described below.
 - Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md), now automated end to end by the image-publish and deploy workflows in [deploy/gcp/README.md](deploy/gcp/README.md).
@@ -43,7 +43,7 @@ Done when a contributor can clone the default branch, run the app and checks, an
 
 ### 2. Channel types and richer real-time spaces
 
-The one-to-one DM audio/screen-sharing/camera slice is live, including invitations, ringing, and missed-call notifications.
+The one-to-one DM audio/screen-sharing/camera slice is live, including invitations, ringing, and missed-call notifications. The persistent voice-channel slice is live as well: discoverable voice channels with visible participants, join/leave controls, text chat, and enforced access removal (see [voice channels](docs/voice-channels.md)).
 
 - One-to-one Huddles directly inside a DM, with a discoverable start/join control, a way to notify the other participant, audio, screen sharing, and camera video, reconnect, and leave/end behavior. Only the two DM participants can access the call or its activity; invitation, missed-call, and notification behavior is defined in the feature design.
 - Persistent voice channels with visible participants, join/leave controls, and reconnect behavior.
@@ -52,9 +52,9 @@ The one-to-one DM audio/screen-sharing/camera slice is live, including invitatio
 - Streaming with explicit presenter/viewer behavior and quality controls, building on existing screen sharing where practical.
 - Agent message boards/channels for ongoing work, readable results, and human participation.
 
-Follow the live one-to-one DM Huddles slice with one persistent voice-channel experience before Stage and streaming expansion. Reuse the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
+The live one-to-one DM Huddles slice was followed by one persistent voice-channel experience before Stage and streaming expansion. It reuses the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
 
-Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. The next slice adds a discoverable persistent voice channel and its text chat, with access removal enforced throughout.
+Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. Done for the next slice when members find a persistent voice channel, see who is in it, join and leave with working text chat, and lose the call along with the room when removed.
 
 ### 3. AI agents as first-class participants
 
@@ -83,7 +83,7 @@ Done for the first slice when a linked PR renders current context, receives rele
 
 ### 5. Events and Google Calendar
 
-Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). Google Calendar sync, recurrence, and linking an event to a text, voice, or Stage channel remain follow-ups.
+Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). One-way Google Calendar publishing for connected attendees is live; see [Google Calendar](docs/google-calendar.md). Recurrence and linking an event to a text, voice, or Stage channel remain follow-ups.
 
 - Google Calendar connection so opted-in events can appear in a participant's calendar.
 - Define the source of truth and attendee consent before choosing one-way publishing or two-way synchronization.
@@ -132,6 +132,8 @@ Done for the first slice when members can turn a channel thread into work, assig
 - Later: administrator-uploaded workspace icons with their own names, and room or agent avatars drawn from the same set.
 
 Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
+
+**Status:** first slice shipped. Twenty-seven brand icons (Simple Icons, CC0) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Still open: Microsoft, Amazon, AWS, xAI, and DeepSeek are not in the vendored set and need another source, and uploaded workspace icons are not started.
 
 ## Proposed additions
 

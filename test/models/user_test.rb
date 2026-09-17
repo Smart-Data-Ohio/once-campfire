@@ -30,6 +30,29 @@ class UserTest < ActiveSupport::TestCase
     end
   end
 
+  test "deactivating enqueues calendar cleanup syncs that remove the user's entries" do
+    user = users(:david)
+    EventCalendarEntry.create!(event: events(:launch_party), user:, google_event_id: "stale" * 8)
+
+    assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ events(:launch_party).id, user.id ]) do
+      user.deactivate
+    end
+
+    perform_enqueued_jobs only: Calendar::SyncEntryJob
+
+    assert_not EventCalendarEntry.exists?(user:)
+  end
+
+  test "deactivating disconnects the user's Google account" do
+    account = GoogleAccount.create!(user: users(:david), email: "david@gmail.test",
+      refresh_token: "refresh-token", access_token: "access-token", access_token_expires_at: 1.hour.from_now)
+
+    users(:david).deactivate
+
+    assert_equal "Account deactivated", account.reload.disconnected_reason
+    assert_not_predicate account, :usable?
+  end
+
   test "github logins are unique among present values" do
     users(:david).update!(github_login: "david-gh")
     users(:jason).github_login = "David-GH"

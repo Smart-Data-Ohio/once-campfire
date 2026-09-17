@@ -59,6 +59,23 @@
         </div>
       </section>
 
+      <section class="sidebar-section sidebar-section--voice rooms" aria-labelledby="voice-heading">
+        <header class="sidebar-section__header">
+          <h2 id="voice-heading">Voice</h2>
+          <% if Current.user.administrator? || !Current.account.settings.restrict_room_creation_to_administrators? %>
+            <%= link_to new_rooms_voice_path, class: "btn sidebar-section__add", aria: { label: "New voice channel" }, title: "New voice channel" do %>
+              <%= image_tag "add.svg", size: 16, aria: { hidden: "true" } %>
+            <% end %>
+          <% end %>
+        </header>
+
+        <div id="voice_rooms" class="sidebar-list" data-controller="sorted-list">
+          <% @voice_memberships.each do |membership| %>
+            <%= render "users/sidebars/rooms/voice", room: membership.room, unread: membership.unread? %>
+          <% end %>
+        </div>
+      </section>
+
       <turbo-frame id="direct_rooms_control" target="_top">
         <section class="sidebar-section" aria-labelledby="direct-messages-heading">
           <header class="sidebar-section__header">

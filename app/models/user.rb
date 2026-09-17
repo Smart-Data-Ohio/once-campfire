@@ -12,6 +12,9 @@ class User < ApplicationRecord
 
   has_many :push_subscriptions, class_name: "Push::Subscription", dependent: :delete_all
 
+  has_one :google_account, dependent: :destroy
+  has_many :event_calendar_entries, dependent: :destroy
+
   has_many :boosts, dependent: :destroy, foreign_key: :booster_id
   has_many :searches, dependent: :delete_all
 
@@ -50,16 +53,24 @@ class User < ApplicationRecord
   end
 
   def deactivate
+    calendar_event_ids = nil
+
     transaction do
       close_remote_connections
 
+      # delete_all skips the membership hook, so capture the entries now
+      # for cleanup syncs after commit.
+      calendar_event_ids = event_calendar_entries.pluck(:event_id)
       memberships.without_direct_rooms.delete_all
       push_subscriptions.delete_all
       searches.delete_all
       sessions.delete_all
+      google_account&.mark_disconnected!("Account deactivated")
 
       update! status: :deactivated, email_address: deactived_email_address
     end
+
+    calendar_event_ids.each { |event_id| Calendar::SyncEntryJob.perform_later(event_id, id) }
   end
 
   def reset_remote_connections

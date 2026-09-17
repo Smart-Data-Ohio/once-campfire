@@ -1,0 +1,18 @@
+<% participants = HuddleGrant.participants_for(room) %>
+<% max_avatars = placement == :header ? 5 : 3 %>
+<span id="<%= dom_id(room, :"#{placement}_voice_participants") %>"
+      class="voice-stack<%= " voice-stack--live" if participants.any? %>"
+      role="img"
+      aria-label="<%= participants.any? ? "#{participants.count} in voice: #{participants.map(&:name).to_sentence}" : "Nobody in voice" %>"
+      data-controller="huddle-participants"
+      data-huddle-participants-url-value="<%= participants_room_huddle_path(room) %>"
+      data-huddle-participants-max-value="<%= max_avatars %>"
+      data-huddle-participants-interval-value="15000">
+  <span class="voice-stack__avatars" data-huddle-participants-target="avatars">
+    <% participants.first(max_avatars).each do |participant| %>
+      <%= image_tag fresh_user_avatar_path(participant), size: 20, alt: "", title: participant.name,
+            class: "voice-stack__avatar", data: { user_id: participant.id } %>
+    <% end %>
+  </span>
+  <span class="voice-stack__count" data-huddle-participants-target="count" <%= "hidden" unless participants.any? %>><%= participants.count %></span>
+</span>

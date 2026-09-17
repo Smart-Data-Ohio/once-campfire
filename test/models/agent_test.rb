@@ -314,6 +314,19 @@ class AgentTest < ActiveSupport::TestCase
     end
   end
 
+  test "touch_last_seen_at writes at most once when the throttle races" do
+    agent = agents(:bender_agent)
+    agent.update_column(:last_seen_at, nil)
+
+    # Simulate a concurrent request that won the race after this instance
+    # loaded a nil value: the conditional UPDATE must see the fresh row.
+    Agent.where(id: agent.id).update_all(last_seen_at: 10.seconds.ago)
+    winner = Agent.find(agent.id).last_seen_at
+
+    agent.touch_last_seen!
+    assert_equal winner.to_i, agent.reload.last_seen_at.to_i
+  end
+
   test "last_seen_at touch alone broadcasts nothing" do
     agent = agents(:bender_agent)
 

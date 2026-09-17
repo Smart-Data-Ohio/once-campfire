@@ -60,6 +60,7 @@ Rails.application.routes.draw do
 
   namespace :autocompletable do
     resources :users, only: :index
+    resources :icons, only: :index
   end
 
   get "agents", to: "agents/directory#index"
@@ -117,7 +118,9 @@ Rails.application.routes.draw do
         patch :cancel, on: :member
         resource :attendance, only: :update, controller: "events/attendances"
       end
-      resource :huddle, only: %i[ show create ]
+      resource :huddle, only: %i[ show create ] do
+        get :participants
+      end
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
@@ -131,6 +134,7 @@ Rails.application.routes.draw do
     resources :opens
     resources :closeds
     resources :directs
+    resources :voices
   end
 
   resources :messages do
@@ -160,6 +164,12 @@ Rails.application.routes.draw do
 
   namespace :github do
     post "webhooks", to: "webhooks#create"
+  end
+
+  namespace :google do
+    post "connect", to: "connections#connect"
+    get "callback", to: "connections#callback"
+    delete "connection", to: "connections#destroy"
   end
 
   get "webmanifest"    => "pwa#manifest"
