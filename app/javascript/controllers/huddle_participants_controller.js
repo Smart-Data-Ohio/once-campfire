@@ -5,7 +5,7 @@ import { Controller } from "@hotwired/stimulus"
 // first seen in the call; the interval below only covers grants that quietly
 // expire, so it must not run more often than every 15 seconds.
 export default class extends Controller {
-  static targets = [ "avatars", "count", "description" ]
+  static targets = [ "avatars", "count" ]
   static values = { url: String, max: Number, interval: Number }
 
   connect() {
@@ -54,8 +54,8 @@ export default class extends Controller {
 
     this.countTarget.hidden = participants.length === 0
     this.countTarget.textContent = participants.length
-    this.descriptionTarget.textContent = participants.length > 0
+    this.element.setAttribute("aria-label", participants.length > 0
       ? `${participants.length} in voice: ${participants.map(participant => participant.name).join(", ")}`
-      : "Nobody in voice"
+      : "Nobody in voice")
   }
 }

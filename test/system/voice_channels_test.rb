@@ -50,6 +50,20 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
       assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']"
     end
+
+    # The presence stack sits at the row's trailing edge; if the row ever
+    # matches the circle-button style again, its children stack on top of
+    # each other instead.
+    label_left, trailing_left = page.evaluate_script(<<~JS)
+      (() => {
+        const row = document.querySelector("#voice_rooms .voice-room");
+        return [
+          row.querySelector(".sidebar-item__label").getBoundingClientRect().left,
+          row.querySelector(".voice-room__trailing").getBoundingClientRect().left
+        ];
+      })()
+    JS
+    assert_operator trailing_left, :>, label_left
     within ".room-header__actions" do
       assert_selector ".voice-stack--live", wait: 10
       assert_selector ".voice-stack__count", text: "2"
