@@ -339,6 +339,10 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
     connect_google!(@david, scopes: DRIVE_SCOPES)
     connect_google!(jason, scopes: DRIVE_SCOPES)
     list_stub = stub_google_drive_list
+    # The throttle counter is bucketed by wall-clock minute, so freeze time
+    # well inside a minute; otherwise 31 requests straddling a boundary
+    # start a fresh bucket and the last one is not throttled.
+    travel_to Time.current.beginning_of_minute + 5.seconds
 
     with_memory_cache do
       30.times do
