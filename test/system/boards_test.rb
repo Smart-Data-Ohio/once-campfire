@@ -64,6 +64,19 @@ class BoardsTest < ApplicationSystemTestCase
     end
   end
 
+  test "board pages align to the top under the header" do
+    board = Rooms::Board.create_for({ name: "Launch", creator: users(:david) }, users: [ users(:david) ])
+    post = ChannelThread.create!(room: board, creator: users(:david), name: "Ship it", work_status: "planned")
+
+    visit room_path(board)
+    assert_selector ".board__header h1", text: "Launch"
+    assert_top_aligned ".board__header", "board index"
+
+    visit room_thread_path(board, post)
+    assert_selector ".board-post__header h1", text: "Ship it"
+    assert_top_aligned ".board-post__header", "post page"
+  end
+
   test "a non-member cannot open the board" do
     board = Rooms::Board.create_for({ name: "Secret", creator: users(:david) }, users: [ users(:david) ])
 
@@ -76,4 +89,16 @@ class BoardsTest < ApplicationSystemTestCase
       assert_not_equal room_path(board), current_path
     end
   end
+
+  private
+    def assert_top_aligned(selector, label)
+      gap = evaluate_script(<<~JS, selector)
+        ((sel) => {
+          const header = document.querySelector(sel);
+          const nav = document.querySelector("#nav");
+          return header.getBoundingClientRect().top - nav.getBoundingClientRect().bottom;
+        })(arguments[0])
+      JS
+      assert gap < 60, "expected the #{label} directly under the header, gap was #{gap}px"
+    end
 end

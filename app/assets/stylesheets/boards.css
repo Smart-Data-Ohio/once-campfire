@@ -1,8 +1,10 @@
 .board {
   inline-size: min(64rem, 100%);
-  margin: 0 auto;
+  margin-block: 0 auto;
+  margin-inline: auto;
   overflow-y: auto;
   padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 3rem);
+  padding-block-start: 1rem;
 }
 
 .board__header {
@@ -235,9 +237,11 @@
 .board-post,
 .board-post-form {
   inline-size: min(56rem, 100%);
-  margin: 0 auto;
+  margin-block: 0 auto;
+  margin-inline: auto;
   overflow-y: auto;
   padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 3rem);
+  padding-block-start: 1rem;
 }
 
 .board-post__eyebrow,
