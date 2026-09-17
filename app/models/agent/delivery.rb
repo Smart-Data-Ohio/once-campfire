@@ -25,7 +25,7 @@ class Agent::Delivery
           message: message,
           actor_id: message.creator_id,
           outcome: "delivered",
-          metadata: { "hop" => message_hop }
+          metadata: { "hop" => message_hop, "thread_id" => message.thread_id }
         )
       end
 
