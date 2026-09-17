@@ -1,8 +1,12 @@
 import { Controller } from "@hotwired/stimulus"
 import HuddleNoiseSuppressor, { noiseSuppressionSupported } from "lib/huddle_noise_suppressor"
+import HuddleMicrophoneMeter from "lib/huddle/meter"
+import { audioOutputSupported, deviceLabel, listMediaDevices, loadDevicePreferences, storeDevicePreference } from "lib/huddle/devices"
+import { formatConnectionStats, summarizeConnectionStats } from "lib/huddle/stats"
 
 const AUTH_CHECK_INTERVAL = 45_000
-const ACTIVE_STATES = [ "connecting", "connected", "reconnecting" ]
+const CONNECTION_STATS_INTERVAL = 2_000
+const ACTIVE_STATES = [ "prejoin", "connecting", "connected", "reconnecting" ]
 const NOISE_SUPPRESSION_STORAGE_KEY = "campfire.huddle.noiseSuppression"
 let liveKitPromise
 
@@ -11,12 +15,26 @@ const loadLiveKit = () => liveKitPromise ||= import("livekit-client").catch(erro
   throw error
 })
 
+const stopMediaStream = (stream) => {
+  for (const track of stream?.getTracks() || []) {
+    try {
+      track.stop()
+    } catch (error) {
+      // A track that is already gone needs no stopping.
+    }
+  }
+}
+
 export default class extends Controller {
   static targets = [
-    "activeControls", "camera", "cameraLabel", "cameras", "leaveLabel", "mute", "muteLabel",
+    "activeControls", "camera", "cameraLabel", "cameraSelect", "cameras", "checkDevices",
+    "checkError", "checkJoin", "checkRetry", "connection", "connectionDetails", "devicesBlock",
+    "devicesDone", "leaveLabel", "meter", "meterFill", "microphoneSelect", "mute", "muteLabel",
     "noise", "noiseLabel", "notice", "participantCount", "participantList", "people",
-    "resumeAudio", "retry", "roomName", "screens", "settings", "share", "shareLabel",
-    "sharing", "sharingExpand", "sharingName", "status"
+    "prejoinMeter", "prejoinMeterFill", "preview", "previewWrap", "resumeAudio",
+    "retry", "roomName", "screens", "settings", "settingsRow", "share", "shareLabel",
+    "sharing", "sharingExpand", "sharingName", "speakerRow", "speakerSelect",
+    "statJitter", "statLoss", "statRtt", "statRx", "statSent", "statTransport", "status"
   ]
   static values = {
     currentUserId: Number,
@@ -38,6 +56,15 @@ export default class extends Controller {
     this.fullscreenTrack = null
     this.noiseSuppressionAvailable = noiseSuppressionSupported()
     this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
+    this.microphoneMeter = null
+    this.previewOperation = 0
+    this.previewAudioStream = null
+    this.previewVideoStream = null
+    this.devicesOpen = false
+    this.connectionQuality = "unknown"
+    this.connectionStatsTimer = null
+    this.connectionStatsSampling = false
+    this.connectionStatsSummary = null
   }
 
   connect() {
@@ -54,6 +81,7 @@ export default class extends Controller {
     document.addEventListener("webkitfullscreenchange", this.fullscreenChanged, options)
     document.addEventListener("turbo:before-render", this.beforeRender, options)
     document.addEventListener("visibilitychange", this.visibilityChanged, options)
+    navigator.mediaDevices?.addEventListener?.("devicechange", this.devicesChanged, options)
 
     // A Turbo navigation carries the panel over with its expanded screen intact,
     // but the scroll lock and the Escape handler live outside it.
@@ -64,6 +92,7 @@ export default class extends Controller {
 
     this.#startAuthenticationChecks()
     this.#updateNoiseSuppressionControl()
+    this.speakerRowTarget.hidden = !audioOutputSupported()
     this.#renderState()
   }
 
@@ -102,19 +131,34 @@ export default class extends Controller {
     // Storage is the preference; a transient processor failure only turned it off
     // in memory, so a fresh join gets a fresh attempt.
     this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
-    this.#setState("connecting", `Connecting to ${requestedRoomName}…`)
+
+    // A browser that has never granted microphone access stops at the device
+    // check first. Returning users skip it; a denied permission skips it too so
+    // the denial surfaces through the usual failure notice.
+    if (await this.#shouldShowPrejoinCheck()) {
+      if (operation !== this.operation) return
+      await this.#enterPrejoin(operation)
+      return
+    }
+    if (operation !== this.operation) return
+
+    await this.#connectRoom(operation)
+  }
+
+  async #connectRoom(operation) {
+    this.#setState("connecting", `Connecting to ${this.roomName}…`)
 
     let room
 
     try {
       const [ credentials, liveKit ] = await Promise.all([
-        this.#requestCredentials(requestedRoomId),
+        this.#requestCredentials(this.roomId),
         loadLiveKit()
       ])
       if (operation !== this.operation) return
 
       this.liveKit = liveKit
-      this.roomName = credentials.room?.name || requestedRoomName
+      this.roomName = credentials.room?.name || this.roomName
       this.identity = credentials.identity
       this.roomNameTarget.textContent = this.roomName
 
@@ -141,6 +185,10 @@ export default class extends Controller {
       this.#updateMediaControls()
       this.#updateAudioPlaybackControl()
       this.#startAuthenticationChecks()
+      this.#applyStoredAudioOutput(room)
+      this.#refreshDeviceLists()
+      this.#startMicrophoneMeter()
+      this.#resetConnectionIndicator(room)
 
       // Noise suppression is applied after the huddle is usable. A processor
       // that cannot start must never keep somebody out of the conversation.
@@ -160,6 +208,101 @@ export default class extends Controller {
     if (!this.roomId) return
 
     this.join({ detail: { roomId: this.roomId, roomName: this.roomName } })
+  }
+
+  confirmPrejoinJoin = async () => {
+    if (this.state !== "prejoin" || this.checkJoinTarget.disabled) return
+
+    const operation = this.operation
+    this.#storeSelectedDevices()
+    this.#stopPreview()
+    await this.#connectRoom(operation)
+  }
+
+  retryPrejoin = async () => {
+    if (this.state !== "prejoin") return
+
+    await this.#startPreview()
+  }
+
+  toggleDevices = () => {
+    if (this.state !== "connected" && this.state !== "reconnecting") return
+
+    this.devicesOpen = !this.devicesOpen
+    if (this.devicesOpen) this.#refreshDeviceLists()
+    this.#renderDevicesBlock()
+  }
+
+  closeDevices = () => {
+    this.devicesOpen = false
+    this.#renderDevicesBlock()
+  }
+
+  devicesChanged = () => {
+    // The room retargets its own tracks when a device vanishes; this only keeps
+    // the pickers truthful. In the pre-join check it also re-acquires the
+    // preview when the chosen device disappeared with it.
+    if (this.state !== "prejoin" && !this.#devicesBlockVisible()) return
+
+    const microphoneId = this.microphoneSelectTarget.value
+    const cameraId = this.cameraSelectTarget.value
+
+    this.#refreshDeviceLists().then(() => {
+      if (this.state !== "prejoin") return
+      if (this.microphoneSelectTarget.value !== microphoneId || this.cameraSelectTarget.value !== cameraId) {
+        this.#startPreview()
+      }
+    })
+  }
+
+  microphoneChanged = async () => {
+    const deviceId = this.microphoneSelectTarget.value
+    storeDevicePreference("audioinput", deviceId)
+
+    if (this.state === "prejoin") {
+      await this.#startPreview()
+      return
+    }
+
+    await this.#switchDevice("audioinput", this.microphoneSelectTarget)
+  }
+
+  speakerChanged = async () => {
+    // Before joining there is nothing to retarget, so the choice is only
+    // stored and applied on connect.
+    storeDevicePreference("audiooutput", this.speakerSelectTarget.value)
+    if (this.state === "prejoin") return
+
+    await this.#switchDevice("audiooutput", this.speakerSelectTarget)
+  }
+
+  cameraChanged = async () => {
+    const deviceId = this.cameraSelectTarget.value
+    storeDevicePreference("videoinput", deviceId)
+
+    if (this.state === "prejoin") {
+      await this.#startPreviewVideo()
+      return
+    }
+
+    await this.#switchDevice("videoinput", this.cameraSelectTarget)
+  }
+
+  toggleConnectionDetails = () => {
+    if (this.state !== "connected" && this.state !== "reconnecting") return
+
+    const open = this.connectionDetailsTarget.hidden
+    this.connectionDetailsTarget.hidden = !open
+    this.connectionTarget.setAttribute("aria-expanded", String(open))
+    this.#updateConnectionLabel()
+
+    // Statistics are sampled only while the panel is open, never in the
+    // background, and never sent anywhere.
+    if (open) {
+      this.#startConnectionSampling()
+    } else {
+      this.#stopConnectionSampling()
+    }
   }
 
   leave = async () => {
@@ -186,6 +329,11 @@ export default class extends Controller {
         this.#updateMediaControls()
         this.#renderRoster()
         this.#applyNoiseSuppression(room)
+        if (room.localParticipant.isMicrophoneEnabled) {
+          this.#startMicrophoneMeter()
+        } else {
+          this.#stopMicrophoneMeter()
+        }
       }
     } catch (error) {
       if (room === this.room) this.#showTemporaryStatus("The microphone could not be changed.")
@@ -384,6 +532,409 @@ export default class extends Controller {
     this.#endForAuthenticationChange()
   }
 
+  // The first join in a browser stops at the device check; returning users
+  // never see it. A denied permission skips it too, so the denial keeps its
+  // existing failure notice instead of opening a second error path.
+  async #shouldShowPrejoinCheck() {
+    try {
+      const status = await navigator.permissions?.query({ name: "microphone" })
+      if (status) return status.state === "prompt"
+    } catch (error) {
+      // Browsers without the Permissions API fall through to device labels.
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      return !devices.some((device) => device.label)
+    } catch (error) {
+      return true
+    }
+  }
+
+  // The check runs entirely on local getUserMedia streams: no credentials are
+  // requested and nothing is published to LiveKit until Join is confirmed.
+  async #enterPrejoin(operation) {
+    this.#setState("prejoin", "Check your devices")
+
+    try {
+      this.liveKit = await loadLiveKit()
+    } catch (error) {
+      if (operation !== this.operation) return
+      await this.#disconnectCurrentRoom()
+      this.#setState("failed", this.#joinErrorMessage(error), true)
+      return
+    }
+    if (operation !== this.operation || this.state !== "prejoin") return
+
+    await this.#refreshDeviceLists()
+    if (operation !== this.operation || this.state !== "prejoin") return
+
+    await this.#startPreview()
+  }
+
+  async #startPreview() {
+    const preview = ++this.previewOperation
+    this.#stopPreviewStreams()
+    this.#stopMicrophoneMeter()
+    this.#showCheckError("")
+    this.checkJoinTarget.disabled = true
+    this.checkRetryTarget.hidden = true
+    this.prejoinMeterTarget.hidden = true
+
+    const audioTrack = await this.#acquirePreviewAudio(preview)
+    if (preview !== this.previewOperation || this.state !== "prejoin") {
+      audioTrack?.stop()
+      return
+    }
+    if (!audioTrack) return
+
+    this.#startMicrophoneMeterOn({ mediaStreamTrack: audioTrack })
+    this.prejoinMeterTarget.hidden = false
+    this.checkJoinTarget.disabled = false
+
+    await this.#startPreviewVideo()
+  }
+
+  async #acquirePreviewAudio(preview) {
+    // The pickers are authoritative here, not storage, so the stored device id
+    // is swapped for the selected one.
+    const { deviceId: _stored, ...audio } = this.#audioCaptureOptions()
+    const selected = this.microphoneSelectTarget.value
+    if (selected) audio.deviceId = { exact: selected }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio, video: false })
+      const track = stream.getAudioTracks()[0]
+
+      if (preview !== this.previewOperation || this.state !== "prejoin" || !track) {
+        stopMediaStream(stream)
+        return null
+      }
+
+      this.previewAudioStream = stream
+      return track
+    } catch (error) {
+      if (preview !== this.previewOperation || this.state !== "prejoin") return null
+
+      // A refresh covers the device that vanished between listing and capture.
+      await this.#refreshDeviceLists()
+      this.#showCheckError(this.#permissionWasDenied(error)
+        ? "Microphone access was denied. Allow microphone access and try again. You are not connected."
+        : "The microphone could not be started. Check your device and try again.")
+      this.checkRetryTarget.hidden = false
+      return null
+    }
+  }
+
+  async #startPreviewVideo() {
+    const preview = ++this.previewOperation
+    this.#stopPreviewVideo()
+    this.previewWrapTarget.hidden = true
+
+    const deviceId = this.cameraSelectTarget.value
+    if (!deviceId) return
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
+      })
+
+      if (preview !== this.previewOperation || this.state !== "prejoin") {
+        stopMediaStream(stream)
+        return
+      }
+
+      this.previewVideoStream = stream
+      this.previewTarget.srcObject = stream
+      this.previewWrapTarget.hidden = false
+    } catch (error) {
+      if (preview !== this.previewOperation || this.state !== "prejoin") return
+
+      // A camera that will not preview must not block joining audio-only; the
+      // pickers stay so another camera can be chosen instead.
+      await this.#refreshDeviceLists()
+      this.#showCheckError("The camera preview could not be started. You can still join with your microphone.")
+    }
+  }
+
+  #stopPreview() {
+    ++this.previewOperation
+    this.#stopMicrophoneMeter()
+    this.#stopPreviewStreams()
+    this.previewTarget.srcObject = null
+    this.previewWrapTarget.hidden = true
+    this.prejoinMeterTarget.hidden = true
+  }
+
+  #stopPreviewStreams() {
+    stopMediaStream(this.previewAudioStream)
+    this.previewAudioStream = null
+    this.#stopPreviewVideo()
+  }
+
+  #stopPreviewVideo() {
+    stopMediaStream(this.previewVideoStream)
+    this.previewVideoStream = null
+    if (this.previewTarget.srcObject) this.previewTarget.srcObject = null
+  }
+
+  #showCheckError(message) {
+    this.checkErrorTarget.textContent = message || ""
+    this.checkErrorTarget.hidden = !message
+  }
+
+  #startMicrophoneMeter() {
+    if (this.state !== "connected" || !this.room?.localParticipant.isMicrophoneEnabled) return
+    if (!this.liveKit) return
+
+    const track = this.room.localParticipant
+      .getTrackPublication?.(this.liveKit.Track.Source.Microphone)?.audioTrack
+    if (track) this.#startMicrophoneMeterOn(track)
+  }
+
+  #startMicrophoneMeterOn(track) {
+    if (!this.liveKit) return
+
+    this.microphoneMeter ||= new HuddleMicrophoneMeter(
+      this.liveKit.createAudioAnalyser,
+      (level) => this.#renderMeterLevel(level)
+    )
+    this.microphoneMeter.start(track)
+  }
+
+  #stopMicrophoneMeter() {
+    this.microphoneMeter?.stop()
+    this.#renderMeterLevel(0)
+  }
+
+  #renderMeterLevel(level) {
+    for (const [ meter, fill ] of [
+      [ this.meterTarget, this.meterFillTarget ],
+      [ this.prejoinMeterTarget, this.prejoinMeterFillTarget ]
+    ]) {
+      meter.setAttribute("aria-valuenow", String(level))
+      fill.style.width = `${level}%`
+    }
+  }
+
+  async #refreshDeviceLists() {
+    let grouped
+
+    try {
+      grouped = await listMediaDevices()
+    } catch (error) {
+      return
+    }
+
+    const preferences = loadDevicePreferences()
+    this.#fillDeviceSelect(this.microphoneSelectTarget, grouped.audioinput, "audioinput",
+      this.#activeDeviceId("audioinput") || preferences.audioinput)
+    if (audioOutputSupported()) {
+      this.#fillDeviceSelect(this.speakerSelectTarget, grouped.audiooutput, "audiooutput",
+        this.#activeDeviceId("audiooutput") || preferences.audiooutput)
+    }
+    this.#fillDeviceSelect(this.cameraSelectTarget, grouped.videoinput, "videoinput",
+      this.#activeDeviceId("videoinput") || preferences.videoinput)
+  }
+
+  #fillDeviceSelect(select, devices, kind, preferred) {
+    const current = select.value
+    select.replaceChildren()
+
+    if (!devices.length) {
+      const option = document.createElement("option")
+      const names = { audioinput: "No microphones found", audiooutput: "No speakers found", videoinput: "No cameras found" }
+      option.value = ""
+      option.textContent = names[kind] || "No devices found"
+      select.appendChild(option)
+      return
+    }
+
+    devices.forEach((device, index) => {
+      const option = document.createElement("option")
+      option.value = device.deviceId
+      option.textContent = deviceLabel(device, kind, index)
+      select.appendChild(option)
+    })
+
+    const ids = new Set(devices.map((device) => device.deviceId))
+    if (current && ids.has(current)) {
+      select.value = current
+    } else if (preferred && ids.has(preferred)) {
+      select.value = preferred
+    } else {
+      select.selectedIndex = 0
+    }
+  }
+
+  #activeDeviceId(kind) {
+    try {
+      const active = this.room?.getActiveDevice?.(kind)
+      return active && active !== "default" ? active : ""
+    } catch (error) {
+      return ""
+    }
+  }
+
+  #storeSelectedDevices() {
+    storeDevicePreference("audioinput", this.microphoneSelectTarget.value)
+    if (audioOutputSupported()) storeDevicePreference("audiooutput", this.speakerSelectTarget.value)
+    storeDevicePreference("videoinput", this.cameraSelectTarget.value)
+  }
+
+  async #switchDevice(kind, select) {
+    const room = this.room
+    if (!room || this.state !== "connected") return
+
+    const deviceId = select.value
+    if (!deviceId) {
+      this.#refreshDeviceLists()
+      return
+    }
+
+    this.#setDeviceSelectsDisabled(true)
+    try {
+      await room.switchActiveDevice(kind, deviceId)
+      if (room !== this.room) return
+      storeDevicePreference(kind, deviceId)
+
+      // Switching replaces the underlying track: the meter re-attaches to the
+      // new one, and the noise suppressor re-syncs (a no-op when the restart
+      // carried it over).
+      if (kind === "audioinput") {
+        this.#startMicrophoneMeter()
+        this.#applyNoiseSuppression(room)
+      }
+    } catch (error) {
+      if (room !== this.room) return
+      const names = { audioinput: "microphone", audiooutput: "speaker", videoinput: "camera" }
+      this.#showTemporaryStatus(`The ${names[kind] || "device"} could not be switched. Try again.`)
+      await this.#refreshDeviceLists()
+    } finally {
+      const live = this.state === "connected" || this.state === "prejoin"
+      this.#setDeviceSelectsDisabled(!live)
+    }
+  }
+
+  #setDeviceSelectsDisabled(disabled) {
+    this.microphoneSelectTarget.disabled = disabled
+    this.speakerSelectTarget.disabled = disabled
+    this.cameraSelectTarget.disabled = disabled
+  }
+
+  async #applyStoredAudioOutput(room) {
+    if (!audioOutputSupported()) return
+
+    const deviceId = loadDevicePreferences().audiooutput
+    if (!deviceId) return
+
+    try {
+      const { audiooutput } = await listMediaDevices()
+      if (!audiooutput.some((device) => device.deviceId === deviceId)) return
+      await room.switchActiveDevice("audiooutput", deviceId)
+    } catch (error) {
+      // Output selection is a preference, never a reason to fail a join.
+    }
+  }
+
+  #resetConnectionIndicator(room) {
+    this.connectionStatsSummary = null
+    this.#updateConnectionIndicator(room.localParticipant.connectionQuality || "unknown")
+  }
+
+  // The server reports four states; the header compresses them to three.
+  // Unknown — before the first update — reads as fair rather than good, so an
+  // unmeasured connection never claims to be healthy.
+  #updateConnectionIndicator(quality) {
+    this.connectionQuality = quality || "unknown"
+    const level = quality === "excellent"
+      ? "good"
+      : quality === "poor" || quality === "lost" ? "poor" : "fair"
+
+    this.connectionTarget.dataset.quality = level
+    this.#updateConnectionLabel()
+  }
+
+  #updateConnectionLabel() {
+    const level = this.connectionTarget.dataset.quality || "fair"
+    const action = this.connectionDetailsTarget.hidden ? "Show details" : "Hide details"
+    this.connectionTarget.setAttribute("aria-label", `Connection quality: ${level}. ${action}.`)
+  }
+
+  #startConnectionSampling() {
+    this.#stopConnectionSampling()
+    this.#sampleConnectionStats()
+    this.connectionStatsTimer = setInterval(() => this.#sampleConnectionStats(), CONNECTION_STATS_INTERVAL)
+  }
+
+  #stopConnectionSampling() {
+    clearInterval(this.connectionStatsTimer)
+    this.connectionStatsTimer = null
+    this.connectionStatsSampling = false
+  }
+
+  async #sampleConnectionStats() {
+    const room = this.room
+    if (!room || !this.liveKit || this.connectionStatsSampling) return
+    if (this.state !== "connected" && this.state !== "reconnecting") return
+    if (this.connectionDetailsTarget.hidden) return
+
+    this.connectionStatsSampling = true
+    try {
+      const { Track } = this.liveKit
+      let publisherReport = null
+      let subscriberReport = null
+
+      try {
+        const microphone = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+        publisherReport = await microphone?.getRTCStatsReport?.()
+      } catch (error) {
+        // A missing sender report leaves the last sample on screen.
+      }
+
+      try {
+        subscriberReport = await this.#subscriberStatsTrack(room)?.getRTCStatsReport?.()
+      } catch (error) {
+        // Alone in a room there is nothing subscribed to.
+      }
+
+      if (room !== this.room || this.connectionDetailsTarget.hidden) return
+
+      this.connectionStatsSummary = summarizeConnectionStats({
+        publisherReport,
+        subscriberReport,
+        previous: this.connectionStatsSummary?.previous
+      })
+      const formatted = formatConnectionStats(this.connectionStatsSummary)
+      this.statRttTarget.textContent = formatted.rtt
+      this.statLossTarget.textContent = formatted.loss
+      this.statJitterTarget.textContent = formatted.jitter
+      this.statRxTarget.textContent = formatted.received
+      this.statSentTarget.textContent = formatted.sent
+      this.statTransportTarget.textContent = formatted.transport
+    } finally {
+      this.connectionStatsSampling = false
+    }
+  }
+
+  // Every subscribed track shares the subscriber peer connection, so the first
+  // audio track — falling back to any track — represents the path.
+  #subscriberStatsTrack(room) {
+    const { Track } = this.liveKit
+    let fallback = null
+
+    for (const participant of room.remoteParticipants.values()) {
+      for (const publication of participant.trackPublications.values()) {
+        if (!publication.track || !publication.isSubscribed) continue
+        if (publication.kind === Track.Kind.Audio) return publication.track
+        fallback ||= publication.track
+      }
+    }
+
+    return fallback
+  }
+
   #roomOptions(liveKit) {
     const { AudioPresets, ScreenSharePresets, VideoPresets } = liveKit
 
@@ -397,7 +948,7 @@ export default class extends Controller {
       // the SDK's own `videoDefaults` written out, so it changes no behavior
       // today and only pins it against upgrades.
       videoCaptureDefaults: {
-        deviceId: { ideal: "default" },
+        deviceId: this.#storedDeviceConstraint("videoinput", "default"),
         resolution: VideoPresets.h720.resolution
       },
       publishDefaults: {
@@ -427,7 +978,7 @@ export default class extends Controller {
   }
 
   #audioCaptureOptions() {
-    return {
+    const options = {
       autoGainControl: true,
       echoCancellation: true,
       noiseSuppression: true,
@@ -435,6 +986,21 @@ export default class extends Controller {
       // because it is an "ideal" constraint rather than a required one.
       voiceIsolation: true
     }
+
+    // The remembered microphone is an "ideal" constraint, so a device that
+    // vanished since last time falls back to the default silently instead of
+    // failing the join.
+    const microphoneId = loadDevicePreferences().audioinput
+    if (microphoneId) options.deviceId = { ideal: microphoneId }
+
+    return options
+  }
+
+  // Same silent fallback for the remembered camera. The camera toggle passes
+  // no capture options of its own, so it inherits this default.
+  #storedDeviceConstraint(kind, fallback) {
+    const deviceId = loadDevicePreferences()[kind]
+    return { ideal: deviceId || fallback }
   }
 
   async #startScreenShare(room) {
@@ -531,6 +1097,20 @@ export default class extends Controller {
       this.#updateMediaControls()
     })
     on(RoomEvent.AudioPlaybackStatusChanged, () => this.#updateAudioPlaybackControl())
+    on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      if (room === this.room && (!participant || participant === room.localParticipant)) {
+        this.#updateConnectionIndicator(quality)
+      }
+    })
+    on(RoomEvent.ActiveDeviceChanged, (kind, deviceId) => {
+      if (room !== this.room) return
+
+      // The SDK retargets tracks itself when a device vanishes; the pickers,
+      // the stored preference, and the meter follow it.
+      storeDevicePreference(kind, deviceId)
+      this.#refreshDeviceLists()
+      if (kind === "audioinput") this.#startMicrophoneMeter()
+    })
 
     this.roomListeners.set(room, listeners)
   }
@@ -549,6 +1129,9 @@ export default class extends Controller {
     this.#stopLocalTracks(room)
     this.#clearMedia()
     this.#stopAuthenticationChecks()
+    this.#stopPreview()
+    this.#stopMicrophoneMeter()
+    this.#stopConnectionSampling()
     this.#setState("failed", this.#disconnectMessage(reason), true, "Huddle ended")
   }
 
@@ -556,6 +1139,9 @@ export default class extends Controller {
     const room = this.room
     this.room = null
     this.#stopAuthenticationChecks()
+    this.#stopPreview()
+    this.#stopMicrophoneMeter()
+    this.#stopConnectionSampling()
 
     if (room) await this.#disconnectRoom(room)
 
@@ -1140,6 +1726,8 @@ export default class extends Controller {
     this.muteTarget.setAttribute("aria-pressed", String(!microphoneEnabled))
     this.muteTarget.classList.toggle("huddle__mute--muted", !microphoneEnabled)
     this.element.classList.toggle("huddle--muted", !microphoneEnabled)
+    // The meter only means something while the microphone is live.
+    this.meterTarget.hidden = !microphoneEnabled
     this.shareLabelTarget.textContent = screenShareEnabled ? "Stop sharing" : "Share screen"
     this.shareTarget.setAttribute("aria-pressed", String(screenShareEnabled))
     this.cameraLabelTarget.textContent = cameraEnabled ? "Camera on" : "Camera off"
@@ -1163,20 +1751,58 @@ export default class extends Controller {
     const reconnecting = state === "reconnecting"
     const failed = state === "failed"
     const connecting = state === "connecting"
+    const prejoin = state === "prejoin"
+    const live = connected || reconnecting
 
-    this.activeControlsTarget.hidden = !(connected || reconnecting)
-    this.settingsTarget.hidden = !(connected || reconnecting)
-    this.peopleTarget.hidden = !(connected || reconnecting)
+    // A fresh join or a failure closes the in-call device step; the pre-join
+    // check shows it unconditionally as the step itself.
+    if (!live && !prejoin) this.devicesOpen = false
+
+    this.activeControlsTarget.hidden = !live
+    this.settingsTarget.hidden = !(live || prejoin)
+    this.peopleTarget.hidden = !live
+    this.connectionTarget.hidden = !live
     this.muteTarget.disabled = !connected
     this.shareTarget.disabled = !connected
     this.cameraTarget.disabled = !connected
+    this.microphoneSelectTarget.disabled = !(connected || prejoin)
+    this.speakerSelectTarget.disabled = !(connected || prejoin)
+    this.cameraSelectTarget.disabled = !(connected || prejoin)
     this.retryTarget.hidden = !failed
-    this.leaveLabelTarget.textContent = connecting ? "Cancel" : failed ? "Close" : "Leave"
+    this.leaveLabelTarget.textContent = connecting || prejoin ? "Cancel" : failed ? "Close" : "Leave"
     this.resumeAudioTarget.hidden = true
 
+    if (prejoin) {
+      this.checkJoinTarget.disabled = true
+      this.checkRetryTarget.hidden = true
+      this.#showCheckError("")
+    }
+    if (!live) this.connectionDetailsTarget.hidden = true
+
+    this.#renderDevicesBlock()
     if (!connected && !reconnecting) this.#renderRoster()
     this.#updateNoiseSuppressionControl()
+    this.#updateMediaControls()
     this.#renderSharingNotice()
+  }
+
+  #renderDevicesBlock() {
+    const prejoin = this.state === "prejoin"
+    const live = this.state === "connected" || this.state === "reconnecting"
+    const visible = prejoin || (live && this.devicesOpen)
+
+    this.devicesBlockTarget.hidden = !visible
+    this.settingsRowTarget.hidden = !live
+    this.checkJoinTarget.hidden = !prejoin
+    this.devicesDoneTarget.hidden = !live
+    this.checkDevicesTarget.setAttribute("aria-expanded", String(this.devicesOpen))
+    // The in-call preview slot belongs to the pre-join check; the live camera
+    // tile is the preview once joined.
+    if (!prejoin) this.previewWrapTarget.hidden = true
+  }
+
+  #devicesBlockVisible() {
+    return !this.devicesBlockTarget.hidden
   }
 
   #renderState() {
@@ -1294,6 +1920,9 @@ export default class extends Controller {
   #endForAuthenticationChange() {
     ++this.operation
     this.#stopAuthenticationChecks()
+    this.#stopPreview()
+    this.#stopMicrophoneMeter()
+    this.#stopConnectionSampling()
 
     const room = this.room
     this.room = null

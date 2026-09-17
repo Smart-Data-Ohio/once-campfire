@@ -206,8 +206,7 @@ class HuddlesTest < ApplicationSystemTestCase
     within("#sidebar") { click_link "Designers", exact: true }
     click_button "Leave", exact: true
     assert_no_selector "#channel-huddle:not([hidden])"
-    click_button "Join huddle"
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_selector "[data-huddle-target='camera'][aria-pressed='false']", text: "Camera off"
     assert_no_selector ".huddle__camera video"
   end
@@ -396,8 +395,7 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_equal "off", page.evaluate_script("window.localStorage.getItem('campfire.huddle.noiseSuppression')")
 
     click_button "Leave", exact: true
-    click_button "Join huddle"
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
 
     assert_selector "[data-huddle-target='noise'][aria-pressed='false']", text: "Noise suppression off"
     assert_nil microphone_processor_name
@@ -486,9 +484,7 @@ class HuddlesTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     break_noise_suppression
 
-    click_button "Join huddle"
-
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
     assert_selector "[data-huddle-target='status']", text: /Noise suppression couldn’t start/
@@ -509,33 +505,43 @@ class HuddlesTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     break_noise_suppression error: "NotSupportedError"
 
-    click_button "Join huddle"
-
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_media_received "audio"
     assert_selector "[data-huddle-target='noise'][disabled]", text: "Noise suppression unavailable"
     assert_nil microphone_processor_name
   end
 
-  test "denied microphone leaves no ghost participant and can be retried" do
-    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+  test "denied microphone stops the device check before anything is published and can be retried" do
     prepare_browser
     sign_in "jz@37signals.com"
     join_room rooms(:designers)
+    reset_browser_permissions
     page.execute_script <<~JS
       window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Test permission denial', 'NotAllowedError'));
     JS
+    credentials_before = huddle_credentials_count
+
     click_button "Join huddle"
-    assert_selector "#channel-huddle[data-state='failed']"
-    assert_selector "[data-huddle-target='notice']", text: /Microphone access was denied/
-    # A failed join can close signaling before LiveKit processes the leave packet.
-    # Allow the gateway's three-second reconnect grace plus its cleanup request.
-    using_session("Kevin") { assert_selector ".huddle__participant", count: 1, wait: 5 }
+
+    # With fresh permissions the denial lands in the device check, before any
+    # credentials are requested, so no ghost participant can exist server-side.
+    assert_selector "#channel-huddle[data-state='prejoin']"
+    assert_selector "[data-huddle-target='checkError']", text: /Microphone access was denied/
+    assert_equal credentials_before, huddle_credentials_count
 
     page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
     click_button "Try again"
+    assert_selector "[data-huddle-target='checkJoin']:not([disabled])", wait: 20
+    find("[data-huddle-target='checkJoin']").click
     assert_selector "#channel-huddle[data-state='connected']"
+    assert_selector ".huddle__participant", count: 1
+
+    using_session("Kevin") do
+      open_huddle_as "kevin@37signals.com"
+      assert_selector ".huddle__participant", count: 2
+      assert_media_received "audio"
+    end
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
   end
@@ -614,8 +620,7 @@ class HuddlesTest < ApplicationSystemTestCase
       assert_signal_token_rejected original_signal_url, refreshed_token
 
       rooms(:designers).memberships.grant_to(users(:jz))
-      click_button "Try again"
-      assert_selector "#channel-huddle[data-state='connected']", wait: 20
+      retry_huddle_and_confirm
       replacement_credentials = captured_credentials(1)
 
       assert_not_equal credentials.fetch("grant_id"), replacement_credentials.fetch("grant_id")
@@ -678,9 +683,36 @@ class HuddlesTest < ApplicationSystemTestCase
       prepare_browser
       sign_in email
       join_room room
+      join_huddle_and_confirm
+    end
+
+    # The first join in a browser stops at the device check; later joins skip
+    # it. Either way the huddle ends up connected.
+    def join_huddle_and_confirm
       click_button "Join huddle"
+      confirm_prejoin_if_present
       assert_selector "#channel-huddle[data-state='connected']", wait: 20
       assert_button "Mute", exact: true
+    end
+
+    def retry_huddle_and_confirm
+      click_button "Try again"
+      confirm_prejoin_if_present
+      assert_selector "#channel-huddle[data-state='connected']", wait: 20
+      assert_button "Mute", exact: true
+    end
+
+    def confirm_prejoin_if_present
+      wait_for_condition("the huddle did not start joining") do
+        %w[prejoin connecting connected].any? do |state|
+          page.has_css?("#channel-huddle[data-state='#{state}']", wait: 0)
+        end
+      end
+      return unless page.has_css?("#channel-huddle[data-state='prejoin']", wait: 0)
+
+      # The preview needs a moment to acquire the fake devices before Join enables.
+      assert_selector "[data-huddle-target='checkJoin']:not([disabled])", wait: 20
+      find("[data-huddle-target='checkJoin']").click
     end
 
     def prepare_browser
@@ -851,6 +883,16 @@ class HuddlesTest < ApplicationSystemTestCase
         page.evaluate_script("window.huddleTestCredentials.length") > index
       end
       page.evaluate_script("window.huddleTestCredentials[#{Integer(index)}]")
+    end
+
+    def huddle_credentials_count
+      page.evaluate_script("window.huddleTestCredentials.length")
+    end
+
+    # Fresh-permission tests must not depend on whatever an earlier test
+    # granted in this shared browser profile.
+    def reset_browser_permissions
+      page.driver.browser.execute_cdp("Browser.resetPermissions")
     end
 
     def ignore_huddle_access_checks
