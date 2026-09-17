@@ -72,7 +72,7 @@ class Message < ApplicationRecord
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, :github_pull_requests, :drive_attachments, events: [ :room, :organizer, :venue ],
+      .preload(:room, :github_pull_requests, :twitter_posts, :drive_attachments, events: [ :room, :organizer, :venue ],
         reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply

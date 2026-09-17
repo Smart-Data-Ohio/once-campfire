@@ -56,6 +56,18 @@ class Twitter::PostTest < ActiveSupport::TestCase
     end
   end
 
+  test "with_rendering_details preloads referenced posts" do
+    message = @room.messages.create!(
+      creator: @creator, markdown_source: "see https://x.com/jack/status/121",
+      client_message_id: "x-preload-1"
+    )
+
+    loaded = Message.with_rendering_details.find(message.id)
+
+    assert_predicate loaded.association(:twitter_posts), :loaded?
+    assert_equal [ "121" ], loaded.twitter_posts.map(&:post_id)
+  end
+
   test "creating a message with a post URL references the post and enqueues a fetch" do
     assert_enqueued_with(job: Twitter::FetchPostJob) do
       @message = @room.messages.create!(
