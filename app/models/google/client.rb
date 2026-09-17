@@ -144,7 +144,11 @@ module Google
         uri = URI::HTTPS.build(host: API_HOST, path:)
         Net::HTTP.start(uri.host, uri.port, use_ssl: true,
             open_timeout: TIMEOUT, read_timeout: TIMEOUT, write_timeout: TIMEOUT) do |http|
-          http.send(method, uri.request_uri, payload&.to_json, headers)
+          if method.in?(%i[ get delete ])
+            http.send(method, uri.request_uri, headers)
+          else
+            http.send(method, uri.request_uri, payload&.to_json, headers)
+          end
         end
       end
 
