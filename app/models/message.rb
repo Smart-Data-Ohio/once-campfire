@@ -24,7 +24,9 @@ class Message < ApplicationRecord
   has_many :event_references, dependent: :destroy
   has_many :events, through: :event_references
 
-  has_many :drive_attachments, -> { order(:id) }, dependent: :destroy
+  # autosave so records marked for destruction (an edit replacing the set)
+  # are destroyed in the same transaction as the message save.
+  has_many :drive_attachments, -> { order(:id) }, dependent: :destroy, autosave: true
 
   has_rich_text :body
 

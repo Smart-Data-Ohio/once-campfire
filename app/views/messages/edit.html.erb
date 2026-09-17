@@ -5,7 +5,7 @@
     filtered server-side). Only file ids are stored or submitted: names
     resolve at view time for viewers who can open the file. %>
 <turbo-frame id="<%= dom_id(@message, :edit) %>">
-  <%= form_with model: [ @room, @message ], class: "message-edit" do |form| %>
+  <%= form_with model: @message, url: room_message_path(@room, @message), method: :patch, class: "message-edit" do |form| %>
     <div class="message-edit__field">
       <%= form.label :markdown_source, "Message" %>
       <%= form.text_area :markdown_source, value: @message.editable_markdown_source,
