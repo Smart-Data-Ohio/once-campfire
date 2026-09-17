@@ -533,6 +533,97 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Added to your Google Calendar"
   end
 
+  test "a member can create an event with a venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    post room_events_url(@room), params: {
+      event: { title: "Voice social", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: voice.id }
+    }
+
+    event = Event.order(:created_at).last
+    assert_redirected_to room_event_path(@room, event)
+    assert_equal voice.id, event.venue_room_id
+  end
+
+  test "the organizer can set and clear the venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    times = {
+      starts_at: @event.starts_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M"),
+      ends_at: @event.ends_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M")
+    }
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: voice.id) }
+
+    assert_redirected_to room_event_path(@room, @event)
+    assert_equal voice.id, @event.reload.venue_room_id
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: "") }
+
+    assert_redirected_to room_event_path(@room, @event)
+    assert_nil @event.reload.venue_room_id
+  end
+
+  test "create rejects a text channel venue" do
+    assert_no_difference -> { Event.count } do
+      post room_events_url(@room), params: {
+        event: { title: "Bad venue", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: @room.id }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+  end
+
+  test "create rejects a venue the organizer does not belong to" do
+    outsiders = Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    assert_no_difference -> { Event.count } do
+      post room_events_url(@room), params: {
+        event: { title: "Outsider meetup", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: outsiders.id }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+  end
+
+  test "update rejects a venue the organizer does not belong to" do
+    outsiders = Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+    times = {
+      starts_at: @event.starts_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M"),
+      ends_at: @event.ends_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M")
+    }
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: outsiders.id) }
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+    assert_nil @event.reload.venue_room_id
+  end
+
+  test "the form lists only the member's voice and Stage channels, grouped by kind" do
+    Rooms::Voice.create_for({ name: "Zebra", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Voice.create_for({ name: "Alpha", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    get new_room_event_url(@room)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] option[value='']", "No channel"
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Voice'] option", 2
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Stage'] option", 1
+    assert_select "select[name='event[venue_room_id]'] option", 4
+
+    select_html = response.body[/<select\b[^>]*name="event\[venue_room_id\]"[^>]*>[\s\S]*?<\/select>/]
+    assert_not_nil select_html
+    assert select_html.index(">Alpha</option>") < select_html.index(">Zebra</option>")
+    assert_includes select_html, ">Town Hall</option>"
+    assert select_html.index('label="Voice"') < select_html.index('label="Stage"')
+    assert_not_includes select_html, "Outsiders"
+    assert_not_includes select_html, "Designers"
+  end
+
   private
     def count_sql_queries(&block)
       queries = 0
