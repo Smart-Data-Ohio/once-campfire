@@ -3,6 +3,8 @@ module GoogleCalendarTestHelper
 
   GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
   GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+  GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+  DRIVE_SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.metadata.readonly"
 
   included do
     setup :configure_google_for_test
@@ -52,9 +54,10 @@ module GoogleCalendarTestHelper
       )
     end
 
-    def stub_google_code_exchange(access_token: "new-access-token", refresh_token: "new-refresh-token", id_token: google_id_token)
+    def stub_google_code_exchange(access_token: "new-access-token", refresh_token: "new-refresh-token", id_token: google_id_token, scope: nil)
       body = { access_token:, refresh_token:, expires_in: 3600, token_type: "Bearer" }
       body[:id_token] = id_token if id_token
+      body[:scope] = scope if scope
       stub_request(:post, GOOGLE_TOKEN_URL).to_return(
         status: 200,
         body: body.to_json,
@@ -86,5 +89,23 @@ module GoogleCalendarTestHelper
 
     def stub_google_event_delete(google_event_id, status: 204)
       stub_request(:delete, "#{GOOGLE_EVENTS_URL}/#{google_event_id}").to_return(status:)
+    end
+
+    def stub_google_drive_file(file_id, status: 200, body: drive_file_payload)
+      stub_request(:get, "#{GOOGLE_DRIVE_FILES_URL}/#{file_id}")
+        .with(query: hash_including({ "supportsAllDrives" => "true" }))
+        .to_return(status:, body: body.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    def drive_file_payload(name: "Q3 Planning", mime_type: "application/vnd.google-apps.document")
+      {
+        "id" => "1AbcDefGhIjKlMnOpQrSt",
+        "name" => name,
+        "mimeType" => mime_type,
+        "modifiedTime" => "2026-09-16T10:30:00.000Z",
+        "owners" => [ { "displayName" => "Riel" } ],
+        "webViewLink" => "https://docs.google.com/document/d/1AbcDefGhIjKlMnOpQrSt/edit",
+        "iconLink" => "https://drive-thirdparty.googleusercontent.com/16/type/document"
+      }
     end
 end

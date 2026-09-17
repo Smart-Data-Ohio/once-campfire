@@ -110,7 +110,8 @@ module MessagesHelper
         end
       end
     end
-    tag.div Message::Markdown.sanitize_presentation(rendered.to_html).html_safe, class: "markdown-body"
+    tag.div Message::Markdown.sanitize_presentation(rendered.to_html).html_safe, class: "markdown-body",
+      data: { controller: "drive-link" }
   end
 
   private

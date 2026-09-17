@@ -61,6 +61,46 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Connect Google Calendar"
   end
 
+  test "profile offers Drive previews for a connected account without the Drive scope" do
+    connect_google!(users(:david), email: "david@gmail.test")
+
+    get user_profile_url
+
+    assert_includes response.body, "Enable Drive previews"
+    assert_not_includes response.body, "Drive previews enabled"
+  end
+
+  test "profile shows Drive previews as enabled when the account has the Drive scope" do
+    connect_google!(users(:david), email: "david@gmail.test", scopes: DRIVE_SCOPES)
+
+    get user_profile_url
+
+    assert_includes response.body, "Drive previews enabled"
+    assert_not_includes response.body, "Enable Drive previews"
+  end
+
+  test "profile shows no Drive row when Google is not configured" do
+    disconnect_google_env!
+
+    get user_profile_url
+
+    assert_not_includes response.body, "Enable Drive previews"
+    assert_not_includes response.body, "Drive previews enabled"
+  end
+
+  test "layout carries the Drive previews meta tag only with the Drive scope" do
+    get user_profile_url
+    assert_not_includes response.body, "google-drive-previews"
+
+    connect_google!(users(:david), email: "david@gmail.test")
+    get user_profile_url
+    assert_not_includes response.body, "google-drive-previews"
+
+    users(:david).google_account.update!(scopes: DRIVE_SCOPES)
+    get user_profile_url
+    assert_includes response.body, '<meta name="google-drive-previews" content="enabled">'
+  end
+
   test "linking a github login strips and downcases it" do
     put user_profile_url, params: { user: { github_login: "  David-GH " } }
 

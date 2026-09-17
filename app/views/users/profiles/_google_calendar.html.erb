@@ -5,6 +5,12 @@
     <p>Google Calendar is not configured for this workspace</p>
   <% elsif user.google_account&.connected? %>
     <p>Connected as <%= user.google_account.email %></p>
+    <% if user.google_account.drive? %>
+      <p>Drive previews enabled</p>
+    <% else %>
+      <%= button_to "Enable Drive previews", google_connect_path, method: :post, class: "btn",
+            params: { features: [ "drive" ] } %>
+    <% end %>
     <%= button_to "Disconnect", google_connection_path, method: :delete, class: "btn btn--negative",
           form: { data: { turbo_confirm: "Disconnect Google Calendar? Your published event entries will be removed." } } %>
   <% elsif user.google_account %>
