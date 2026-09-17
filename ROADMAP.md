@@ -27,6 +27,8 @@ The first DM Huddle slice uses a shared join control with audio, screen sharing,
 
 The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`post_messages` and `react` enforced; the rest stored for later) with immediate cascade revocation. See [AI agents](docs/agents.md). Event delivery, activity ledger, and approvals follow separately.
 
+GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
+
 ## Planned
 
 ### 1. Make the fork the durable home
