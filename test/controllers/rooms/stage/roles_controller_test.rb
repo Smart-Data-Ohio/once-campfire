@@ -19,11 +19,12 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     host_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
     sign_in :david
 
-    # The promotion delivers two broadcasts per stream: the revoked grant
-    # refreshes the presence stacks, then the role change delivers the roster
-    # to the room and the personalized panel to the affected member.
+    # The promotion delivers two broadcasts to the room stream — the revoked
+    # grant refreshes the header stack, then the roster — and three to the
+    # affected member: the sidebar stack, the personalized panel, and the
+    # rejoin event for the persistent target in their huddle panel.
     assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 2 do
-      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 2 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 3 do
         patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
       end
     end
@@ -42,11 +43,36 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
 
     streams = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
-    assert_equal 1, streams.count
+    assert_equal 2, streams.count
     assert_equal "replace", streams.first["action"]
     assert_equal ActionView::RecordIdentifier.dom_id(@room, :stage_panel), streams.first["target"]
     assert_match "stage-rejoin", streams.first.to_html
     assert_match "You are speaking", streams.first.to_html
+  end
+
+  test "every role change appends a rejoin event to the member's persistent target" do
+    sign_in :david
+
+    patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
+
+    streams = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+    event = streams.find { |stream| stream["action"] == "append" }
+    assert_equal "huddle_role_events", event["target"]
+    assert_match "data-huddle-rejoin-room-id=\"#{@room.id}\"", event.to_html
+    assert_match "data-huddle-rejoin-stage-role=\"speaker\"", event.to_html
+  end
+
+  test "a demotion appends a rejoin event to the member's persistent target" do
+    @listener.change_stage_role!("speaker")
+    sign_in :david
+
+    patch room_stage_role_url(@room, @listener), params: { stage_role: "listener" }
+
+    streams = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+    event = streams.find { |stream| stream["action"] == "append" }
+    assert_equal "huddle_role_events", event["target"]
+    assert_match "data-huddle-rejoin-room-id=\"#{@room.id}\"", event.to_html
+    assert_match "data-huddle-rejoin-stage-role=\"listener\"", event.to_html
   end
 
   test "a turbo-stream role change replaces the roster without navigating" do

@@ -9,10 +9,12 @@ class Rooms::Stage::RolesController < ApplicationController
   STAGE_ROLES = %w[ listener speaker host ].freeze
 
   # Hosts and administrators change any member's stage role. The role change
-  # revokes the member's huddle grants in the same transaction, and two
-  # broadcasts deliver it: the shared roster goes to the room's stream, and a
+  # revokes the member's huddle grants in the same transaction, and three
+  # broadcasts deliver it: the shared roster goes to the room's stream, a
   # personalized panel with a rejoin trigger goes to the affected member's own
-  # rooms stream, so their browser rejoins with a fresh token for the new role.
+  # rooms stream, and a rejoin event goes to the persistent target in their
+  # huddle panel, which is present on every page. Both triggers make their
+  # browser rejoin with a fresh token for the new role.
   def update
     target = @room.memberships.find_by(id: params[:membership_id])
     return head :not_found unless target
@@ -29,6 +31,7 @@ class Rooms::Stage::RolesController < ApplicationController
 
     broadcast_roster
     broadcast_panel_to_member(target)
+    broadcast_role_event_to_member(target)
     respond_with_roster
   end
 
@@ -56,6 +59,16 @@ class Rooms::Stage::RolesController < ApplicationController
         target: [ @room, :stage_panel ],
         partial: "rooms/stage/panel_body",
         locals: { room: @room, membership: target.reload, rejoin: true }
+    end
+
+    # The stage panel only exists on that stage's page, but the huddle panel
+    # — and this target inside it — is permanent across pages. A demoted
+    # speaker who navigated elsewhere still gets the rejoin signal here.
+    def broadcast_role_event_to_member(target)
+      broadcast_append_to target.user, :rooms,
+        target: "huddle_role_events",
+        partial: "rooms/stage/role_event",
+        locals: { room: @room, membership: target }
     end
 
     def respond_with_roster

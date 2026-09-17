@@ -32,7 +32,7 @@ export default class extends Controller {
     "devicesDone", "leaveLabel", "listeningNote", "meter", "meterFill", "microphoneSelect", "mute", "muteLabel",
     "noise", "noiseLabel", "notice", "participantCount", "participantList", "people",
     "prejoinMeter", "prejoinMeterFill", "preview", "previewWrap", "resumeAudio",
-    "retry", "roomName", "screens", "settings", "settingsRow", "share", "shareLabel",
+    "retry", "roleEvents", "roomName", "screens", "settings", "settingsRow", "share", "shareLabel",
     "sharing", "sharingExpand", "sharingName", "speakerRow", "speakerSelect",
     "statJitter", "statLoss", "statRtt", "statRx", "statSent", "statTransport", "status"
   ]
@@ -64,6 +64,7 @@ export default class extends Controller {
     this.previewVideoStream = null
     this.devicesOpen = false
     this.connectionQuality = "unknown"
+    this.roleEventsObserver = null
     this.connectionStatsTimer = null
     this.connectionStatsSampling = false
     this.connectionStatsSummary = null
@@ -94,6 +95,7 @@ export default class extends Controller {
     }
 
     this.#startAuthenticationChecks()
+    this.#observeRoleEvents()
     this.#updateNoiseSuppressionControl()
     this.speakerRowTarget.hidden = !audioOutputSupported()
     this.#renderState()
@@ -101,6 +103,8 @@ export default class extends Controller {
 
   disconnect() {
     this.abortController?.abort()
+    this.roleEventsObserver?.disconnect()
+    this.roleEventsObserver = null
 
     // Turbo can briefly disconnect a permanent element while moving it into the
     // next page. Give Stimulus one turn to reconnect before treating it as gone.
@@ -241,6 +245,33 @@ export default class extends Controller {
     if (operation !== this.operation) return
 
     await this.#connectRoom(operation)
+  }
+
+  // A stage role change appends an event node to the persistent target in
+  // this panel, which — unlike the stage panel — exists on every page. When
+  // the event names the connected room, rejoin the same way the stage-panel
+  // trigger does, then drop the node so it fires only once.
+  #observeRoleEvents() {
+    this.roleEventsObserver?.disconnect()
+    this.roleEventsObserver = null
+    if (!this.hasRoleEventsTarget) return
+
+    for (const node of [ ...this.roleEventsTarget.children ]) this.#handleRoleEvent(node)
+
+    this.roleEventsObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) this.#handleRoleEvent(node)
+      }
+    })
+    this.roleEventsObserver.observe(this.roleEventsTarget, { childList: true })
+  }
+
+  #handleRoleEvent(node) {
+    if (node?.nodeType !== Node.ELEMENT_NODE) return
+
+    const roomId = Number(node.dataset.huddleRejoinRoomId)
+    node.remove()
+    this.roleChanged({ detail: { roomId } })
   }
 
   confirmPrejoinJoin = async () => {
