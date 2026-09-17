@@ -121,6 +121,24 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "mixed-case repository names in payloads still find the stored PR" do
+    @pull_request.update!(head_branch: "shiny")
+    recase = ->(payload) { JSON.parse(payload.to_json.gsub("rails/rails", "Rails/Rails")) }
+
+    {
+      "pull_request_review" => recase.(pull_request_payload),
+      "check_run" => recase.(check_payload("check_run")),
+      "status" => recase.(status_payload)
+    }.each do |event, payload|
+      body = payload.to_json
+
+      assert_enqueued_jobs 1, only: Github::FetchPullRequestJob do
+        post github_webhooks_url, params: body, headers: webhook_headers(event: event, body: body)
+        assert_response :success
+      end
+    end
+  end
+
   test "subscribed repositories enqueue subscription delivery and post once" do
     Github::RepositorySubscription.create!(room: @room, owner: "rails", repo: "rails", created_by: users(:david))
     body = subscription_pull_request_payload(action: "opened").to_json

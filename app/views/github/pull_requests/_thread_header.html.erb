@@ -1,0 +1,5 @@
+<div id="<%= dom_id(thread, :github_pr_header) %>" class="github-pr-thread-header">
+  <%= turbo_stream_from thread, :messages, channel: "RoomMessagesChannel" %>
+  <%= render "github/pull_requests/card", pull_request: pull_request %>
+  <%= render "github/pull_requests/files_summary", pull_request: pull_request %>
+</div>
