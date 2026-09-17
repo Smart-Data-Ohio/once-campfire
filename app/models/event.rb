@@ -2,11 +2,8 @@ class Event < ApplicationRecord
   TIME_CHANGE_ATTRIBUTES = %w[ starts_at ends_at time_zone ].freeze
   NOTIFYING_RESPONSES = %w[ going maybe ].freeze
 
-  # Guard flag set by the scoped series API. Recurrence fields reject plain
-  # update/update! calls unless this flag is set (see
-  # #recurrence_fields_require_scoped_api).
-  attr_accessor :allow_recurrence_mutation
-
+  # Recurrence fields reject plain update/update! calls unless the save runs
+  # inside #with_recurrence_mutation (see #recurrence_fields_require_scoped_api).
   belongs_to :room
   belongs_to :organizer, class_name: "User"
 
@@ -26,6 +23,7 @@ class Event < ApplicationRecord
   validate :recurrence_occurrence_cap, if: :validates_recurrence_range?
   validate :series_head_must_keep_rule
   validate :recurrence_fields_require_scoped_api, on: :update
+  validate :series_order_must_be_preserved, on: :update
 
   before_validation :normalize_recurrence_rule
 
@@ -80,7 +78,11 @@ class Event < ApplicationRecord
   end
 
   def series_events
-    series? ? Event.where(series_id:).order(:starts_at, :id) : Event.where(id:)
+    return Event.where(id:) unless series?
+
+    # At equal times uncancelled occurrences sort first, so navigation never
+    # prefers a cancelled row sharing a slot with an active one.
+    Event.where(series_id:).order(:starts_at, Event.arel_table[:cancelled_at].asc.nulls_first, :id)
   end
 
   def future_occurrences
@@ -271,8 +273,29 @@ class Event < ApplicationRecord
       errors.add :recurrence_rule, "can't be removed from a repeating event"
     end
 
+    def series_order_must_be_preserved
+      return unless series_id.present? && will_save_change_to_starts_at?
+      return if @skip_series_order_validation
+
+      siblings = Event.where(series_id:, cancelled_at: nil).where.not(id:)
+      anchor = starts_at_was || starts_at
+      previous = siblings.where("events.starts_at < ?", anchor).order(:starts_at).last
+      if previous && starts_at <= previous.starts_at
+        errors.add :starts_at, "must stay between the neighbouring occurrences in its series"
+        return
+      end
+      # "This and following" shifts every follower by the same offset, so only
+      # the previous-sibling bound applies there.
+      return if @following_reorder
+
+      following = siblings.where("events.starts_at > ?", anchor).order(:starts_at).first
+      if following && starts_at >= following.starts_at
+        errors.add :starts_at, "must stay between the neighbouring occurrences in its series"
+      end
+    end
+
     def recurrence_fields_require_scoped_api
-      return if allow_recurrence_mutation
+      return if @allow_recurrence_mutation
 
       errors.add :recurrence_rule, recurrence_direct_change_message if will_save_change_to_recurrence_rule?
       errors.add :recurrence_until, recurrence_direct_change_message if will_save_change_to_recurrence_until?
@@ -331,6 +354,34 @@ class Event < ApplicationRecord
       recurrence_direct_change_message
     end
 
+    # Scoped series writes run inside these blocks. The flags live only in
+    # instance variables and are always cleared, so nothing outside the model
+    # can set them and they never leak into later saves.
+    def with_recurrence_mutation
+      @allow_recurrence_mutation = true
+      yield
+    ensure
+      @allow_recurrence_mutation = false
+    end
+
+    def with_following_reorder
+      @following_reorder = true
+      yield
+    ensure
+      @following_reorder = false
+    end
+
+    def without_series_order_validation
+      @skip_series_order_validation = true
+      yield
+    ensure
+      @skip_series_order_validation = false
+    end
+
+    def with_series_follower_save
+      with_recurrence_mutation { without_series_order_validation { yield } }
+    end
+
     def update_series_and_following!(attributes, actor:)
       time_changed = false
 
@@ -340,7 +391,6 @@ class Event < ApplicationRecord
         # operation: moving this occurrence later must not skip its original
         # followers, and moving it earlier must never touch previous ones.
         scope_ids = [ id ] + future_occurrences.ids
-        self.allow_recurrence_mutation = true
         assign_attributes(attributes)
 
         if will_save_change_to_recurrence_rule? || will_save_change_to_recurrence_until?
@@ -361,11 +411,10 @@ class Event < ApplicationRecord
         ends_removed = will_save_change_to_ends_at? && ends_at.nil?
 
         self.reminded_at = nil if time_changed
-        save!
+        with_following_reorder { with_recurrence_mutation { save! } }
 
         followers = Event.where(id: scope_ids - [ id ]).includes(:attendances).order(:starts_at, :id).to_a
         followers.each do |occurrence|
-          occurrence.allow_recurrence_mutation = true
           occurrence.title = title if title_changed
           occurrence.description = description if description_changed
           occurrence.time_zone = time_zone if zone_changed
@@ -373,7 +422,7 @@ class Event < ApplicationRecord
           occurrence.recurrence_rule = recurrence_rule if rule_changed
           occurrence.recurrence_until = recurrence_until if rule_changed
           occurrence.reminded_at = nil if time_changed
-          occurrence.save!
+          occurrence.send(:with_series_follower_save) { occurrence.save! }
         end
 
         synced_ids = rule_changed ? rematerialize_series!(followers, actor:, time_changed:) : []
@@ -412,15 +461,19 @@ class Event < ApplicationRecord
     end
 
     # Rebuilds the future occurrences after a rule or end-date change on the
-    # head. Cancelled occurrences are left alone. Occurrences where anyone
-    # responded differently from the head keep their ids and responses and are
-    # assigned, in series order, to the new pattern's slots; protected
-    # occurrences beyond the slot count are cancelled through the normal
-    # cancellation path so their attendees are notified. Regenerable
+    # head. Cancelled occurrences keep their slots: a cancelled row on a
+    # desired slot removes that slot from the pool and is neither re-timed nor
+    # deleted. Occurrences where anyone responded differently from the head
+    # keep their ids and responses: those already on a desired slot stay put
+    # and the rest move onto the remaining slots in series order, while
+    # protected occurrences beyond the slot count are cancelled through the
+    # normal cancellation path so their attendees are notified. Regenerable
     # occurrences are reused in place, retimed onto a new slot (keeping their
     # calendar entries), or removed when the series shrank; remaining slots
-    # are created with the head's responses. Returns the ids already synced
-    # to calendars here, so the caller does not sync them twice.
+    # are created with the head's responses. Removals and cancellations run
+    # before any move, so a moved row never lands on a slot another row still
+    # occupies. Returns the ids already synced to calendars here, so the
+    # caller does not sync them twice.
     def rematerialize_series!(followers, actor:, time_changed:)
       desired = Event::Recurrence.slots(
         starts_at:, ends_at:, time_zone:,
@@ -434,29 +487,38 @@ class Event < ApplicationRecord
       end
 
       unmatched_slots = desired.dup
-      synced_ids = []
-
-      protected_occurrences.each do |occurrence|
-        if (slot = unmatched_slots.shift)
-          moved = slot.first != occurrence.starts_at || slot.second != occurrence.ends_at
-          synced_ids << occurrence.id if retime_occurrence!(occurrence, slot, rearm_reminder: time_changed || moved)
-        else
-          occurrence.cancel!(actor:)
-        end
-      end
-
       claim_slot = lambda do |starts|
         index = unmatched_slots.index { |(slot_starts, _)| slot_starts == starts }
         index ? unmatched_slots.delete_at(index) : nil
       end
-      unmatched_regenerable = regenerable.reject { |occurrence| claim_slot.call(occurrence.starts_at) }
 
-      unmatched_regenerable.each do |occurrence|
+      later.select(&:cancelled?).each { |occurrence| claim_slot.call(occurrence.starts_at) }
+
+      moves = []
+      cancels = []
+      destroys = []
+
+      protected_occurrences.reject { |occurrence| claim_slot.call(occurrence.starts_at) }.each do |occurrence|
         if (slot = unmatched_slots.shift)
-          synced_ids << occurrence.id if retime_occurrence!(occurrence, slot, rearm_reminder: true)
+          moved = slot.first != occurrence.starts_at || slot.second != occurrence.ends_at
+          moves << [ occurrence, slot, time_changed || moved ]
         else
-          occurrence.destroy!
+          cancels << occurrence
         end
+      end
+
+      regenerable.reject { |occurrence| claim_slot.call(occurrence.starts_at) }.each do |occurrence|
+        if (slot = unmatched_slots.shift)
+          moves << [ occurrence, slot, true ]
+        else
+          destroys << occurrence
+        end
+      end
+
+      destroys.each(&:destroy!)
+      cancels.each { |occurrence| occurrence.cancel!(actor:) }
+      synced_ids = moves.filter_map do |(occurrence, slot, rearm_reminder)|
+        occurrence.id if retime_occurrence!(occurrence, slot, rearm_reminder:)
       end
 
       unmatched_slots.each do |(slot_starts, slot_ends)|
@@ -477,7 +539,7 @@ class Event < ApplicationRecord
       shift_synced = (Calendar::EntrySync::SYNCED_ATTRIBUTES & occurrence.saved_changes.keys).any?
       attributes = { starts_at: slot.first, ends_at: slot.second }
       attributes[:reminded_at] = nil if rearm_reminder
-      occurrence.update!(attributes)
+      occurrence.send(:without_series_order_validation) { occurrence.update!(attributes) }
 
       if shift_synced || (Calendar::EntrySync::SYNCED_ATTRIBUTES & occurrence.saved_changes.keys).any?
         occurrence.sync_calendar_entries!
