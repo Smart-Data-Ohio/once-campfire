@@ -7,6 +7,18 @@ module Calendar
   # to retry; nothing here raises for Google or network problems.
   class EntrySync
     SYNCED_ATTRIBUTES = (Event::TIME_CHANGE_ATTRIBUTES + %w[ title description ]).freeze
+    GOOGLE_EVENT_ID_PREFIX = "campfire"
+    BASE32HEX_ALPHABET = "0123456789abcdefghijklmnopqrstuv"
+
+    # Google event ids are deterministic per event and user ("campfire" +
+    # base32hex of the packed ids), so concurrent first runs converge on
+    # one remote event through the insert-conflict path instead of
+    # duplicating it. Only [a-v0-9], within Google's 5..1024 limit.
+    def self.google_event_id_for(event_id, user_id)
+      bits = [ event_id, user_id ].pack("Q>Q>").unpack1("B*")
+      encoded = bits.scan(/.{1,5}/).map { |chunk| BASE32HEX_ALPHABET[chunk.ljust(5, "0").to_i(2)] }.join
+      "#{GOOGLE_EVENT_ID_PREFIX}#{encoded}"
+    end
 
     def self.sync(event_id, user_id)
       event = Event.find_by(id: event_id)
@@ -39,33 +51,45 @@ module Calendar
           @event.room.memberships.exists?(user_id: @user.id)
       end
 
+      # Reserves the local row before the first HTTP call so concurrent
+      # runs share one deterministic id. The uniqueness validation fires
+      # before the database constraint, so an existing row surfaces as
+      # RecordInvalid here and is resolved with a second find.
+      def reserve_entry!
+        EventCalendarEntry.create_or_find_by!(event: @event, user: @user) do |new_entry|
+          new_entry.google_event_id = self.class.google_event_id_for(@event.id, @user.id)
+        end
+      rescue ActiveRecord::RecordInvalid
+        EventCalendarEntry.find_by!(event: @event, user: @user)
+      end
+
       def upsert!(account)
-        entry = EventCalendarEntry.find_or_initialize_by(event: @event, user: @user) do |new_entry|
-          new_entry.google_event_id = SecureRandom.hex(16)
-        end
+        entry = reserve_entry!
 
-        client = Google::Client.new(account)
-        if entry.persisted?
-          begin
-            client.update_event(entry.google_event_id, payload)
-          rescue Google::Client::NotFound
-            client.insert_event(payload_with_id(entry))
+        begin
+          client = Google::Client.new(account)
+          if entry.synced_at.nil?
+            begin
+              client.insert_event(payload_with_id(entry))
+            rescue Google::Client::Conflict
+              client.update_event(entry.google_event_id, payload)
+            end
+          else
+            begin
+              client.update_event(entry.google_event_id, payload)
+            rescue Google::Client::NotFound
+              client.insert_event(payload_with_id(entry))
+            end
           end
-        else
-          begin
-            client.insert_event(payload_with_id(entry))
-          rescue Google::Client::Conflict
-            client.update_event(entry.google_event_id, payload)
-          end
-        end
 
-        entry.synced_at = Time.current
-        entry.last_error = nil
-        entry.save!
-      rescue StandardError => error
-        entry.last_error = error_summary(error)
-        entry.save!
-        Rails.logger.warn "Calendar::EntrySync failed for event #{@event.id} user #{@user.id}: #{error.class}"
+          entry.synced_at = Time.current
+          entry.last_error = nil
+          entry.save!
+        rescue StandardError => error
+          entry.last_error = error_summary(error)
+          entry.save!
+          Rails.logger.warn "Calendar::EntrySync failed for event #{@event.id} user #{@user.id}: #{error.class}"
+        end
       end
 
       # A missing account (or one Google rejected) cannot call the API, so

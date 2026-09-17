@@ -28,7 +28,7 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
 
     entry = EventCalendarEntry.find_by!(event: @event, user: @david)
-    assert_match(/\A[0-9a-f]{32}\z/, entry.google_event_id)
+    assert_equal Calendar::EntrySync.google_event_id_for(@event.id, @david.id), entry.google_event_id
     assert_not_nil entry.synced_at
     assert_nil entry.last_error
     assert_requested insert, times: 1
@@ -156,7 +156,7 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
   test "two runs for the same state make no second insert" do
     connect_google!(@david)
     insert = stub_google_event_insert
-    stub_request(:put, %r{\A#{GOOGLE_EVENTS_URL}/[0-9a-f]{32}\z}).to_return(status: 200, body: {}.to_json)
+    stub_google_event_update(Calendar::EntrySync.google_event_id_for(@event.id, @david.id))
 
     Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
     Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
@@ -165,10 +165,34 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_equal 1, EventCalendarEntry.where(event: @event, user: @david).count
   end
 
+  test "google event ids are deterministic per event and user and use Google's charset" do
+    google_event_id = Calendar::EntrySync.google_event_id_for(@event.id, @david.id)
+
+    assert_equal google_event_id, Calendar::EntrySync.google_event_id_for(@event.id, @david.id)
+    assert_not_equal google_event_id, Calendar::EntrySync.google_event_id_for(@event.id, @jason.id)
+    assert_not_equal google_event_id, Calendar::EntrySync.google_event_id_for(events(:watercooler_sync).id, @david.id)
+    assert_match(/\A[a-v0-9]{5,1024}\z/, google_event_id)
+  end
+
+  test "concurrent first runs share one id and converge through the conflict path" do
+    connect_google!(@david)
+    google_event_id = Calendar::EntrySync.google_event_id_for(@event.id, @david.id)
+    insert = stub_google_event_insert(status: 409, body: { "error" => { "code" => 409 } })
+    update = stub_google_event_update(google_event_id)
+
+    Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
+    Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
+
+    assert_equal 1, EventCalendarEntry.where(event: @event, user: @david).count
+    assert_equal google_event_id, EventCalendarEntry.find_by!(event: @event, user: @david).google_event_id
+    assert_requested insert, times: 1
+    assert_requested update, times: 2
+  end
+
   test "a 409 on insert falls back to updating the same id" do
     connect_google!(@david)
     stub_google_event_insert(status: 409, body: { "error" => { "code" => 409 } })
-    stub_request(:put, %r{\A#{GOOGLE_EVENTS_URL}/[0-9a-f]{32}\z}).to_return(status: 200, body: {}.to_json)
+    stub_google_event_update(Calendar::EntrySync.google_event_id_for(@event.id, @david.id))
 
     Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
 
@@ -180,7 +204,8 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
 
   test "an update 404 falls back to inserting the same id" do
     connect_google!(@david)
-    entry = EventCalendarEntry.create!(event: @event, user: @david, google_event_id: SecureRandom.hex(16))
+    entry = EventCalendarEntry.create!(event: @event, user: @david,
+      google_event_id: SecureRandom.hex(16), synced_at: 1.day.ago)
     stub_google_event_update(entry.google_event_id, status: 404)
     insert = stub_google_event_insert
 

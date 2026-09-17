@@ -45,10 +45,13 @@ going/maybe RSVPs), and when a membership ends.
 
 There is no delayed-job scheduler in this deployment, so failures are not
 retried on a timer: a failure is recorded on the entry and the next change
-retries. A retried insert reuses the same Google event id, so it cannot
-create a duplicate. If Google reports the account's grant revoked
-(`invalid_grant`), the account is marked disconnected and the profile
-offers a reconnect instead of publishing.
+retries. The Google event id is deterministic per event and member
+(`campfire` plus base32hex of the packed ids), and the local row is
+reserved before the first request, so a retried insert reuses the same id
+and concurrent first runs converge through the insert-conflict path
+instead of creating duplicates. If Google reports the account's grant
+revoked (`invalid_grant`), the account is marked disconnected and the
+profile offers a reconnect instead of publishing.
 
 ## Disconnecting
 
