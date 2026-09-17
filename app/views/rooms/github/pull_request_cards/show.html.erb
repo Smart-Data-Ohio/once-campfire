@@ -1,0 +1,8 @@
+<%= turbo_frame_tag @frame_id, class: "github-pr-card-frame" do %>
+  <% if @visible %>
+    <%= render "github/pull_requests/card", pull_request: @pull_request, message: @message %>
+    <% if @thread %>
+      <%= render "github/pull_requests/files_summary", pull_request: @pull_request %>
+    <% end %>
+  <% end %>
+<% end %>

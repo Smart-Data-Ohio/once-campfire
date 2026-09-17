@@ -70,6 +70,55 @@ module Github::PullRequestsHelper
     pull_request
   end
 
+  # True only when the repository is known public. nil means unknown and is
+  # treated as private everywhere: the safe default until a fetch records
+  # the repository's privacy.
+  def github_pr_public?(pull_request)
+    pull_request.private == false
+  end
+
+  # Frame ids for the per-viewer card frames. The cards container and the
+  # thread header render the empty frame with these ids; the card endpoint
+  # recomputes the same id from its message/thread param so the loaded
+  # frame replaces the placeholder.
+  def github_pr_card_frame_id(pull_request, message_id: nil, thread_id: nil)
+    if message_id
+      dom_id(pull_request, "card_for_message_#{message_id}")
+    else
+      dom_id(pull_request, "card_for_thread_#{thread_id}")
+    end
+  end
+
+  # Whether the viewer may see the PR's card content. Public repositories
+  # are visible to every room member; private (or still unknown) ones only
+  # to members whose own linked GitHub account can read the repository,
+  # checked with their token against GET /repos/{owner}/{repo}.
+  #
+  # The decision is cached per viewer and repository for 10 minutes, both
+  # grants and denials, so a page of cards from one repository costs at
+  # most one GitHub request per viewer per window. Members without a
+  # usable linked account are denied with no request, and a transport
+  # failure denies without caching so the next load retries.
+  def github_pr_visible_to?(pull_request, user)
+    return true if github_pr_public?(pull_request)
+
+    account = user&.github_connected_account
+    return false unless account&.usable?
+
+    Rails.cache.fetch([ "github_repo_access", user.id, pull_request.owner, pull_request.repo ], expires_in: 10.minutes) do
+      Github::WriteClient.new(token: account.access_token)
+        .repository_readable?(pull_request.owner, pull_request.repo)
+    rescue Github::WriteClient::Unauthorized
+      account.mark_disconnected!("GitHub rejected the linked token (401)")
+      false
+    end
+  rescue ActiveRecord::Encryption::Errors::Decryption
+    account.mark_disconnected!(GithubConnectedAccount::UNREADABLE_TOKEN_REASON)
+    false
+  rescue Github::WriteClient::Error
+    false
+  end
+
   private
     def github_pr_threads_for_room(room_id)
       id = room_id.is_a?(Room) ? room_id.id : room_id.to_i

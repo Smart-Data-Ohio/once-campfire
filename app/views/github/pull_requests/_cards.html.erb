@@ -2,7 +2,13 @@
 <% if pull_requests.any? %>
   <div id="<%= dom_id(message, :github_pr_cards) %>" class="github-pr-cards">
     <% pull_requests.each do |pull_request| %>
-      <%= render "github/pull_requests/card", pull_request: pull_request, message: message %>
+      <% if github_pr_public?(pull_request) %>
+        <%= render "github/pull_requests/card", pull_request: pull_request, message: message %>
+      <% else %>
+        <%= turbo_frame_tag dom_id(pull_request, :"card_for_message_#{message.id}"),
+              src: room_github_pull_request_card_path(message.room_id, pull_request, message_id: message.id),
+              loading: "lazy", class: "github-pr-card-frame" %>
+      <% end %>
     <% end %>
   </div>
 <% end %>

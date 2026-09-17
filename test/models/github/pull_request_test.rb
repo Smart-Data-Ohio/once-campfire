@@ -221,6 +221,26 @@ class Github::PullRequestTest < ActiveSupport::TestCase
     end
   end
 
+  test "card broadcasts carry the title for a public pull request and only a frame for a private one" do
+    message = @room.messages.create!(
+      creator: @creator, markdown_source: "https://github.com/rails/rails/pull/10",
+      client_message_id: "pr-ref-private-broadcast"
+    )
+    pull_request = message.github_pull_requests.first
+    stream = room_messages_stream_name(@room)
+
+    pull_request.update!(private: false)
+    broadcasts = capture_broadcasts(stream) { pull_request.update!(title: "Public title") }
+    assert_equal 1, broadcasts.size
+    assert_includes broadcasts.first.to_s, "Public title"
+
+    pull_request.update!(private: true)
+    broadcasts = capture_broadcasts(stream) { pull_request.update!(title: "Secret title") }
+    assert_equal 1, broadcasts.size
+    assert_no_match "Secret title", broadcasts.first.to_s
+    assert_includes broadcasts.first.to_s, "turbo-frame"
+  end
+
   private
     def room_messages_stream_name(room)
       signed = Turbo::StreamsChannel.signed_stream_name([ room, :messages ])

@@ -321,6 +321,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_130000) do
     t.integer "number", null: false
     t.string "owner", null: false
     t.json "payload"
+    t.boolean "private"
     t.string "repo", null: false
     t.string "review_decision"
     t.string "state"
