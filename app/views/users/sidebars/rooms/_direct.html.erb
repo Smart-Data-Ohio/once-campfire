@@ -33,11 +33,10 @@
   <% if Huddle.configured? && two_person_direct_room_ids.include?(membership.room_id) %>
     <span class="voice-room__trailing">
       <%= render "rooms/huddles/participants", room: membership.room, placement: :sidebar, participants: huddle_participants_by_room_id[membership.room_id] || [] %>
-      <% if membership.unread? %>
-        <span class="sidebar-item__status">New</span>
-      <% end %>
     </span>
-  <% elsif membership.unread? %>
+  <% end %>
+  <%# The badge stays a direct child of the row: workspace-navigation only looks one level down. %>
+  <% if membership.unread? %>
     <span class="sidebar-item__status">New</span>
   <% end %>
 <% end %>

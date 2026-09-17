@@ -7,6 +7,13 @@
   justify-content: end;
 }
 
+/* A row with both a presence stack and an unread badge lays out four grid
+   items (icon, label, stack, badge); without the fourth column the badge
+   would wrap onto its own row. */
+.sidebar-item:has(> .voice-room__trailing):has(> .sidebar-item__status) {
+  grid-template-columns: 1.65rem minmax(0, 1fr) auto auto;
+}
+
 .voice-stack {
   align-items: center;
   display: inline-flex;

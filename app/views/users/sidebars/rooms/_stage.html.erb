@@ -7,8 +7,9 @@
   <span class="voice-room__trailing">
     <%= render "rooms/stage/live_dot", room: room %>
     <%= render "rooms/huddles/participants", room: room, placement: :sidebar, participants: huddle_participants_by_room_id[room.id] || [] %>
-    <% if local_assigns[:unread] %>
-      <span class="sidebar-item__status">New</span>
-    <% end %>
   </span>
+  <%# The badge stays a direct child of the row: workspace-navigation only looks one level down. %>
+  <% if local_assigns[:unread] %>
+    <span class="sidebar-item__status">New</span>
+  <% end %>
 <% end %>
