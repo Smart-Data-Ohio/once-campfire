@@ -53,6 +53,7 @@ An organizer can make an event repeat **daily**, **weekly**, **every two weeks**
 An event can name a **venue**: the voice or Stage channel where it takes place. The event form's **Where** select lists "No channel" plus the voice and Stage channels the scheduler belongs to. The organizer must belong to the venue when it is set or changed; an event scheduled inside a voice or Stage channel may use that room as its venue.
 
 - The event page and the event list show a "Where" line with the venue name. Members of the venue get a link to the channel, and the event page adds a **Join** button; anyone else sees the name without a link.
+- When the venue is a Stage channel with a live stream, the event page and the event list show the sidebar's live dot next to the venue name; on the event page the dot appears and disappears without a reload.
 - Reminders name the venue: the push notification and the reminder inbox item read "… in \<venue\>".
 - The Google Calendar entry uses the venue name as its `location` and appends a "Join: \<room URL\>" line to its description. Setting or clearing the venue resyncs the entry, like a title change.
 - A venue change alone sends no inbox items, like a title-only edit. When the same update also changes the time, the usual **Event update** item covers it.
