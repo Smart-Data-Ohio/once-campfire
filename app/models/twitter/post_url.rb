@@ -8,9 +8,9 @@ module Twitter
     PATTERN = %r{
       https?://(?:www\.|mobile\.)?(?:twitter\.com|x\.com)/
       (?:
-        (?<handle>[A-Za-z0-9_]{1,15})/status(?:es)?/
-        |
         i/(?:web/)?status/
+        |
+        (?<handle>[A-Za-z0-9_]{1,15})/status(?:es)?/
       )
       (?<id>\d{1,25})\b
     }x

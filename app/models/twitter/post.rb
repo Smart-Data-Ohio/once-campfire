@@ -49,7 +49,7 @@ class Twitter::Post < ApplicationRecord
   # The @handle for the card header and fallback, from the fetched author or,
   # before any fetch, from the stored link. Handle-less /i/ links have none.
   def display_handle
-    author_handle.presence || PostUrl.extract(url).first&.handle
+    author_handle.presence || Twitter::PostUrl.extract(url).first&.handle
   end
 
   def profile_url

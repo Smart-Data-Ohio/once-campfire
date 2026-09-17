@@ -6,10 +6,10 @@ module Twitter
   module PostReferenceSync
     class << self
       def call(message)
-        references = PostUrl.extract(reference_text(message))
+        references = Twitter::PostUrl.extract(reference_text(message))
 
         posts = references.map do |reference|
-          Post.for_reference(post_id: reference.post_id, url: canonical_url(reference))
+          Twitter::Post.for_reference(post_id: reference.post_id, url: canonical_url(reference))
         end
 
         message.twitter_post_references

@@ -74,7 +74,7 @@ module Twitter
       # handle links keep their handle and handle-less /i/ links use the /i/
       # form, which the API answers the same way.
       def request_path
-        handle = PostUrl.extract(@post.url).first&.handle || "i"
+        handle = Twitter::PostUrl.extract(@post.url).first&.handle || "i"
         "/#{handle}/status/#{@post.post_id}"
       end
 
@@ -128,7 +128,7 @@ module Twitter
 
       def clean_text(value)
         stripped = sanitizer.sanitize(value.to_s).strip
-        stripped.presence&.truncate(Post::MAX_TEXT_CHARS, omission: "")
+        stripped.presence&.truncate(Twitter::Post::MAX_TEXT_CHARS, omission: "")
       end
 
       def clean_handle(value)
@@ -186,7 +186,7 @@ module Twitter
       end
 
       def quote_url(value)
-        PostUrl.post_url?(value) ? value.to_s : nil
+        Twitter::PostUrl.post_url?(value) ? value.to_s : nil
       end
 
       def twimg_url(value)
