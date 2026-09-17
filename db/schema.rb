@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022903) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -488,6 +488,16 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.index ["event_type", "created_at"], name: "index_work_thread_events_on_type_and_created_at"
   end
 
+  create_table "workspace_icons", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "creator_id", null: false
+    t.string "name", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creator_id"], name: "index_workspace_icons_on_creator_id"
+    t.index ["name"], name: "index_workspace_icons_on_name", unique: true
+  end
+
   create_table "workspace_presence_leases", force: :cascade do |t|
     t.string "connection_id", null: false
     t.datetime "created_at", null: false
@@ -532,6 +542,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
   add_foreign_key "webhooks", "users"
   add_foreign_key "work_thread_events", "channel_threads", on_delete: :cascade
   add_foreign_key "work_thread_events", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "workspace_icons", "users", column: "creator_id"
   add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
   add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade
 
