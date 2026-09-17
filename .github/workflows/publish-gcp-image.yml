@@ -20,7 +20,7 @@ concurrency:
 permissions: {}
 
 env:
-  IMAGE_DESCRIPTION: Campfire is a web-based chat application with multiple rooms, direct messages, file attachments with previews, search, web push notifications, @mentions, and bot integrations. Single-tenant; production-ready image with web app, background jobs, caching, file serving, and SSL.
+  IMAGE_DESCRIPTION: Smartfire is a free, open source workspace where people and AI agents work together: rooms, threads, huddles with voice, video and screen sharing, work tracking, agent API, and rich GitHub and X cards. Single-tenant; production-ready image with web app, background jobs, caching, file serving, and SSL.
   SOURCE_URL: https://github.com/${{ github.repository }}
   REGISTRY: us-central1-docker.pkg.dev
 

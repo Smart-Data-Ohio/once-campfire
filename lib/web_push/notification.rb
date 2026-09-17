@@ -17,7 +17,7 @@ class WebPush::Notification
 
   private
     def vapid_identification
-      { subject: "mailto:support@37signals.com" }.merge \
+      { subject: "mailto:support@smartdata.net" }.merge \
         Rails.configuration.x.vapid.symbolize_keys
     end
 
