@@ -107,6 +107,34 @@ class Users::SidebarsControllerTest < ActionDispatch::IntegrationTest
       "[aria-label='Nobody in huddle']"
   end
 
+  test "direct row re-renders when a participant joins" do
+    with_caching do
+      room = rooms(:david_and_jason)
+      grant = issue_quiet_grant!(user: users(:jason), room: room)
+
+      get user_sidebar_url
+      assert_response :success
+      assert_select "##{dom_id(room, :list)} .voice-stack:not(.voice-stack--live)"
+      assert_select "##{dom_id(room, :list)}", text: /Jason/
+
+      # A change outside the collection key serves the cached row, proving
+      # the row below really comes from the cache.
+      users(:jason).update!(name: "Jordan")
+      get user_sidebar_url
+      assert_response :success
+      assert_select "##{dom_id(room, :list)}", text: /Jason/
+      assert_select "##{dom_id(room, :list)}", text: /Jordan/, count: 0
+
+      # Joining only touches the grant's sighting, so the re-render below
+      # can only come from the participant ids in the collection key.
+      grant.record_seen!
+      get user_sidebar_url
+      assert_response :success
+      assert_select "##{dom_id(room, :list)} .voice-stack--live .voice-stack__count", text: "1"
+      assert_select "##{dom_id(room, :list)}", text: /Jordan/
+    end
+  end
+
   test "group direct rooms render no stack" do
     group = Rooms::Direct.create_for({ creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
     issue_in_call_grant!(user: users(:jason), room: group)
@@ -152,10 +180,31 @@ class Users::SidebarsControllerTest < ActionDispatch::IntegrationTest
 
   private
     def issue_in_call_grant!(user:, room:)
-      session = user.sessions.find_by(user_agent: "Test") || user.sessions.create!(user_agent: "Test")
-      HuddleGrant.issue!(session: session, membership: room.memberships.find_by!(user: user)).tap do |grant|
+      issue_quiet_grant!(user: user, room: room).tap do |grant|
         grant.update_columns(last_seen_at: Time.current)
       end
+    end
+
+    def issue_quiet_grant!(user:, room:)
+      session = user.sessions.find_by(user_agent: "Test") || user.sessions.create!(user_agent: "Test")
+      HuddleGrant.issue!(session: session, membership: room.memberships.find_by!(user: user))
+    end
+
+    def with_caching(&block)
+      original_cache = Rails.cache
+      original_collection_cache = ActionView::PartialRenderer.collection_cache
+      original_perform_caching = ActionController::Base.perform_caching
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      # The collection renderer snapshots its store at boot, so point it at
+      # the memory store too or cached: keeps hitting the null store.
+      ActionView::PartialRenderer.collection_cache = Rails.cache
+      ActionController::Base.perform_caching = true
+
+      block.call
+    ensure
+      ActionController::Base.perform_caching = original_perform_caching
+      ActionView::PartialRenderer.collection_cache = original_collection_cache
+      Rails.cache = original_cache
     end
 
     def create_quiet_channel(name)

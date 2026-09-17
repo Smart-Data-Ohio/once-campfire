@@ -113,8 +113,9 @@
           </header>
 
           <div id="direct_rooms" class="sidebar-list" data-controller="sorted-list" data-action="rooms-list:unread@window->sorted-list#updateItem">
-            <%# No collection caching: the huddle stack inside each row must render fresh. %>
-            <%= render partial: "users/sidebars/rooms/direct", collection: @direct_memberships, as: :membership %>
+            <%# The in-call participant ids join the collection key so a cached row never serves stale presence. %>
+            <%= render partial: "users/sidebars/rooms/direct", collection: @direct_memberships, as: :membership,
+                  cached: ->(membership) { [ membership, huddle_participants_by_room_id[membership.room_id]&.map(&:id) ] } %>
           </div>
 
           <div class="sidebar-list sidebar-list--people" aria-label="Start a direct message">
