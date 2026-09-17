@@ -8,6 +8,7 @@ class Messages::ByBotsController < MessagesController
   before_action :set_message, only: %i[ update destroy ]
   before_action :ensure_can_manage_bot_message, only: %i[ update destroy ]
   require_agent_capability :post_messages, only: %i[ create update destroy ]
+  require_agent_capability :read_messages, only: :index
   before_action :ensure_body_or_attachment_present, only: :create
 
   def index
