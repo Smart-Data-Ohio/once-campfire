@@ -149,6 +149,40 @@ class ChannelThread < ApplicationRecord
       WorkThreadLink.where(channel_thread_id: ids).group(:channel_thread_id).count
     end
 
+    # The one board-post creation path behind the human new-post form and
+    # the agent posts API, so inbox items, the assignment event, the
+    # ledger rows, broadcasts, and delivery limits behave identically no
+    # matter who creates the post. A post is tracked work from creation;
+    # work_status arrives resolved with the caller's default. A present
+    # owner_id must be an eligible member or agent (RecordInvalid
+    # otherwise); tags accept an array or a comma-separated string;
+    # first_message is Markdown for the opening message, or blank for
+    # none. Raises RecordNotFound when the creator is not a room member.
+    def create_board_post!(room:, creator:, name:, work_status:, owner_id: nil, tags: nil, run_url: nil, first_message: nil)
+      thread = nil
+
+      transaction do
+        thread = room.channel_threads.new(
+          name: name,
+          work_status: work_status,
+          creator: creator,
+          run_url: run_url.presence
+        )
+        thread.tag_names = tags unless tags.nil?
+        thread.work_owner_id = normalize_board_post_owner_id!(thread, owner_id)
+        thread.save!
+        ThreadMembership.join!(thread, creator)
+
+        message = if first_message.to_s.strip.present?
+          thread.post_message!(creator: creator, attributes: { markdown_source: first_message })
+        end
+        thread.write_creation_assignment!(actor: creator) if thread.work_owner_id.present?
+        notify_board_post_created!(thread, message) if message
+      end
+
+      thread
+    end
+
     # Whether each post's owner counts as available, computed once per board
     # page instead of once per row. Mirrors work_owner_active? exactly:
     # humans need an active account plus board membership, while agents
@@ -186,6 +220,42 @@ class ChannelThread < ApplicationRecord
     end
 
     private
+      # Mirrors update_work!'s owner normalization: blank clears, anything
+      # that is not an integer id is invalid. Eligibility itself is
+      # validated on save, the same check an owner change goes through.
+      def normalize_board_post_owner_id!(thread, owner_id)
+        return if owner_id.blank?
+        return owner_id.id if owner_id.is_a?(User)
+
+        Integer(owner_id, exception: false).tap do |normalized|
+          if normalized.nil?
+            thread.errors.add(:work_owner, "is invalid")
+            raise ActiveRecord::RecordInvalid.new(thread)
+          end
+        end
+      end
+
+      # A new post notifies board members following everything, plus the
+      # assigned human owner whatever their involvement, sourced at the
+      # opening message so the inbox can open its exact context. The items
+      # go through the recorder for grouping and idempotency; the
+      # recipients are authorized here because room followers are not
+      # thread members yet.
+      def notify_board_post_created!(thread, message)
+        memberships = thread.room.memberships.includes(:user).to_a
+
+        memberships.each do |membership|
+          user = membership.user
+          next unless user&.active? && !user.bot?
+          next if user.id == thread.creator_id
+          next if membership.involved_in_invisible?
+          next unless membership.involved_in_everything? || user.id == thread.work_owner_id
+
+          ActivityItems::Recorder.record!(recipient: user, source: message,
+            event_type: "thread_activity", skip_source_check: true)
+        end
+      end
+
       def agent_post_eligible?(agent, granted_agent_ids, ever_granted_agent_ids)
         if ever_granted_agent_ids.include?(agent.id)
           granted_agent_ids.include?(agent.id)
@@ -478,6 +548,27 @@ class ChannelThread < ApplicationRecord
         end
       end
     end
+
+    self
+  end
+
+  # Assignment side effects for a board post created with an owner: the
+  # work_assignment history event (from no owner, with the creator as
+  # actor) plus the agent ledger rows and their webhooks. Runs inside the
+  # creation transaction on a post whose owner was set at build time, so
+  # it records exactly what an owner change from nil would have recorded.
+  def write_creation_assignment!(actor:)
+    WorkThreadEvent.create_for_change!(
+      thread: self,
+      actor: actor,
+      from_status: work_status,
+      to_status: work_status,
+      from_owner: nil,
+      to_owner: work_owner
+    )
+    events = record_work_assignment_events!(from_owner: nil, to_owner: work_owner, actor: actor)
+
+    ActiveRecord.after_all_transactions_commit { deliver_work_assignment_webhooks(events) }
 
     self
   end
