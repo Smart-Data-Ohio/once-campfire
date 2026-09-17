@@ -488,6 +488,35 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
       head.reload.series_events.map(&:starts_at)
   end
 
+  test "this and following can shift an occurrence exactly onto the next active slot" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrence = head.series_events.second
+
+    occurrence.update_with_scope!(
+      { starts_at: utc(2027, 1, 15, 9, 0), ends_at: utc(2027, 1, 15, 10, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal [ utc(2027, 1, 1, 9, 0), utc(2027, 1, 15, 9, 0), utc(2027, 1, 22, 9, 0), utc(2027, 1, 29, 9, 0) ],
+      head.reload.series_events.map(&:starts_at)
+  end
+
+  test "this and following can shift the head exactly onto the next active slot" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+
+    head.update_with_scope!(
+      { starts_at: utc(2027, 1, 8, 9, 0), ends_at: utc(2027, 1, 8, 10, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal [ utc(2027, 1, 8, 9, 0), utc(2027, 1, 15, 9, 0), utc(2027, 1, 22, 9, 0), utc(2027, 1, 29, 9, 0) ],
+      head.reload.series_events.map(&:starts_at)
+  end
+
   test "series slots are unique among uncancelled occurrences" do
     head = create_series!(
       starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
@@ -815,6 +844,64 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_equal starts.uniq, starts
   end
 
+  test "rematerialization can move a protected occurrence onto another planned mover's slot" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 31, 10, 0), rule: "weekly", until_date: Date.new(2027, 3, 7)
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 6, occurrences.size
+    protected_occurrence = occurrences.last
+    assert_equal Date.new(2027, 3, 7), protected_occurrence.starts_at.to_date
+    head.respond!(users(:jason), "going")
+    protected_occurrence.respond!(users(:jason), "declined")
+
+    head.update_with_scope!(
+      { recurrence_rule: "monthly", recurrence_until: Date.new(2027, 7, 31) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    current = head.reload.series_events.active.order(:starts_at).to_a
+    assert_equal [
+      Date.new(2027, 1, 31), Date.new(2027, 2, 28), Date.new(2027, 3, 31),
+      Date.new(2027, 4, 30), Date.new(2027, 5, 31), Date.new(2027, 6, 30), Date.new(2027, 7, 31)
+    ], current.map { |occurrence| occurrence.starts_at.to_date }
+    assert_equal current.map(&:starts_at).uniq, current.map(&:starts_at)
+
+    moved = Event.find(protected_occurrence.id)
+    assert_equal utc(2027, 2, 28, 10, 0), moved.starts_at
+    assert_equal "declined", moved.response_for(users(:jason))
+    assert_equal "going", moved.response_for(@organizer)
+  end
+
+  test "a failure during rematerialization placement leaves every row with its original series and time" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 31, 10, 0), rule: "weekly", until_date: Date.new(2027, 3, 7)
+    )
+    occurrences = head.series_events.to_a
+    head.respond!(users(:jason), "going")
+    occurrences.last.respond!(users(:jason), "declined")
+    before = occurrences.map { |occurrence| [ occurrence.series_id, occurrence.starts_at, occurrence.ends_at, occurrence.recurrence_rule ] }
+    last_mover_id = occurrences.find { |occurrence| occurrence.starts_at == utc(2027, 2, 28, 10, 0) }.id
+
+    with_failing_save_for(last_mover_id) do
+      assert_raises(RuntimeError) do
+        head.update_with_scope!(
+          { recurrence_rule: "monthly", recurrence_until: Date.new(2027, 7, 31) },
+          scope: "this_and_following", actor: @organizer
+        )
+      end
+    end
+
+    occurrences.each_with_index do |occurrence, index|
+      fresh = Event.find(occurrence.id)
+      assert_equal before[index][0], fresh.series_id
+      assert_equal before[index][1], fresh.starts_at
+      assert_equal before[index][2], fresh.ends_at
+      assert_equal before[index][3], fresh.recurrence_rule
+    end
+    assert_equal 6, head.reload.series_events.count
+  end
+
   test "series order puts uncancelled occurrences first at equal times" do
     head = create_series!(
       starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 15)
@@ -918,7 +1005,100 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_not_predicate occurrences.third.reload, :cancelled?
   end
 
+  test "a single-occurrence time edit of the head is rejected" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      head.update_with_scope!(
+        { starts_at: utc(2027, 1, 1, 10, 0), ends_at: utc(2027, 1, 1, 11, 0) },
+        scope: "this_event", actor: @organizer
+      )
+    end
+    assert_equal [ "moves the whole series: choose This and following or the entire series" ], error.record.errors[:starts_at]
+    assert_equal utc(2027, 1, 1, 9, 0), head.reload.starts_at
+  end
+
+  test "a single-occurrence description edit of the head still succeeds" do
+    head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
+    occurrences = head.series_events.to_a
+
+    head.update_with_scope!({ description: "Head note" }, scope: "this_event", actor: @organizer)
+
+    assert_equal "Head note", head.reload.description
+    assert_nil occurrences.second.reload.description
+  end
+
+  test "a plain update of the head start time is rejected" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      head.update!(starts_at: utc(2027, 1, 2, 9, 0))
+    end
+    assert_equal [ "moves the whole series: choose This and following or the entire series" ], error.record.errors[:starts_at]
+    assert_equal utc(2027, 1, 1, 9, 0), head.reload.starts_at
+  end
+
+  test "a follower save failure clears the scoped flags and rolls the transaction back" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrences = head.series_events.to_a
+    editor = occurrences.second
+    before = occurrences.map { |occurrence| [ occurrence.series_id, occurrence.starts_at, occurrence.ends_at ] }
+
+    with_failing_save_for(occurrences.third.id) do
+      assert_raises(RuntimeError) do
+        editor.update_with_scope!(
+          { starts_at: utc(2027, 1, 9, 9, 0), ends_at: utc(2027, 1, 9, 10, 0) },
+          scope: "this_and_following", actor: @organizer
+        )
+      end
+    end
+
+    assert_not editor.instance_variable_get(:@allow_recurrence_mutation)
+    assert_not editor.instance_variable_get(:@following_reorder)
+    assert_not editor.instance_variable_get(:@skip_series_order_validation)
+    occurrences.each do |occurrence|
+      assert_not occurrence.instance_variable_get(:@allow_recurrence_mutation)
+      assert_not occurrence.instance_variable_get(:@skip_series_order_validation)
+    end
+
+    occurrences.each_with_index do |occurrence, index|
+      fresh = occurrence.reload
+      assert_equal before[index][0], fresh.series_id
+      assert_equal before[index][1], fresh.starts_at
+      assert_equal before[index][2], fresh.ends_at
+    end
+
+    follower = occurrences.fourth
+    assert_raises(RuntimeError) do
+      follower.send(:with_series_follower_save) { raise "boom" }
+    end
+    assert_not follower.instance_variable_get(:@allow_recurrence_mutation)
+    assert_not follower.instance_variable_get(:@skip_series_order_validation)
+
+    assert_raises(RuntimeError) do
+      follower.send(:with_following_reorder) { raise "boom" }
+    end
+    assert_not follower.instance_variable_get(:@following_reorder)
+  end
+
   private
+    def with_failing_save_for(event_id)
+      original = Event.instance_method(:save!)
+      Event.define_method(:save!) do |*args, **kwargs, &block|
+        raise "boom" if id == event_id
+
+        original.bind_call(self, *args, **kwargs, &block)
+      end
+      yield
+    ensure
+      Event.define_method(:save!, original)
+    end
     def utc(year, month, day, hour, min = 0)
       ActiveSupport::TimeZone["UTC"].local(year, month, day, hour, min)
     end
