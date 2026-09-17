@@ -26,6 +26,7 @@ class WorkspaceIconsTest < ApplicationSystemTestCase
 
     join_room rooms(:designers)
     send_message "Ship it with :acme: today"
+    assert_selector "img.icon--custom[src='/icons/acme'][alt=':acme:']", visible: true
     message = Message.find_by!(markdown_source: "Ship it with :acme: today")
 
     within_message(message) do
