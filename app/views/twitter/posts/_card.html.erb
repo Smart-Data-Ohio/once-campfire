@@ -20,7 +20,7 @@
           <%= link_to "@#{post.display_handle}", post.profile_url, class: "x-post-card__handle", target: "_blank", rel: "noopener noreferrer" %>
         <% end %>
       </span>
-      <%= image_tag "icons/brands/x.svg", class: "icon icon--brand x-post-card__logo", alt: "", aria: { hidden: true } %>
+      <%= twitter_x_logo_tag %>
     </header>
 
     <% if post.text.present? %>
@@ -80,13 +80,13 @@
         <span class="x-post-card__time"><%= local_datetime_tag post.posted_at %></span>
       <% end %>
       <% if post.replies.present? %>
-        <span class="x-post-card__count"><%= number_to_human(post.replies, format: "%n%u", units: { unit: "", thousand: "K", million: "M", billion: "B" }) %> replies</span>
+        <span class="x-post-card__count"><%= compact_count(post.replies) %> replies</span>
       <% end %>
       <% if post.reposts.present? %>
-        <span class="x-post-card__count"><%= number_to_human(post.reposts, format: "%n%u", units: { unit: "", thousand: "K", million: "M", billion: "B" }) %> reposts</span>
+        <span class="x-post-card__count"><%= compact_count(post.reposts) %> reposts</span>
       <% end %>
       <% if post.likes.present? %>
-        <span class="x-post-card__count"><%= number_to_human(post.likes, format: "%n%u", units: { unit: "", thousand: "K", million: "M", billion: "B" }) %> likes</span>
+        <span class="x-post-card__count"><%= compact_count(post.likes) %> likes</span>
       <% end %>
       <%= link_to "View on X", post.view_url, class: "x-post-card__link", target: "_blank", rel: "noopener noreferrer" %>
     </footer>

@@ -71,19 +71,18 @@
   overflow-wrap: break-word;
 }
 
+/* No display override here: flex or grid on the details element would
+   break the closed state where ::details-content is unsupported. The
+   summary (clamp plus toggle) renders above the expanded text. */
 .x-post-card__details {
-  display: flex;
-  flex-direction: column;
   margin: 0.35rem 0 0;
 }
 
 .x-post-card__details > .x-post-card__text {
-  order: 1;
   margin-top: 0;
 }
 
 .x-post-card__summary {
-  order: 2;
   list-style: none;
   cursor: pointer;
 }
