@@ -109,6 +109,15 @@ class Accounts::BotsControllerTest < ActionDispatch::IntegrationTest
     assert_not_equal before, fresh_user_avatar_path(bot.reload)
   end
 
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { User.count } do
+      post account_bots_url, params: { user: { name: "Icon Bot", icon_name: ":notanicon:" } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
   test "update with an unknown icon re-renders the edit form" do
     put account_bot_url(users(:bender)), params: { user: { name: "Bender Bot", icon_name: ":notanicon:" } }
 

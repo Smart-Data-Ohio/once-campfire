@@ -89,6 +89,15 @@ class Rooms::ClosedsControllerTest < ActionDispatch::IntegrationTest
     assert_empty capture_turbo_stream_broadcasts([ users(:bender), :rooms ])
   end
 
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_closeds_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ] }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
   test "update with an unknown icon re-renders the edit form without revising members" do
     room = rooms(:designers)
     user_ids_before = room.user_ids.sort

@@ -20,6 +20,10 @@ class Rooms::StagesController < RoomsController
 
     broadcast_create_room(room)
     redirect_to room_url(room)
+  rescue ActiveRecord::RecordInvalid => error
+    @room = error.record
+    @users = User.active.ordered
+    render :new, status: :unprocessable_entity
   end
 
   def edit

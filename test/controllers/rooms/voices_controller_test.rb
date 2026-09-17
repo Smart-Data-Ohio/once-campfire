@@ -62,6 +62,15 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "fire", room.reload.icon_name
   end
 
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_voices_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ] }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
   test "update with an unknown icon re-renders the edit form" do
     room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
 

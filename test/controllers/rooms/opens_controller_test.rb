@@ -70,6 +70,15 @@ class Rooms::OpensControllerTest < ActionDispatch::IntegrationTest
     assert_nil rooms(:pets).reload.icon_name
   end
 
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_opens_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
   test "update with an unknown icon re-renders the edit form" do
     assert_turbo_stream_broadcasts :rooms, count: 0 do
       put rooms_open_url(rooms(:pets)), params: { room: { name: "All Pets", icon_name: ":notanicon:" } }

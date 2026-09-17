@@ -138,6 +138,15 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ users(:david).id, users(:jason).id ].sort, room.reload.user_ids.sort
   end
 
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_stages_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ] }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
   test "update with an unknown icon re-renders the edit form without revising members" do
     room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
 
