@@ -297,6 +297,267 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
     assert_equal "in_progress", thread.work_status
   end
 
+  test "patch updates tags and run_url alongside the status" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Tagged work")
+
+    patch agents_work_thread_url(thread), params: {
+      work_status: "in_progress", tags: [ "API", "launch" ],
+      run_url: "https://example.com/runs/3"
+    }.to_json, headers: bearer_headers
+
+    assert_response :success
+    assert_equal "in_progress", thread.reload.work_status
+    assert_equal %w[ api launch ], thread.tag_names
+    assert_equal "https://example.com/runs/3", thread.run_url
+    assert_equal %w[ api launch ], response.parsed_body["tags"]
+    assert_equal "https://example.com/runs/3", response.parsed_body["run_url"]
+  end
+
+  test "patch updates tags alone in array and string forms" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Retagged work")
+
+    patch agents_work_thread_url(thread),
+      params: { tags: [ "API", "launch" ] }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_equal %w[ api launch ], thread.reload.tag_names
+    assert_equal "planned", thread.work_status
+
+    patch agents_work_thread_url(thread),
+      params: { tags: "backend, api" }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_equal %w[ api backend ], thread.reload.tag_names
+
+    patch agents_work_thread_url(thread),
+      params: { tags: [] }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_equal [], thread.reload.tag_names
+  end
+
+  test "patch updates run_url alone and blank clears it" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Linked run work")
+
+    patch agents_work_thread_url(thread),
+      params: { run_url: "https://example.com/runs/4" }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_equal "https://example.com/runs/4", thread.reload.run_url
+
+    patch agents_work_thread_url(thread),
+      params: { run_url: "" }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_nil thread.reload.run_url
+  end
+
+  test "patch rejects invalid tags and run_url with 422" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Validated tags work")
+
+    invalid_bodies = [
+      { tags: "one, two, three, four, five, six" },
+      { tags: "Not a tag!" },
+      { tags: "x" * 31 },
+      { run_url: "http://example.com/runs/5" },
+      { run_url: "https://example.com/#{"x" * 500}" }
+    ]
+
+    invalid_bodies.each do |body|
+      patch agents_work_thread_url(thread), params: body.to_json, headers: bearer_headers
+      assert_response :unprocessable_entity, "expected 422 for #{body.inspect}"
+    end
+
+    assert_equal [], thread.reload.tag_names
+    assert_nil thread.run_url
+  end
+
+  test "patch cannot stop tracking with a blank status" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Tracked work")
+
+    patch agents_work_thread_url(thread),
+      params: { work_status: "" }.to_json,
+      headers: bearer_headers
+    assert_response :unprocessable_entity
+    assert_equal "planned", thread.reload.work_status
+  end
+
+  test "patch with only a note and no field is 422" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Noted work")
+
+    patch agents_work_thread_url(thread),
+      params: { note: "Nothing to attach this to" }.to_json,
+      headers: bearer_headers
+    assert_response :unprocessable_entity
+  end
+
+  test "patch tags without manage_threads is 403" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    thread = create_owned_thread!(name: "Ungoverned tags")
+
+    patch agents_work_thread_url(thread),
+      params: { tags: "api" }.to_json,
+      headers: bearer_headers
+
+    assert_response :forbidden
+    assert_equal [], thread.reload.tag_names
+  end
+
+  test "put replaces the pinned result and records the event" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Result work")
+
+    assert_difference -> { thread.work_thread_events.where(event_type: "result_updated").count }, 1 do
+      put agents_work_thread_url(thread) + "/result",
+        params: { markdown: "## Shipped" }.to_json,
+        headers: bearer_headers
+    end
+
+    assert_response :success
+    assert_equal "## Shipped", thread.reload.result_markdown
+    assert_equal @bot.id, thread.result_updated_by_id
+    assert thread.result_updated_at.present?
+    assert_equal "## Shipped", response.parsed_body["result"]
+    assert response.parsed_body["result_updated_at"].present?
+
+    event = thread.work_thread_events.ordered.first
+    assert_equal "result_updated", event.event_type
+    assert_equal @bot.id, event.actor_id
+    assert_equal "## Shipped", event.metadata["excerpt"]
+  end
+
+  test "put result requires ownership and manage_threads" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    human_thread = create_human_thread!(name: "Not mine")
+
+    put agents_work_thread_url(human_thread) + "/result",
+      params: { markdown: "Hijacked" }.to_json,
+      headers: bearer_headers
+    assert_response :not_found
+    assert_nil human_thread.reload.result_markdown
+
+    AgentGrant.where(agent: @agent, capability: "manage_threads").sole.revoke!
+    owned_thread = create_owned_thread!(name: "Ungoverned result")
+
+    put agents_work_thread_url(owned_thread) + "/result",
+      params: { markdown: "Denied" }.to_json,
+      headers: bearer_headers
+    assert_response :forbidden
+    assert_equal "Forbidden: agent lacks manage_threads capability", response.parsed_body["error"]
+    assert_nil owned_thread.reload.result_markdown
+  end
+
+  test "put result rejects missing markdown and overlong results with 422" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Capped result")
+
+    put agents_work_thread_url(thread) + "/result",
+      params: {}.to_json,
+      headers: bearer_headers
+    assert_response :unprocessable_entity
+
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "x" * 20_001 }.to_json,
+      headers: bearer_headers
+    assert_response :unprocessable_entity
+
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "x" * 20_000 }.to_json,
+      headers: bearer_headers
+    assert_response :success
+    assert_equal "x" * 20_000, thread.reload.result_markdown
+  end
+
+  test "put result with blank markdown clears" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Cleared result")
+    thread.update_result!(actor: users(:david), markdown: "## Draft")
+
+    assert_difference -> { thread.work_thread_events.where(event_type: "result_updated").count }, 1 do
+      put agents_work_thread_url(thread) + "/result",
+        params: { markdown: "" }.to_json,
+        headers: bearer_headers
+    end
+
+    assert_response :success
+    assert_nil thread.reload.result_markdown
+  end
+
+  test "put result with unchanged markdown writes nothing" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Stable result")
+
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "## Final" }.to_json,
+      headers: bearer_headers
+    assert_response :success
+
+    assert_no_difference -> { thread.work_thread_events.count } do
+      put agents_work_thread_url(thread) + "/result",
+        params: { markdown: "## Final" }.to_json,
+        headers: bearer_headers
+    end
+    assert_response :success
+  end
+
+  test "put result reaches the human inbox as work_update" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Inbox result")
+
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "## Done" }.to_json,
+      headers: bearer_headers
+    assert_response :success
+
+    event = thread.work_thread_events.ordered.first
+    item = ActivityItem.find_by!(user: users(:david), source: event)
+    assert_equal "work_update", item.event_type
+  end
+
+  test "put result is Bearer-only" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Session result")
+
+    sign_in :david
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "Human" }
+    assert_response :forbidden
+    assert_nil thread.reload.result_markdown
+  end
+
   test "a revoked credential is 401" do
     grant!(capability: "read_messages", room: @room)
     grant!(capability: "post_messages", room: @room)
@@ -311,6 +572,11 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
 
     patch agents_work_thread_url(thread),
       params: { work_status: "in_progress" }.to_json,
+      headers: bearer_headers
+    assert_response :unauthorized
+
+    put agents_work_thread_url(thread) + "/result",
+      params: { markdown: "Revoked" }.to_json,
       headers: bearer_headers
     assert_response :unauthorized
   end
