@@ -83,7 +83,7 @@ Done for the first slice when a linked PR renders current context, receives rele
 
 ### 5. Events and Google Calendar
 
-Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). One-way Google Calendar publishing for connected attendees is live; see [Google Calendar](docs/google-calendar.md). Recurrence and linking an event to a text, voice, or Stage channel remain follow-ups.
+Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). One-way Google Calendar publishing for connected attendees is live; see [Google Calendar](docs/google-calendar.md). Recurrence has shipped; only linking an event to a text, voice, or Stage channel remains.
 
 - Google Calendar connection so opted-in events can appear in a participant's calendar.
 - Define the source of truth and attendee consent before choosing one-way publishing or two-way synchronization.

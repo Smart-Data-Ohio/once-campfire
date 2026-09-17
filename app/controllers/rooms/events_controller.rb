@@ -9,7 +9,12 @@ class Rooms::EventsController < ApplicationController
   before_action :ensure_event_canceller, only: :cancel
 
   def index
-    @upcoming_events = @room.events.upcoming.soonest_first.includes(:organizer, :attendances)
+    upcoming = @room.events.upcoming.soonest_first.includes(:organizer, :attendances).to_a
+    @series_counts = upcoming.select(&:series?).group_by(&:series_id).to_h do |series_id, occurrences|
+      representative = occurrences.min_by { |occurrence| [ occurrence.starts_at, occurrence.id ] }
+      [ representative.id, occurrences.size ]
+    end
+    @upcoming_events = upcoming.select { |event| !event.series? || @series_counts.key?(event.id) }
     @past_events = @room.events.past.ordered.includes(:organizer, :attendances)
     @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances)
   end
@@ -27,7 +32,8 @@ class Rooms::EventsController < ApplicationController
     @event = @room.events.build(event_attributes.merge(organizer: Current.user))
 
     if @event.save
-      redirect_to room_event_path(@room, @event), notice: "Event scheduled."
+      notice = @event.recurrence_rule.present? ? "Repeating event scheduled." : "Event scheduled."
+      redirect_to room_event_path(@room, @event), notice:
     else
       render :new, status: :unprocessable_content
     end
@@ -37,14 +43,14 @@ class Rooms::EventsController < ApplicationController
   end
 
   def update
-    @event.update_with_announcement!(event_attributes, actor: Current.user)
+    @event.update_with_scope!(event_attributes, scope: params[:update_scope], actor: Current.user)
     redirect_to room_event_path(@room, @event), notice: "Event updated."
   rescue ActiveRecord::RecordInvalid
     render :edit, status: :unprocessable_content
   end
 
   def cancel
-    if @event.cancel!(actor: Current.user)
+    if @event.cancel_with_scope!(scope: params[:cancel_scope], actor: Current.user)
       redirect_to room_event_path(@room, @event), notice: "Event cancelled."
     else
       redirect_to room_event_path(@room, @event), notice: "Event was already cancelled."
@@ -69,7 +75,7 @@ class Rooms::EventsController < ApplicationController
     end
 
     def event_attributes
-      permitted = params.require(:event).permit(:title, :description, :starts_at, :ends_at, :time_zone)
+      permitted = params.require(:event).permit(:title, :description, :starts_at, :ends_at, :time_zone, :recurrence_rule, :recurrence_until)
       # The zone is fixed when the event is scheduled. Edits keep reading the
       # posted times in that zone, so an editor elsewhere cannot move the event
       # by saving the form untouched.

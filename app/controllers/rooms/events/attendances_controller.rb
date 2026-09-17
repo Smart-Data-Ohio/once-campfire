@@ -17,13 +17,13 @@ class Rooms::Events::AttendancesController < ApplicationController
       return redirect_to room_event_path(@room, @event), alert: "This event is no longer open for responses."
     end
 
-    attendance = @event.attendances.find_or_initialize_by(user: Current.user)
-    attendance.response = response
+    apply_to_future = params[:apply_to_future] == "1" || params.dig(:attendance, :apply_to_future) == "1"
 
-    if attendance.save
+    begin
+      attendance = @event.respond!(Current.user, response, apply_to_future:)
       redirect_to room_event_path(@room, @event), notice: "Response saved: #{attendance.response}."
-    else
-      redirect_to room_event_path(@room, @event), alert: attendance.errors.full_messages.to_sentence
+    rescue ActiveRecord::RecordInvalid => error
+      redirect_to room_event_path(@room, @event), alert: error.record.errors.full_messages.to_sentence
     end
   end
 

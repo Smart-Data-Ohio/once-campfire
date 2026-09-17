@@ -38,7 +38,7 @@
     <p class="room-events__empty">No upcoming events. Schedule the first one.</p>
   <% else %>
     <div class="room-events__list" role="list" aria-labelledby="upcoming-events">
-      <%= render partial: "rooms/events/event", collection: @upcoming_events, as: :event, locals: { room: @room } %>
+      <%= render partial: "rooms/events/event", collection: @upcoming_events, as: :event, locals: { room: @room, series_counts: @series_counts } %>
     </div>
   <% end %>
 
