@@ -106,9 +106,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       wait_for_cable_connection
 
       # The sidebar HTML is fresh on page load, so the cable connect must not
-      # reload it: the reload replaces the turbo-cable-stream-source elements
-      # inside the frame, and any user-stream broadcast sent between the
-      # unsubscribe and the resubscribe is silently lost.
+      # reload it.
       wait_for_sidebar_quiet(sidebar_loads)
       assert_equal 1, sidebar_loads.size - before, "the sidebar reloaded when the cable connected"
 
@@ -119,6 +117,66 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       users(:jason).reset_remote_connections
       Timeout.timeout(30) { sleep 0.2 until sidebar_loads.size - before > 1 }
       assert_equal 2, sidebar_loads.size - before
+    end
+  end
+
+  test "rooms stream broadcasts survive the reconnect sidebar reload" do
+    visit room_path(@room)
+    wait_for_cable_connection
+    observe_turbo_stream_renders
+
+    # A single first sighting after the reload is the whole broadcast under
+    # test, so issue the grant up front and leave it unseen: no issuance
+    # wait has to separate it from the reload.
+    renders = header_voice_renders
+    grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:jason)))
+    wait_for_issuance_broadcast(after: renders)
+    within "#voice_rooms .voice-room" do
+      assert_no_selector ".voice-stack--live"
+    end
+
+    sidebar_loads = []
+    count_sidebar_loads = ->(*, payload) do
+      sidebar_loads << true if payload[:controller] == "Users::SidebarsController" && payload[:action] == "show"
+    end
+
+    ActiveSupport::Notifications.subscribed(count_sidebar_loads, "process_action.action_controller") do
+      wait_for_sidebar_quiet(sidebar_loads)
+      before = sidebar_loads.size
+
+      # The subscriptions live in the layout now, so these exact elements
+      # must still be connected after the frame swaps its HTML.
+      page.execute_script(<<~JS)
+        window.sidebarReloads = 0
+        document.getElementById("user_sidebar").addEventListener("turbo:frame-load", () => window.sidebarReloads++)
+        window.preReloadSources = [...document.querySelectorAll("turbo-cable-stream-source")]
+      JS
+
+      users(:jason).reset_remote_connections
+
+      # Same reconnect budget as the test above: the client monitor reopens
+      # a dropped connection only after its 6 s stale threshold over
+      # jittered 6–12 s polls. Wait for the swap itself, not just the
+      # request, so the broadcast below cannot land ahead of it.
+      Timeout.timeout(30) do
+        sleep 0.1 until page.evaluate_script("window.sidebarReloads") > 0
+      end
+
+      # Existing behaviour, unchanged by the move: the sidebar still reloads
+      # after a genuine disconnect.
+      assert_operator sidebar_loads.size - before, :>=, 1
+
+      # The reload landed; broadcast over [user, :rooms] immediately. The
+      # sidebar stack render must land even though the frame just swapped.
+      grant.record_seen!
+
+      assert_equal 3, page.evaluate_script("window.preReloadSources.length")
+      assert page.evaluate_script("window.preReloadSources.every(element => element.isConnected)"),
+        "the sidebar reload replaced the rooms stream sources"
+
+      within "#voice_rooms .voice-room" do
+        assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
+      end
     end
   end
 
@@ -257,7 +315,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     assert_no_selector ".room-header__actions .voice-stack--live", wait: BROADCAST_WAIT
 
     # Let the post-removal cable reconnect play out: the room message stream
-    # stays rejected while the sidebar streams resubscribe and the sidebar
+    # stays rejected while the rooms streams resubscribe and the sidebar
     # frame reloads without the room.
     wait_for_connected_stream_sources(2)
     sleep 2
@@ -457,10 +515,8 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     # presence broadcasts can arrive out of order and the issuance render
     # (nobody in voice yet) would win over the sighting render. Wait for the
     # issuance render to arrive before recording the sighting. Only the
-    # header render is waited for: it travels the room stream on the main
-    # page, while the sidebar render travels a user stream inside the
-    # sidebar frame, which still reloads (dropping its subscriptions
-    # briefly) on every cable reconnect.
+    # header render is waited for: one render proves the issuance broadcast
+    # fired, and it travels the room stream on the main page.
     def wait_for_issuance_broadcast(after: 0)
       Timeout.timeout(10) do
         sleep 0.05 until header_voice_renders > after
