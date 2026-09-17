@@ -17,9 +17,9 @@ class Agents::EventsController < ApplicationController
   POLL_MAX_LIMIT = 100
 
   # GET /agents/events?since=<id>&limit=<n> (Bearer-only, JSON). Returns the
-  # agent's own deliverable rows ordered by id. Message payloads resolve at
-  # query time; rows for messages the agent can no longer read (membership
-  # or grant revoked, message deleted) are omitted.
+  # agent's own deliverable rows ordered by id. Readability (message exists,
+  # membership, read grant) filters in SQL before the limit applies, so
+  # revoked rows can never hide newer readable rows.
   def index
     no_store_response!
 
@@ -28,8 +28,8 @@ class Agents::EventsController < ApplicationController
     limit = [ (params[:limit].presence || POLL_DEFAULT_LIMIT).to_i, 1 ].max
     limit = [ limit, POLL_MAX_LIMIT ].min
 
-    events = agent.agent_events.deliverable
-      .where("id > ?", since)
+    events = agent.agent_events.readable_by(agent)
+      .where("agent_events.id > ?", since)
       .where(outcome: %w[ pending delivered acknowledged ])
       .ordered
       .limit(limit)
@@ -86,9 +86,19 @@ class Agents::EventsController < ApplicationController
         return
       end
 
+      # Ack requires the row's message to be currently readable by the agent
+      # under the same rule as polling: the message exists and the agent's
+      # user is still a member of its room. A surviving workspace grant
+      # alone is not enough.
+      message = @agent_event.message
+      unless message && Membership.exists?(user_id: Current.agent.user_id, room_id: message.room_id)
+        head :not_found
+        return
+      end
+
       # Lets AgentAuthorization check the event's room.
       @room = @agent_event.room
-      @message = @agent_event.message
+      @message = message
     end
 
     def poll_payload(agent, event)

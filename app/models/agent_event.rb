@@ -23,6 +23,36 @@ class AgentEvent < ApplicationRecord
   scope :ordered, -> { order(:id) }
   scope :recent_first, -> { order(id: :desc) }
 
+  class << self
+    # Deliverable rows whose message the agent can currently read: the
+    # message still exists, the agent's user is a member of its room, and a
+    # read grant covers that room (legacy agents keep read everywhere).
+    # Expressed as joins, the way ActivityItem.accessible_to does it, so
+    # callers limit after filtering and revoked rows can never hide newer
+    # readable rows.
+    def readable_by(agent)
+      scope = deliverable
+        .joins("INNER JOIN messages AS event_messages ON event_messages.id = agent_events.message_id")
+        .joins(<<~SQL.squish)
+          INNER JOIN memberships AS event_memberships
+            ON event_memberships.room_id = event_messages.room_id
+            AND event_memberships.user_id = #{connection.quote(agent.user_id)}
+        SQL
+
+      unless agent.legacy_capabilities?
+        scope = scope.joins(<<~SQL.squish)
+          INNER JOIN agent_grants AS event_grants
+            ON event_grants.agent_id = #{connection.quote(agent.id)}
+            AND event_grants.revoked_at IS NULL
+            AND event_grants.capability = #{connection.quote("read_messages")}
+            AND (event_grants.room_id = event_messages.room_id OR event_grants.room_id IS NULL)
+        SQL
+      end
+
+      scope.distinct
+    end
+  end
+
   def deliverable?
     DELIVERABLE_TYPES.include?(event_type)
   end

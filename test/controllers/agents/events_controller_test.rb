@@ -169,6 +169,40 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "mention" ], response.parsed_body.map { |row| row["event_type"] }
   end
 
+  test "polling filters revoked memberships before limiting" do
+    2.times do |i|
+      @room.messages.create!(
+        creator: users(:david), body: "Ping #{i} #{mention_attachment_for(:bender)}",
+        client_message_id: "poll-filter-member-#{i}"
+      )
+    end
+    memberships(:bender_watercooler).destroy!
+    rooms(:bender_and_kevin).messages.create!(
+      creator: users(:kevin), body: "DM hello", client_message_id: "poll-filter-member-dm"
+    )
+
+    get agents_events_url(limit: 1), headers: bearer_headers
+
+    assert_response :success
+    assert_equal [ "direct_message" ], response.parsed_body.map { |row| row["event_type"] }
+  end
+
+  test "polling filters revoked grants before limiting" do
+    AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "read_messages")
+    rooms(:bender_and_kevin).messages.create!(
+      creator: users(:kevin), body: "DM hello", client_message_id: "poll-filter-grant-dm"
+    )
+    @room.messages.create!(
+      creator: users(:david), body: "Hey #{mention_attachment_for(:bender)}",
+      client_message_id: "poll-filter-grant-room"
+    )
+
+    get agents_events_url(limit: 1), headers: bearer_headers
+
+    assert_response :success
+    assert_equal [ "mention" ], response.parsed_body.map { |row| row["event_type"] }
+  end
+
   test "polling is Bearer-only" do
     sign_in :david
     get agents_events_url
@@ -221,6 +255,34 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     post ack_agents_event_url(event), headers: bearer_headers
 
     assert_response :forbidden
+  end
+
+  test "ack is 404 after membership removal even with a workspace grant" do
+    AgentGrant.create!(agent: @agent, room: nil, granted_by: users(:david), capability: "read_messages")
+    @room.messages.create!(
+      creator: users(:david), body: "Hey #{mention_attachment_for(:bender)}",
+      client_message_id: "poll-ack-workspace"
+    )
+    event = @agent.agent_events.deliverable.last
+    memberships(:bender_watercooler).destroy!
+
+    post ack_agents_event_url(event), headers: bearer_headers
+
+    assert_response :not_found
+    assert_equal "pending", event.reload.outcome
+  end
+
+  test "ack is 404 for deleted messages" do
+    message = @room.messages.create!(
+      creator: users(:david), body: "Hey #{mention_attachment_for(:bender)}",
+      client_message_id: "poll-ack-deleted"
+    )
+    event = @agent.agent_events.deliverable.last
+    message.destroy!
+
+    post ack_agents_event_url(event), headers: bearer_headers
+
+    assert_response :not_found
   end
 
   test "ledger page renders for admins" do
