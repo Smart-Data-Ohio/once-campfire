@@ -318,6 +318,14 @@ class StageTest < ApplicationSystemTestCase
       new MutationObserver(() => {
         window.__stageHuddleStates.push(document.getElementById("channel-huddle").dataset.state)
       }).observe(document.getElementById("channel-huddle"), { attributes: true, attributeFilter: [ "data-state" ] })
+      // CI runs these tests with LiveKit reachable, so force the join to fail
+      // at the credential step: the test is about what happens before and
+      // after connecting, and "failed" is the only state with a retry control.
+      const originalFetch = window.fetch
+      window.fetch = (url, options) =>
+        (typeof url === "string" && url.endsWith("/huddle") && options?.method === "POST")
+          ? Promise.resolve(new Response("{}", { status: 503, headers: { "Content-Type": "application/json" } }))
+          : originalFetch(url, options)
       navigator.permissions.query = () => Promise.resolve({ state: "prompt" })
       navigator.mediaDevices.getUserMedia = () => {
         window.__stageGumCalls += 1
@@ -349,6 +357,14 @@ class StageTest < ApplicationSystemTestCase
       new MutationObserver(() => {
         window.__stageHuddleStates.push(document.getElementById("channel-huddle").dataset.state)
       }).observe(document.getElementById("channel-huddle"), { attributes: true, attributeFilter: [ "data-state" ] })
+      // CI runs these tests with LiveKit reachable, so force the join to fail
+      // at the credential step: the test is about what happens before and
+      // after connecting, and "failed" is the only state with a retry control.
+      const originalFetch = window.fetch
+      window.fetch = (url, options) =>
+        (typeof url === "string" && url.endsWith("/huddle") && options?.method === "POST")
+          ? Promise.resolve(new Response("{}", { status: 503, headers: { "Content-Type": "application/json" } }))
+          : originalFetch(url, options)
       navigator.permissions.query = () => Promise.resolve({ state: "denied" })
       navigator.mediaDevices.getUserMedia = () => {
         window.__stageGumCalls += 1
