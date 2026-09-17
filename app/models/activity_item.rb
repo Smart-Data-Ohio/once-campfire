@@ -1,5 +1,5 @@
 class ActivityItem < ApplicationRecord
-  EVENT_TYPES = %w[ mention reply thread_activity work_update work_assignment huddle_started huddle_missed ].freeze
+  EVENT_TYPES = %w[ mention reply thread_activity work_update work_assignment huddle_started huddle_missed event_invitation event_update event_cancelled event_reminder ].freeze
   HUDDLE_EVENT_TYPES = %w[ huddle_started huddle_missed ].freeze
   FILTERS = %w[ unread read handled ].freeze
 
@@ -18,7 +18,7 @@ class ActivityItem < ApplicationRecord
   scope :read, -> { where.not(read_at: nil).where(handled_at: nil) }
   scope :handled, -> { where.not(handled_at: nil) }
   scope :message_sources, -> { where(source_type: Message.polymorphic_name) }
-  scope :supported_sources, -> { where(source_type: [ Message.polymorphic_name, "WorkThreadEvent", HuddleGrant.polymorphic_name ]) }
+  scope :supported_sources, -> { where(source_type: [ Message.polymorphic_name, "WorkThreadEvent", HuddleGrant.polymorphic_name, Event.polymorphic_name ]) }
 
   class << self
     # Source data is deliberately resolved from the source row at query time.
@@ -50,6 +50,12 @@ class ActivityItem < ApplicationRecord
           LEFT JOIN memberships AS activity_huddle_memberships
             ON activity_huddle_memberships.room_id = activity_huddle_grants.room_id
             AND activity_huddle_memberships.user_id = activity_items.user_id
+          LEFT JOIN events AS activity_events
+            ON activity_events.id = activity_items.source_id
+            AND activity_items.source_type = #{connection.quote(Event.polymorphic_name)}
+          LEFT JOIN memberships AS activity_event_memberships
+            ON activity_event_memberships.room_id = activity_events.room_id
+            AND activity_event_memberships.user_id = activity_items.user_id
         SQL
         .merge(User.active.without_bots)
         .where(activity_items: { user_id: user.id })
@@ -57,6 +63,7 @@ class ActivityItem < ApplicationRecord
           (activity_items.source_type = #{connection.quote(Message.polymorphic_name)} AND activity_message_memberships.id IS NOT NULL)
           OR (activity_items.source_type = #{connection.quote("WorkThreadEvent")} AND activity_work_memberships.id IS NOT NULL)
           OR (activity_items.source_type = #{connection.quote(HuddleGrant.polymorphic_name)} AND activity_huddle_memberships.id IS NOT NULL)
+          OR (activity_items.source_type = #{connection.quote(Event.polymorphic_name)} AND activity_event_memberships.id IS NOT NULL)
         SQL
         .distinct
     end

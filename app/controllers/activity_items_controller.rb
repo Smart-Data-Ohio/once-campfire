@@ -186,6 +186,16 @@ class ActivityItemsController < ApplicationController
           body: activity_item_source_body(item).truncate(500),
           path: activity_item_source_path(item)
         }
+      when Event
+        {
+          type: item.source_type,
+          id: source.id,
+          room_id: source.room_id,
+          thread_id: nil,
+          creator_id: source.organizer_id,
+          body: activity_item_source_body(item).truncate(500),
+          path: activity_item_source_path(item)
+        }
       end
     end
 

@@ -39,6 +39,11 @@
       <% end %>
     <% end %>
 
+    <%= link_to room_events_path(room), class: "btn room-header__action", aria: { label: "Show events" }, title: "Show events" do %>
+      <%= image_tag "calendar.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="room-header__action-label">Events</span>
+    <% end %>
+
     <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
       <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
             aria: { label: "View shared screen" }, title: "View shared screen",
