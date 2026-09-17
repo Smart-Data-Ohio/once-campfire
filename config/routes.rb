@@ -100,6 +100,10 @@ Rails.application.routes.draw do
 
     scope module: "rooms" do
       resources :members, only: :index
+      resources :events, only: %i[ index show new create edit update ] do
+        patch :cancel, on: :member
+        resource :attendance, only: :update, controller: "events/attendances"
+      end
       resource :huddle, only: %i[ show create ]
       resource :refresh, only: :show
       resource :settings, only: :show

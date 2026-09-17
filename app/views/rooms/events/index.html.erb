@@ -1,0 +1,53 @@
+<% @page_title = "Events in #{room_display_name(@room)}" %>
+<% @body_class = "sidebar work-workspace" %>
+
+<% content_for :head do %>
+  <%= turbo_exempts_page_from_cache %>
+<% end %>
+
+<% content_for :nav do %>
+  <div class="room-header__identity room--current min-width">
+    <span class="room-header__kind">Events in <%= room_display_name(@room) %></span>
+    <h1 class="room__contents overflow-ellipsis">
+      <span class="room-header__name overflow-ellipsis">Events</span>
+    </h1>
+  </div>
+
+  <div class="room-header__actions">
+    <%= link_to room_path(@room), class: "btn room-header__action", aria: { label: "Back to #{room_display_name(@room)}" }, title: "Back to #{room_display_name(@room)}" do %>
+      <span class="room-header__action-label">Back to <%= room_display_name(@room) %></span>
+    <% end %>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<section class="room-events" aria-labelledby="room-events-title">
+  <header class="room-events__header">
+    <div>
+      <span class="room-events__eyebrow">Channel events</span>
+      <h1 id="room-events-title">Events</h1>
+      <p>Schedule something in <%= room_display_name(@room) %>. Members are invited through the activity inbox and can respond going, maybe, or declined.</p>
+    </div>
+
+    <%= link_to "New event", new_room_event_path(@room), class: "btn btn--primary" %>
+  </header>
+
+  <h2 class="room-events__heading" id="upcoming-events">Upcoming</h2>
+  <% if @upcoming_events.empty? %>
+    <p class="room-events__empty">No upcoming events. Schedule the first one.</p>
+  <% else %>
+    <div class="room-events__list" role="list" aria-labelledby="upcoming-events">
+      <%= render partial: "rooms/events/event", collection: @upcoming_events, as: :event, locals: { room: @room } %>
+    </div>
+  <% end %>
+
+  <h2 class="room-events__heading" id="cancelled-events">Cancelled</h2>
+  <% if @cancelled_events.empty? %>
+    <p class="room-events__empty">No cancelled events.</p>
+  <% else %>
+    <div class="room-events__list" role="list" aria-labelledby="cancelled-events">
+      <%= render partial: "rooms/events/event", collection: @cancelled_events, as: :event, locals: { room: @room } %>
+    </div>
+  <% end %>
+</section>

@@ -1,0 +1,19 @@
+<article class="room-events__item" role="listitem" aria-labelledby="<%= dom_id(event, :title) %>">
+  <div class="room-events__item-main">
+    <h3 id="<%= dom_id(event, :title) %>" class="room-events__item-title">
+      <%= link_to event.title, room_event_path(room, event) %>
+    </h3>
+    <p class="room-events__item-meta">
+      <%= local_datetime_tag(event.starts_at, style: :datetime) do %><%= event.starts_at.in_time_zone(event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+      <% if event.ends_at.present? %>
+        &ndash; <%= local_datetime_tag(event.ends_at, style: :datetime) do %><%= event.ends_at.in_time_zone(event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+      <% end %>
+      <span aria-hidden="true">·</span> organized by <%= event.organizer.name %>
+    </p>
+  </div>
+
+  <p class="room-events__item-counts">
+    <%= pluralize(event.attendances.count { |attendance| attendance.response == "going" }, "going") %>,
+    <%= pluralize(event.attendances.count { |attendance| attendance.response == "maybe" }, "maybe") %>
+  </p>
+</article>

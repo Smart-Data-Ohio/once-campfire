@@ -1,0 +1,95 @@
+<% @page_title = @event.title %>
+<% @body_class = "sidebar work-workspace" %>
+
+<% content_for :head do %>
+  <%= turbo_exempts_page_from_cache %>
+<% end %>
+
+<% content_for :nav do %>
+  <div class="room-header__identity room--current min-width">
+    <span class="room-header__kind">Events in <%= room_display_name(@room) %></span>
+    <h1 class="room__contents overflow-ellipsis">
+      <span class="room-header__name overflow-ellipsis"><%= @event.title %></span>
+    </h1>
+  </div>
+
+  <div class="room-header__actions">
+    <%= link_to room_events_path(@room), class: "btn room-header__action", aria: { label: "All events" }, title: "All events" do %>
+      <span class="room-header__action-label">All events</span>
+    <% end %>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<section class="room-events" aria-labelledby="event-title">
+  <% if @event.cancelled? %>
+    <p class="room-events__cancelled" role="status">This event was cancelled.</p>
+  <% end %>
+
+  <header class="room-events__header">
+    <div>
+      <span class="room-events__eyebrow">Event · organized by <%= @event.organizer.name %></span>
+      <h1 id="event-title"><%= @event.title %></h1>
+      <p class="room-events__times">
+        <%= local_datetime_tag(@event.starts_at, style: :datetime) do %><%= @event.starts_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+        <% if @event.ends_at.present? %>
+          &ndash; <%= local_datetime_tag(@event.ends_at, style: :datetime) do %><%= @event.ends_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+        <% end %>
+      </p>
+    </div>
+
+    <% if @event.manageable_by?(Current.user) %>
+      <nav class="room-events__actions" aria-label="Event management">
+        <%= link_to "Edit", edit_room_event_path(@room, @event), class: "btn" %>
+        <%= button_to "Cancel event", cancel_room_event_path(@room, @event), method: :patch, class: "btn btn--negative", form: { data: { turbo_confirm: "Cancel this event? Attendees will be notified." } } %>
+      </nav>
+    <% end %>
+  </header>
+
+  <% if @event.description.present? %>
+    <div class="room-events__description">
+      <%= simple_format(@event.description) %>
+    </div>
+  <% end %>
+
+  <section class="room-events__response" aria-labelledby="event-response-title">
+    <h2 id="event-response-title" class="room-events__heading">Your response</h2>
+    <% if @event.respondable_by?(Current.user) %>
+      <p>
+        Currently:
+        <strong><%= @current_response ? @current_response.humanize : "No response yet" %></strong>
+      </p>
+      <div class="room-events__responses">
+        <%= button_to "Going", room_event_attendance_path(@room, @event), method: :patch, params: { response: "going" }, class: "btn" %>
+        <%= button_to "Maybe", room_event_attendance_path(@room, @event), method: :patch, params: { response: "maybe" }, class: "btn" %>
+        <%= button_to "Declined", room_event_attendance_path(@room, @event), method: :patch, params: { response: "declined" }, class: "btn btn--plain" %>
+      </div>
+    <% elsif @event.cancelled? %>
+      <p>Responses are closed because this event was cancelled.</p>
+    <% end %>
+  </section>
+
+  <section class="room-events__attendees" aria-labelledby="event-attendees-title">
+    <h2 id="event-attendees-title" class="room-events__heading">
+      Attendees
+      <span class="room-events__counts">
+        <%= pluralize(@attendances.count { |attendance| attendance.response == "going" }, "going") %>,
+        <%= pluralize(@attendances.count { |attendance| attendance.response == "maybe" }, "maybe") %>,
+        <%= pluralize(@attendances.count { |attendance| attendance.response == "declined" }, "declined") %>
+      </span>
+    </h2>
+    <% if @attendances.empty? %>
+      <p class="room-events__empty">No responses yet.</p>
+    <% else %>
+      <ul class="room-events__attendee-list">
+        <% @attendances.each do |attendance| %>
+          <li>
+            <%= attendance.user.name %>
+            <span class="room-events__attendee-response">· <%= attendance.response.humanize %></span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+</section>
