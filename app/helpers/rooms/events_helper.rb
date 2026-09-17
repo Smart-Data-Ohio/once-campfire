@@ -45,11 +45,10 @@ module Rooms::EventsHelper
     @venue_room_ids.include?(venue.id)
   end
 
-  # Events referenced by a message that the viewer may see cards for: only
-  # events in rooms the viewer belongs to. Everyone else keeps the plain
-  # link. Without a viewer (card broadcasts render outside a request) every
-  # referenced event qualifies, so the broadcast carries the same
-  # viewer-independent bodies the card partial renders.
+  # Events a message renders cards for. References only ever point at the
+  # message's own room's events (Event::ReferenceSync), so the list is the
+  # same for every viewer and for card broadcasts, which render outside a
+  # request with no viewer at all.
   def event_cards_for(message)
     # Sorting in Ruby rather than with an `order` scope, because applying a
     # scope to an association builds a fresh relation and so ignores the rows
