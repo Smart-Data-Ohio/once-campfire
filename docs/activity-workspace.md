@@ -15,6 +15,46 @@ Handling an inbox item does not complete a work thread or approve an external ac
 
 Event invitations, updates, cancellations, and reminders are additional sources; see [Native events](events.md). Agent approval requests land in each decider's inbox with Approve and Deny actions; see [AI agents](agents.md#approvals). GitHub review requests will follow as that integration is implemented.
 
+## Notification controls
+
+Three layers decide what lands in your inbox: per-channel involvement, per-integration switches, and grouping. The inbox lists the newest activity first.
+
+### Per-channel involvement
+
+The inbox honours each channel's notification setting. Suppression happens when an item would be created; changing the setting never rewrites or deletes items you already have.
+
+| Inbox item | everything | mentions | nothing | invisible |
+| --- | --- | --- | --- | --- |
+| Direct mentions, and PR review requests addressed to you | Yes | Yes | Yes | No |
+| Replies to you | Yes | Yes | No | No |
+| Followed-thread activity | Yes | Yes | No | No |
+| Work updates and assignments | Yes | Yes | No | No |
+| Event invitations, updates, cancellations, reminders | Yes | Yes | No | No |
+| Huddle invitations and missed calls | Yes | Yes | No | No |
+
+Push notifications already follow the same setting for messages, thread activity, and huddle invitations: members with notifications off or invisible get no push from that room. One difference: a direct mention still creates an inbox item when notifications are off, but sends no push. Event reminder pushes still go to every going or maybe attendee.
+
+### Per-integration switches
+
+Your profile's **Notifications** section holds five switches, all on by default. Turning one off stops only its inbox items; the underlying work stays where it is.
+
+- **GitHub review requests**: pull request review request items. The PR card in the channel is unaffected.
+- **Agent approval requests**: approval items. Every request stays on the approvals page, where you can still decide it.
+- **Agent work assignments**: work assigned by an agent. Human-driven assignments and status updates always record.
+- **Event reminders**: inbox reminders before events you are attending. Push reminders still go out.
+- **Huddle invitations**: incoming and missed huddle items. The incoming-call banner still rings.
+
+### Grouping
+
+Bursts of related updates collapse into one item instead of many:
+
+- A new thread-activity or work-update item refreshes your existing unhandled item for that thread — unread again, back at the top — instead of adding a second row. Handling the item starts fresh: the next update creates a new one.
+- One message produces at most one item per person, with the most specific type: a mention beats a reply, and a reply beats thread activity.
+
+### Filters
+
+The state filter (**Unread**, **Read**, **Handled**) sits next to a type filter: **All**, **Mentions and replies**, **Threads and work**, **Events**, **Agents**, **GitHub**, **Huddles**. Both filters survive pagination and state changes, and the JSON index accepts the type as `?type=events`.
+
 ## Work threads
 
 A work thread is a channel thread with a status and an optional owner. Turn on work tracking when a conversation has become something someone needs to finish, so it stays findable after the discussion quiets down. Ordinary threads continue to work as discussions.
@@ -50,7 +90,7 @@ When someone starts a huddle in a one-to-one DM, the other participant gets an i
 
 Every invitation also lands in the activity inbox. Answering the call marks it handled automatically. An invitation left unanswered for 45 seconds, or one whose starter left first, becomes a missed-huddle item that stays unread until opened or handled. Starting the call again rings again unless an invitation or missed-huddle item from the last two minutes already exists, so reconnects and rejoins do not ring twice.
 
-There is no audible ringtone in this version, and the invitation ignores the recipient's `involvement` setting: only push delivery respects notification settings. Both stay out of scope. As with other inbox sources, losing access to the DM removes its huddle items.
+There is no audible ringtone in this version. The invitation honours the recipient's `involvement` setting for the DM: with notifications off or invisible, no inbox item is created and no push goes out. The profile's huddle switch suppresses only the item — the banner still rings. As with other inbox sources, losing access to the DM removes its huddle items.
 
 ## Appearance
 
