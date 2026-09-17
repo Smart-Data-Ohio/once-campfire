@@ -143,9 +143,11 @@ class Rooms::GithubSubscriptionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "github section renders for administrators but not plain members" do
+    @room.github_repository_subscriptions.create!(owner: "rails", repo: "rails", created_by: users(:david))
+
     get edit_rooms_closed_url(@room)
     assert_response :success
-    assert_select "#github-subscriptions"
+    assert_select "#github-subscriptions", text: /rails\/rails/
 
     get edit_rooms_open_url(rooms(:pets))
     assert_response :success
