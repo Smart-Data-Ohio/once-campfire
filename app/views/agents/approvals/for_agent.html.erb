@@ -1,0 +1,53 @@
+<% @page_title = "Agent approvals" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to(Current.user.administrator? ? edit_account_bot_path(@bot) : user_path(@bot)) %>
+  </div>
+<% end %>
+
+<section class="panel panel--wide txt-align-center flex flex-column gap">
+  <div class="pad-inline-double center">
+    <h1 class="margin-none">Approvals for <%= @bot.name %></h1>
+    <p class="margin-none-block-start">
+      External actions awaiting human authority. Deciding here notifies the agent.
+    </p>
+  </div>
+
+  <div class="pad-inline txt-align-start">
+    <%= form_with url: agent_approvals_path(@agent), method: :get, class: "flex align-center gap" do %>
+      <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+        <%= select_tag :status,
+              options_for_select([ [ "All statuses", "" ] ] + AgentApproval::STATUSES.map { |status| [ status, status ] },
+                @status_filter),
+              class: "input", onchange: "this.form.requestSubmit()" %>
+      </label>
+      <noscript><%= submit_tag "Filter", class: "btn" %></noscript>
+    <% end %>
+  </div>
+
+  <div class="pad-inline">
+    <menu class="flex flex-column gap margin-none pad txt-align-start">
+      <% if @approvals.any? %>
+        <% @approvals.each do |approval| %>
+          <li class="flex flex-column gap flush fill-shade border-radius pad-block pad-inline-double">
+            <%= render "agent_approvals/card", approval: approval %>
+          </li>
+        <% end %>
+      <% else %>
+        <li class="txt-small">No approvals yet.</li>
+      <% end %>
+    </menu>
+  </div>
+
+  <div class="pad-inline flex align-center gap justify-space-between">
+    <% if @page > 1 %>
+      <%= link_to "Newer", agent_approvals_path(@agent, status: @status_filter, page: @page - 1), class: "btn txt--small" %>
+    <% else %>
+      <span></span>
+    <% end %>
+    <% if @has_next %>
+      <%= link_to "Older", agent_approvals_path(@agent, status: @status_filter, page: @page + 1), class: "btn txt--small" %>
+    <% end %>
+  </div>
+</section>

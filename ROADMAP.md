@@ -68,6 +68,8 @@ Done for the first slice when two members can start and join a Huddle from their
 
 Done for the first slice when a personal agent and a workspace agent can independently join an allowed channel, receive an event, reply under their own identities, and lose access immediately when revoked. External actions use explicitly granted authority.
 
+Approval requests are live: an agent asks for human authority with `POST /agents/approvals`, the owner and administrators decide from the activity inbox, and the decision returns through event polling and webhooks. See [AI agents](docs/agents.md#approvals).
+
 ### 4. GitHub work inside conversations
 
 - First-class PR cards: repository, author, summary, branch, review state, and checks.
@@ -100,7 +102,7 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources, and PR review requests already land in the reviewer's inbox. Other agent and GitHub sources follow their integrations.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.

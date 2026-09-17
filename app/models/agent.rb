@@ -18,6 +18,7 @@ class Agent < ApplicationRecord
   has_many :agent_credentials, dependent: :destroy
   has_many :agent_grants, dependent: :destroy
   has_many :agent_events, dependent: :destroy
+  has_many :agent_approvals, dependent: :destroy
 
   enum :kind, { personal: "personal", workspace: "workspace" }, default: :personal
 

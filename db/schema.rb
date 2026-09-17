@@ -75,6 +75,25 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
   end
 
+  create_table "agent_approvals", force: :cascade do |t|
+    t.string "action", null: false
+    t.integer "agent_credential_id"
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "decided_at"
+    t.integer "decided_by_id"
+    t.string "decision_note"
+    t.datetime "expires_at", null: false
+    t.string "external_id"
+    t.text "payload"
+    t.integer "room_id"
+    t.string "status", default: "pending", null: false
+    t.text "summary", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "external_id"], name: "index_agent_approvals_on_agent_id_and_external_id", unique: true, where: "external_id IS NOT NULL"
+    t.index ["agent_id", "status"], name: "index_agent_approvals_on_agent_id_and_status"
+  end
+
   create_table "agent_credentials", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
@@ -176,17 +195,6 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
   end
 
-  create_table "github_notifications", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "dedupe_key", null: false
-    t.integer "message_id"
-    t.integer "subscription_id", null: false
-    t.datetime "updated_at", null: false
-    t.index ["message_id"], name: "index_github_notifications_on_message_id"
-    t.index ["subscription_id", "dedupe_key"], name: "index_github_notifications_on_subscription_and_key", unique: true
-    t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
-  end
-
   create_table "event_attendances", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "event_id", null: false
@@ -223,6 +231,17 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+  end
+
+  create_table "github_notifications", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "dedupe_key", null: false
+    t.integer "message_id"
+    t.integer "subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id"], name: "index_github_notifications_on_message_id"
+    t.index ["subscription_id", "dedupe_key"], name: "index_github_notifications_on_subscription_and_key", unique: true
+    t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
   end
 
   create_table "github_pull_request_references", force: :cascade do |t|
@@ -432,9 +451,9 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.integer "role", default: 0, null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
     t.index ["bot_token"], name: "index_users_on_bot_token", unique: true
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
-    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
   end
 
   create_table "webhooks", force: :cascade do |t|

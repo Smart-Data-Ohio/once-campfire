@@ -36,6 +36,12 @@
         View activity ledger
       <% end %>
     </div>
+    <div class="flex align-center gap justify-space-between margin-block-end">
+      <%= link_to agent_approvals_path(@bot.agent), class: "btn full-width txt--small" do %>
+        <%= image_tag "check.svg", aria: { hidden: "true" }, size: 20 %>
+        View approval requests
+      <% end %>
+    </div>
   <% end %>
 
   <% if Current.user.administrator? %>

@@ -1,3 +1,6 @@
+require "net/http"
+require "uri"
+
 class Agent::Delivery
   RATE_LIMIT_PER_MINUTE = 20
   RATE_WINDOW = 1.minute
@@ -65,6 +68,30 @@ class Agent::Delivery
       end
     end
 
+    # Posts an approval decision to the agent's webhook. The payload carries
+    # the same additive agent key as message deliveries plus an approval key
+    # with the decision fields. Response bodies are ignored: a decision
+    # notification never creates a reply message.
+    def post_approval_webhook!(webhook, approval, agent:, delivery_id:)
+      uri = URI(webhook.url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = (uri.scheme == "https")
+      http.open_timeout = Webhook::ENDPOINT_TIMEOUT
+      http.read_timeout = Webhook::ENDPOINT_TIMEOUT
+
+      payload = {
+        agent: { id: agent.id, name: agent.user.name, owner: agent.owner&.name, delivery_id: delivery_id },
+        approval: {
+          approval_id: approval.id,
+          status: approval.status,
+          decided_by: approval.decided_by&.name,
+          note: approval.decision_note
+        }
+      }.to_json
+
+      http.request(Net::HTTP::Post.new(uri, "Content-Type" => "application/json").tap { |request| request.body = payload })
+    end
+
     # Runs inside Agent::DeliveryJob. Re-checks everything at perform time:
     # grant, membership, rate, hop, and message existence. Marks the row
     # delivered (posting the webhook when configured) or records a
@@ -73,7 +100,7 @@ class Agent::Delivery
       event = AgentEvent.find_by(id: event.is_a?(AgentEvent) ? event.id : event)
       return unless event
       return unless event.outcome == "pending"
-      return unless event.deliverable?
+      return unless AgentEvent::MESSAGE_DELIVERABLE_TYPES.include?(event.event_type)
 
       agent = event.agent
       room = Room.find_by(id: event.room_id)
@@ -148,15 +175,15 @@ class Agent::Delivery
       # Human messages start a chain at hop 0. An agent's message continues
       # the chain of its server-authorized trigger: the most recent event
       # delivered to (or acknowledged by) the agent in the room within the
-      # trigger window. The agent's own posted rows, suppression rows, and
-      # pending rows are never triggers, so an agent posting several
-      # unprompted messages does not escalate its own hop count, and
-      # neither the request body nor the reply target influences the hop. A
-      # message with no recent trigger is a new root at hop 0.
+      # trigger window. The agent's own posted rows, suppression rows,
+      # approval decisions, and pending rows are never triggers, so an agent
+      # posting several unprompted messages does not escalate its own hop
+      # count, and neither the request body nor the reply target influences
+      # the hop. A message with no recent trigger is a new root at hop 0.
       def message_hop_for(message, sender_agent)
         return 0 unless sender_agent
 
-        trigger = sender_agent.agent_events.deliverable
+        trigger = sender_agent.agent_events.message_deliverable
           .where(room_id: message.room_id, outcome: %w[ delivered acknowledged ])
           .where("created_at >= ?", TRIGGER_WINDOW.ago)
           .order(id: :desc).first
@@ -164,7 +191,7 @@ class Agent::Delivery
       end
 
       def rate_limited?(agent, room, exclude: nil)
-        scope = agent.agent_events.deliverable
+        scope = agent.agent_events.message_deliverable
           .where(room_id: room.id)
           .where("created_at >= ?", RATE_WINDOW.ago)
           .where(outcome: %w[ pending delivered acknowledged ])

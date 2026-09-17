@@ -17,6 +17,8 @@ module ActivityItemsHelper
       source.room ? room_path(source.room) : activity_items_path
     when Event
       source.room ? room_event_path(source.room, source) : activity_items_path
+    when AgentApproval
+      agent_approvals_path(source.agent)
     else
       activity_items_path
     end
@@ -48,6 +50,8 @@ module ActivityItemsHelper
       "Event reminder"
     when "pr_review_request"
       "Review requested"
+    when "agent_approval_request"
+      "Approval request"
     else
       item.event_type.humanize
     end
@@ -70,6 +74,11 @@ module ActivityItemsHelper
       source.room ? room_display_name(source.room) : "Unavailable room"
     when Event
       source.room ? "#{room_display_name(source.room)} · #{source.title}" : source.title
+    when AgentApproval
+      agent = source.agent
+      room = source.room
+      base = agent ? agent.user.name : "Agent"
+      room ? "#{base} · #{room_display_name(room)}" : base
     else
       source.class.name.humanize
     end
@@ -100,6 +109,8 @@ module ActivityItemsHelper
       end
     when Event
       activity_item_event_body(item)
+    when AgentApproval
+      source.summary.to_s
     else
       "Source updated"
     end
@@ -116,6 +127,8 @@ module ActivityItemsHelper
       source.user&.name
     when Event
       source.organizer&.name
+    when AgentApproval
+      source.agent&.user&.name
     end
   end
 
