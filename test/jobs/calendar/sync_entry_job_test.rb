@@ -290,6 +290,17 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_equal [ @event.id, @david.id ], job[:args]
   end
 
+  test "an update inside a transaction enqueues only after commit" do
+    connect_google!(@david)
+
+    Event.transaction do
+      @event.update_with_announcement!({ title: "Launch party planning v2" }, actor: @david)
+      assert_no_enqueued_jobs only: Calendar::SyncEntryJob
+    end
+
+    assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ @event.id, @david.id ])
+  end
+
   test "updating only the title enqueues a sync, an unchanged save does not" do
     connect_google!(@david)
 
