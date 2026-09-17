@@ -35,14 +35,26 @@ class EventsTest < ApplicationSystemTestCase
       within "##{dom_id(item)}" do
         assert_text "Event invitation"
         assert_text "Launch retro"
-        click_button "Open"
       end
 
-      assert_selector "h1", text: "Launch retro"
+      open_inbox_item item, heading: "Launch retro"
       click_button "Going"
       assert_text "Currently: Going"
     end
 
     assert_equal "going", event.reload.response_for(users(:jason))
   end
+
+  private
+    # The inbox re-renders its list when the activity channel connects, so a
+    # click that lands on the item mid-replacement is retried, and the event
+    # page gets more than the default wait to arrive on a loaded CI runner.
+    def open_inbox_item(item, heading:)
+      3.times do
+        within("##{dom_id(item)}") { click_button "Open" }
+        return if page.has_selector?("h1", text: heading, wait: 10)
+      end
+
+      assert_selector "h1", text: heading
+    end
 end
