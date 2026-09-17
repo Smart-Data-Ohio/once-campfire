@@ -491,7 +491,14 @@ export default class extends Controller {
   }
 
   #validInput() {
-    return this.markdownTarget.value.trim().length > 0
+    return this.markdownTarget.value.trim().length > 0 || this.#hasDriveAttachments()
+  }
+
+  // Pending Drive chips make a textless message sendable, like a file
+  // upload does; the server validates the ids themselves.
+  #hasDriveAttachments() {
+    return Array.from(this.element.querySelectorAll(".composer__drive-attachments input[name='message[drive_file_ids][]']"))
+      .some((input) => input.value.trim() !== "")
   }
 
   #generateClientId() {

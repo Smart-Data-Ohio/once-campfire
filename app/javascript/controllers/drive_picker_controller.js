@@ -8,6 +8,10 @@ import { debounce } from "helpers/timing_helpers"
 // google-drive-previews meta tag; connect double-checks so a stale page
 // sends zero requests. Choosing a row inserts the file's webViewLink at the
 // caret; the existing preview chip renders it once the message is sent.
+// Each row also carries an Attach button that pins the file to the message
+// as a pending chip in the composer's drive-attachments strip instead.
+const MAX_ATTACHMENTS_PER_MESSAGE = 10
+
 let pickerCount = 0
 
 export default class extends Controller {
@@ -29,12 +33,23 @@ export default class extends Controller {
     this.activeIndex = -1
     this.requestId = 0
     this.onDocumentClick = this.#closeOnClickOutside.bind(this)
+    this.onFormSubmitEnd = this.#clearAttachmentsOnSubmit.bind(this)
     this.resultsTarget.id = `drive-picker-results-${this.pickerId}`
     this.searchTarget.setAttribute("aria-controls", this.resultsTarget.id)
+    this.form?.addEventListener("turbo:submit-end", this.onFormSubmitEnd)
   }
 
   disconnect() {
+    this.form?.removeEventListener("turbo:submit-end", this.onFormSubmitEnd)
     this.close()
+  }
+
+  get form() {
+    return this.element.closest("form")
+  }
+
+  get attachmentsStrip() {
+    return this.form?.querySelector(".composer__drive-attachments")
   }
 
   toggle(event) {
@@ -180,7 +195,18 @@ export default class extends Controller {
     text.append(name, meta)
     button.append(icon, text)
     button.addEventListener("click", () => this.#insert(file))
-    item.append(button)
+
+    const attach = document.createElement("button")
+    attach.type = "button"
+    attach.className = "drive-picker__attach"
+    attach.textContent = "Attach"
+    attach.setAttribute("aria-label", `Attach ${file.name || "Untitled"} to this message`)
+    attach.addEventListener("click", (event) => {
+      event.stopPropagation()
+      this.#attach(file)
+    })
+
+    item.append(button, attach)
     return item
   }
 
@@ -200,6 +226,68 @@ export default class extends Controller {
       editor.focus()
     }
     this.close()
+  }
+
+  // Pins the file to the message as a pending chip holding a hidden
+  // message[drive_file_ids][] input, then closes the popover like an
+  // insert does. Re-attaching an already-pinned file is a no-op.
+  #attach(file) {
+    if (!file?.id) return
+    const strip = this.attachmentsStrip
+    if (!strip) return
+
+    if (strip.querySelector(`input[name="message[drive_file_ids][]"][value="${CSS.escape(file.id)}"]`)) {
+      this.close()
+      return
+    }
+
+    const pinned = strip.querySelectorAll('input[name="message[drive_file_ids][]"]').length
+    if (pinned >= MAX_ATTACHMENTS_PER_MESSAGE) {
+      this.#setStatus(`Up to ${MAX_ATTACHMENTS_PER_MESSAGE} Drive files per message`)
+      return
+    }
+
+    strip.append(this.#chipElement(file))
+    this.close()
+    this.form?.querySelector("textarea")?.focus()
+  }
+
+  // Same chip markup as the edit form: the hidden input is what the
+  // server reads, and element-removal drops the whole chip.
+  #chipElement(file) {
+    const chip = document.createElement("span")
+    chip.className = "drive-attachment-chip"
+    chip.dataset.controller = "element-removal"
+
+    const input = document.createElement("input")
+    input.type = "hidden"
+    input.name = "message[drive_file_ids][]"
+    input.value = file.id
+
+    const icon = document.createElement("span")
+    icon.className = "drive-attachment-chip__icon"
+    icon.setAttribute("aria-hidden", "true")
+    icon.innerHTML = DRIVE_KIND_ICONS[file.kind] || DRIVE_KIND_ICONS.file
+
+    const name = document.createElement("span")
+    name.className = "drive-attachment-chip__name"
+    name.textContent = file.name || "Untitled"
+
+    const remove = document.createElement("button")
+    remove.type = "button"
+    remove.className = "drive-attachment-chip__remove"
+    remove.setAttribute("aria-label", `Remove ${file.name || "Untitled"}`)
+    remove.dataset.action = "element-removal#remove"
+    remove.textContent = "×"
+
+    chip.append(input, icon, name, remove)
+    return chip
+  }
+
+  // A successful send consumed the pinned ids; a failed one keeps them so
+  // the retry still carries them.
+  #clearAttachmentsOnSubmit(event) {
+    if (event.detail?.success) this.attachmentsStrip?.replaceChildren()
   }
 
   #closeOnClickOutside(event) {
