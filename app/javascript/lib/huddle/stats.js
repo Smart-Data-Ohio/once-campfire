@@ -47,13 +47,23 @@ const readPublisherReport = (report) => {
   let feedback = null
   let fallbackFeedback = null
   let bytesSent = 0
+  let audioPacketsSent = null
+  let totalPacketsSent = 0
+  let packetsSentSeen = false
   let pair = null
   let nominatedPair = null
   const candidates = new Map()
 
   forEachStat(report, (stat) => {
-    if (stat.type === "outbound-rtp" && !stat.isRemote && Number.isFinite(stat.bytesSent)) {
-      bytesSent += stat.bytesSent
+    if (stat.type === "outbound-rtp" && !stat.isRemote) {
+      if (Number.isFinite(stat.bytesSent)) bytesSent += stat.bytesSent
+      // Chrome does not repeat `packetsSent` on the remote-inbound entry, so
+      // the loss denominator comes from the outbound side of the same flow.
+      if (Number.isFinite(stat.packetsSent)) {
+        packetsSentSeen = true
+        totalPacketsSent += stat.packetsSent
+        if (stat.kind === "audio") audioPacketsSent = (audioPacketsSent || 0) + stat.packetsSent
+      }
     } else if (stat.type === "remote-inbound-rtp") {
       if (stat.kind === "audio") {
         feedback = stat
@@ -72,10 +82,14 @@ const readPublisherReport = (report) => {
 
   const upstream = feedback || fallbackFeedback
   const selectedPair = pair?.localCandidateId ? pair : nominatedPair
+  const sent = upstream?.kind === "audio"
+    ? (audioPacketsSent ?? (packetsSentSeen ? totalPacketsSent : null))
+    : (packetsSentSeen ? totalPacketsSent : null)
+  const total = sent == null || !Number.isFinite(upstream?.packetsLost) ? null : sent + upstream.packetsLost
 
   return {
     rttMs: secondsToMilliseconds(upstream?.roundTripTime),
-    lossRatio: lossRatio(upstream?.packetsLost, packetsTotal(upstream)),
+    lossRatio: lossRatio(upstream?.packetsLost, total),
     jitterMs: secondsToMilliseconds(upstream?.jitter),
     bytesSent,
     relayed: transportRelayed(selectedPair, candidates, report)
@@ -115,16 +129,6 @@ const transportRelayed = (pair, candidates, report) => {
   if (!local && !remote) return null
 
   return local?.candidateType === "relay" || remote?.candidateType === "relay"
-}
-
-const packetsTotal = (stat) => {
-  if (!stat) return null
-  // `packetsSent` lives on the outbound side; some browsers repeat it on the
-  // remote-inbound entry, others do not. Without a denominator there is no ratio.
-  const sent = stat.packetsSent
-  const lost = stat.packetsLost
-  if (!Number.isFinite(sent) || !Number.isFinite(lost)) return null
-  return sent + lost
 }
 
 const lossRatio = (lost, total) => {
