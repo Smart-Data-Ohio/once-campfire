@@ -51,6 +51,23 @@ class Accounts::IconsControllerTest < ActionDispatch::IntegrationTest
     assert_match "already taken by a built-in icon", response.body
   end
 
+  test "create reports a name that raced past validation as taken" do
+    WorkspaceIcon.any_instance.stubs(:save).raises(ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed"))
+
+    assert_no_difference "WorkspaceIcon.count" do
+      post account_icons_url, params: {
+        workspace_icon: {
+          name: "acme", title: "Acme Corp",
+          image: fixture_file_upload("workspace_icons/clean.svg", "image/svg+xml")
+        }
+      }
+
+      assert_response :unprocessable_entity
+    end
+
+    assert_match "has already been taken", response.body
+  end
+
   test "destroy removes the icon and its blob" do
     icon = create_workspace_icon(name: "acme")
 

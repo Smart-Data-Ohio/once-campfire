@@ -27,6 +27,7 @@ class WorkspaceIconsController < ApplicationController
 
       response.headers["Cache-Control"] = "private, max-age=3600"
       response.headers["ETag"] = %("#{blob.checksum}")
+      response.headers["X-Content-Type-Options"] = "nosniff"
       response.headers.merge!(SVG_SECURITY_HEADERS) if blob.content_type == SVG_CONTENT_TYPE
 
       if request.fresh?(response)

@@ -29,6 +29,7 @@ class WorkspaceIconsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "image/png", response.media_type
     assert_equal "max-age=3600, private", response.headers["Cache-Control"]
+    assert_equal "nosniff", response.headers["X-Content-Type-Options"]
     assert_nil response.headers["Content-Security-Policy"]
   end
 
