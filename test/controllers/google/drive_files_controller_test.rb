@@ -330,7 +330,7 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_requested :post, GOOGLE_TOKEN_URL, times: 1
-    assert_requested list_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested list_stub, headers: { "Authorization" => "Bearer refreshed-access-token" }
     assert_equal "refreshed-access-token", account.reload.access_token
   end
 

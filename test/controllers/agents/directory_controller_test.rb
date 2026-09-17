@@ -41,7 +41,7 @@ class Agents::DirectoryControllerTest < ActionDispatch::IntegrationTest
     assert_no_match "Bender Bot", response.body
   end
 
-  test "Bearer [REDACTED] request is forbidden" do
+  test "Bearer agent token request is forbidden" do
     get agents_url, headers: { "Authorization" => "Bearer bender-test-secret-1234" }
 
     assert_response :forbidden

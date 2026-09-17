@@ -20,7 +20,7 @@ class AgentsController < ApplicationController
     no_store_response!
 
     unless authenticated_by.agent_token? && Current.agent
-      render json: { error: "Forbidden: Bearer [REDACTED] token required" }, status: :forbidden
+      render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
       return
     end
 
