@@ -23,6 +23,7 @@ Rails.application.routes.draw do
           resource :key, only: :update
           resources :credentials, only: %i[ index create destroy ]
           resources :grants, only: %i[ index create destroy ]
+          resource :github_connection, only: %i[ create destroy ]
         end
       end
 

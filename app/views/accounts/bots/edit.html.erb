@@ -44,6 +44,32 @@
     </div>
   <% end %>
 
+  <hr class="separator full-width margin-block-double">
+
+  <section aria-labelledby="github-connection-title">
+    <h2 id="github-connection-title" class="txt-large margin-block-end">GitHub account</h2>
+
+    <% account = @bot.github_connected_account %>
+
+    <% if account&.usable? %>
+      <p>Connected as <%= account.github_login %></p>
+      <p>Approved write actions post from PR threads as <strong>@<%= account.github_login %></strong> on GitHub.</p>
+      <%= button_to "Disconnect GitHub", account_bot_github_connection_path(@bot), method: :delete, class: "btn btn--negative",
+            form: { data: { turbo_confirm: "Disconnect GitHub? This agent will no longer be able to request PR write actions." } } %>
+    <% else %>
+      <% if account %>
+        <p>GitHub rejected the connection<% if account.disconnected_reason.present? %> (<%= account.disconnected_reason %>)<% end %>. Paste a new token to reconnect.</p>
+      <% else %>
+        <p>Paste a fine-grained personal access token for a machine user dedicated to this agent, with <strong>Pull requests: Read and write</strong>, <strong>Issues: Read and write</strong>, and <strong>Metadata: Read</strong>. Approved write actions post as that user. The token is validated with GitHub before it is stored and is never shown again.</p>
+      <% end %>
+      <%= form_with url: account_bot_github_connection_path(@bot), class: "flex align-center gap" do |form| %>
+        <%= form.password_field :access_token, class: "input flex-item-grow", placeholder: "github_pat_…",
+              autocomplete: "off", required: true, aria: { label: "GitHub personal access token" } %>
+        <%= form.submit account ? "Reconnect GitHub" : "Connect GitHub", class: "btn" %>
+      <% end %>
+    <% end %>
+  </section>
+
   <% if Current.user.administrator? %>
     <div class="flex align-center gap justify-space-between">
       <%= button_to account_bot_path(@bot), method: :delete, class: "btn txt--small btn--negative", aria: { label: "Delete this chat bot" },
