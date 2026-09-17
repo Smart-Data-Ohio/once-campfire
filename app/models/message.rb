@@ -21,6 +21,9 @@ class Message < ApplicationRecord
   has_many :github_pull_requests, through: :github_pull_request_references,
     source: :pull_request, class_name: "Github::PullRequest"
 
+  has_many :event_references, dependent: :destroy
+  has_many :events, through: :event_references
+
   has_rich_text :body
 
   validates :markdown_source, length: { maximum: Markdown::SOURCE_LIMIT }, allow_nil: true
@@ -35,6 +38,8 @@ class Message < ApplicationRecord
   # method twice on the commit chain keeps only one registration.
   after_create_commit :sync_github_pull_request_references
   after_update_commit :resync_github_pull_request_references
+  after_create_commit :sync_event_references
+  after_update_commit :resync_event_references
 
   scope :ordered, -> { order(:created_at) }
   scope :root_messages, -> { where(thread_id: nil) }
@@ -56,7 +61,8 @@ class Message < ApplicationRecord
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, :github_pull_requests, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, :github_pull_requests, events: [ :room, :organizer, :venue ],
+        reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply
   # source and thread, but never boosts or image variants, so it gets a lighter
@@ -176,6 +182,14 @@ class Message < ApplicationRecord
 
     def resync_github_pull_request_references
       Github::PullRequestReferenceSync.call(self) if saved_change_to_markdown_source?
+    end
+
+    def sync_event_references
+      Event::ReferenceSync.call(self)
+    end
+
+    def resync_event_references
+      Event::ReferenceSync.call(self) if saved_change_to_markdown_source?
     end
 
     def receive_in_conversation

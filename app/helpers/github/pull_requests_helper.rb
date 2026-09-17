@@ -1,11 +1,13 @@
 module Github::PullRequestsHelper
-  # Cache key for a message rendered with its PR cards. A PR update never
-  # touches the message, so the key folds in the newest card row; otherwise a
-  # collection cache would keep serving "Loading pull request" indefinitely.
-  # Cards with a PR link also fold in the room's discussion-thread stamp, so
-  # a cached Discuss control flips to its thread link once one is created.
+  # Cache key for a message rendered with its PR and event cards. Neither
+  # update ever touches the message, so the key folds in the newest card row
+  # of either kind; otherwise a collection cache would keep serving "Loading
+  # pull request" (or a stale event card) indefinitely. Cards with a PR link
+  # also fold in the room's discussion-thread stamp, so a cached Discuss
+  # control flips to its thread link once one is created.
   def message_with_pr_cards_cache_key(message)
-    key = [ message, message.github_pull_requests.map(&:updated_at).max ]
+    newest_card = (message.github_pull_requests.map(&:updated_at) + message.events.map(&:updated_at)).compact.max
+    key = [ message, newest_card ]
     key << github_pr_threads_stamp(message.room_id) if message.github_pull_requests.any?
     key
   end

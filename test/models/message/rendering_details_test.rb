@@ -44,6 +44,7 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
     subject = loaded.find { |message| message.id == reply.id }
 
     assert_predicate subject.association(:boosts), :loaded?
+    assert_predicate subject.association(:events), :loaded?
     assert_predicate subject.association(:room), :loaded?
     assert_predicate subject.association(:creator), :loaded?
     assert_predicate subject.association(:rich_text_body), :loaded?
@@ -157,6 +158,8 @@ class Message::RenderingDetailsTest < ActiveSupport::TestCase
         message.body.to_s
         message.room.name
         message.ordered_boosts.each { |boost| boost.booster.name }
+        message.github_pull_requests.each(&:title)
+        message.events.each { |event| [ event.title, event.organizer.name, event.room.name, event.venue&.name ] }
         # source.room matters: _context links to the reply source with
         # message_link_url, and on searches#index the source can live in a
         # different room than the message quoting it.
