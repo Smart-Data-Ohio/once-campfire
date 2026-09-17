@@ -46,14 +46,15 @@ export default class MarkdownIconsAutocompleteHandler extends BaseAutocompleteHa
       const value = escapeHTML(icon.value)
       const name = escapeHTML(icon.name)
 
-      if (icon.kind === "brand") {
+      if (icon.kind === "brand" || icon.kind === "custom") {
         const title = escapeHTML(icon.title)
         const image = escapeHTML(icon.image)
+        const iconClass = icon.kind === "brand" ? "icon icon--brand" : "icon icon--custom"
 
         return `
           <suggestion-option class="autocomplete__item flex align-center gap unpad" role="option" value="${value}">
             <button type="button" class="autocomplete__btn btn btn--borderless btn--transparent min-width flex-item-grow justify-start">
-              <span class="autocomplete__icon"><img class="icon icon--brand" src="${image}" alt="" role="presentation"></span>
+              <span class="autocomplete__icon"><img class="${iconClass}" src="${image}" alt="" role="presentation"></span>
               <span class="autocompletable__name">${title}</span>
               <small class="autocomplete__shortcode">:${name}:</small>
             </button>

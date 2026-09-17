@@ -5,6 +5,8 @@ json.value "#{icon.kind}:#{icon.name}"
 
 if icon.brand?
   json.image image_path(icon.logical_asset_path)
+elsif icon.custom?
+  json.image icon.image_url
 else
   json.character icon.character
 end
