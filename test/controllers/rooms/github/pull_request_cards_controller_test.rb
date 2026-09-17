@@ -126,7 +126,6 @@ class Rooms::Github::PullRequestCardsControllerTest < ActionDispatch::Integratio
       get room_github_pull_request_card_url(@room, @pull_request, message_id: @message.id)
       assert_response :success
       assert_select ".github-pr-card__title", text: "Secret plans"
-
     end
   end
 
