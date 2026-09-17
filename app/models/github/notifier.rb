@@ -231,9 +231,10 @@ module Github
         end
 
         # Interpolated webhook values stay inline and can never become a
-        # mention token or break the one-line-plus-URL layout.
+        # mention token or break the one-line-plus-URL layout. Backslashes are
+        # escaped first so an incoming backslash cannot neutralise the guard.
         def inline(value)
-          value.to_s.gsub("@[", "\\@[").gsub(/[\r\n]+/, " ").strip.presence || "Someone"
+          value.to_s.gsub("\\", "\\\\\\\\").gsub("@[", "\\@[").gsub(/[\r\n]+/, " ").strip.presence || "Someone"
         end
     end
   end
