@@ -167,6 +167,22 @@ class StreamTest < ActiveSupport::TestCase
     assert_not_predicate stream.reload, :live?
   end
 
+  test "removing the presenter's membership without grants ends the stream and broadcasts the end" do
+    stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+    assert_not HuddleGrant.active.where(membership_id: @host.id).exists?
+
+    @listener.change_stage_role!("host")
+
+    assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
+      @host.destroy!
+    end
+
+    assert_not_predicate stream.reload, :live?
+
+    badge = capture_turbo_stream_broadcasts([ @room, :messages ]).last
+    assert_no_match "Live: David", badge.to_html
+  end
+
   test "deactivating the presenter ends the stream" do
     stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
     HuddleGrant.issue!(session: sessions(:david_safari), membership: @host)
