@@ -140,6 +140,25 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
     assert_equal "planned", human_thread.reload.work_status
   end
 
+  test "list excludes rooms the agent no longer belongs to" do
+    grant!(capability: "read_messages")
+    grant!(capability: "post_messages", room: @room)
+    kept = create_owned_thread!(name: "Kept work")
+
+    designers = rooms(:designers)
+    designers.memberships.grant_to(@bot)
+    AgentGrant.create!(agent: @agent, room: designers, granted_by: users(:david), capability: "post_messages")
+    orphaned = ChannelThread.create!(room: designers, creator: users(:david), name: "Orphaned work")
+    ThreadMembership.join!(orphaned, users(:david))
+    orphaned.update_work!(actor: users(:david), work_status: "planned", work_owner_id: @bot.id)
+    designers.memberships.find_by!(user: @bot).destroy
+
+    get agents_work_url, headers: bearer_headers
+
+    assert_response :success
+    assert_equal [ kept.id ], response.parsed_body.map { |row| row["id"] }
+  end
+
   test "show and patch are 404 once the agent is no longer a room member" do
     grant!(capability: "read_messages", room: @room)
     grant!(capability: "post_messages", room: @room)

@@ -266,7 +266,9 @@ class ChannelThread < ApplicationRecord
       end
     end
 
-    deliver_work_assignment_webhooks(assignment_events)
+    # The controller may wrap this call in its own transaction; the webhook
+    # must not hold the SQLite write lock or describe work that rolls back.
+    ActiveRecord.after_all_transactions_commit { deliver_work_assignment_webhooks(assignment_events) }
 
     self
   end
@@ -461,13 +463,14 @@ class ChannelThread < ApplicationRecord
       owner.agent || Agent.find_by(user_id: owner.id)
     end
 
-    # Posts assignment webhooks after the transaction. Gated on
-    # read_messages like every other delivery: an agent that cannot read
-    # the room learns nothing until it can.
+    # Posts assignment webhooks after the outermost transaction commits.
+    # Gated on current room membership plus read_messages like message
+    # delivery: an agent removed from the room learns nothing more about
+    # its work there, even if a workspace-wide grant survives.
     def deliver_work_assignment_webhooks(events)
       events.each do |event|
         agent = event.agent
-        next unless agent.can?(:read_messages, room)
+        next unless Membership.exists?(user_id: agent.user_id, room_id: room_id) && agent.can?(:read_messages, room)
 
         webhook = agent.user.webhook
         next unless webhook

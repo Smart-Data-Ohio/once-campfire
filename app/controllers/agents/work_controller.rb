@@ -7,13 +7,14 @@ class Agents::WorkController < ApplicationController
   LIST_MAX_LIMIT = 100
 
   # GET /agents/work (Bearer-only, JSON). Lists the threads the agent
-  # currently owns, newest first, max 100, filtered to rooms where the
-  # agent holds read_messages.
+  # currently owns, newest first, max 100, filtered to rooms the agent's
+  # user still belongs to and where the agent holds read_messages.
   def index
     no_store_response!
 
     agent = Current.agent
     threads = ChannelThread.work.where(work_owner_id: agent.user_id)
+      .where(room_id: Membership.where(user_id: agent.user_id).select(:room_id))
       .includes(:room).order(updated_at: :desc, id: :desc).to_a
     threads.select! { |thread| agent.can?(:read_messages, thread.room) }
 

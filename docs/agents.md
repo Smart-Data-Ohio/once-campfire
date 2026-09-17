@@ -301,9 +301,10 @@ of `message`:
 
 `url` is the workspace permalink path for the thread. Rows for threads
 the agent can no longer read (membership or `read_messages` revoked)
-are omitted, like message rows. The webhook posts when configured with
-the same additive `agent` key plus `event_type` and the `work` key,
-also gated on `read_messages`. `ack` works on these rows.
+are omitted, like message rows. The webhook posts after the assigning
+transaction commits, when configured, with the same additive `agent` key
+plus `event_type` and the `work` key, gated on current room membership
+and `read_messages` like message delivery. `ack` works on these rows.
 
 ### Agent API (Bearer-only, JSON)
 
