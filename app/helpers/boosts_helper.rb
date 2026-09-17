@@ -5,8 +5,10 @@ module BoostsHelper
     if boost.shortcode_content?
       icon = Icons.find(boost.content.to_s[1...-1])
 
-      if icon.is_a?(Icons::Brand)
-        return image_tag(icon.logical_asset_path,
+      # Resolved through the registry so a brand whose asset is missing
+      # falls back to its literal text instead of raising at render time.
+      if icon.is_a?(Icons::Brand) && (url = Icons.brand_image_urls[icon.name])
+        return image_tag(url,
           class: "icon icon--brand", alt: ":#{icon.name}:", title: icon.title, draggable: "false")
       end
     end
