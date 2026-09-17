@@ -42,6 +42,16 @@ class Users::SidebarsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".unread", count: users(:david).memberships.reject { |m| m.room.direct? || !m.unread? }.count
   end
 
+  test "quiet rows keep the room name as their exact link text" do
+    get user_sidebar_url
+
+    # Capybara's exact link match counts hidden text, so an empty stack must
+    # add no characters (not even a hidden "0") inside the row link.
+    assert_select "a##{dom_id(rooms(:hq), :list)}" do |links|
+      assert_equal "HQ", links.first.text.strip
+    end
+  end
+
   test "channel row shows the live huddle stack with names and count" do
     room = rooms(:watercooler)
     issue_in_call_grant!(user: users(:david), room: room)
@@ -101,7 +111,7 @@ class Users::SidebarsControllerTest < ActionDispatch::IntegrationTest
     assert_select "##{dom_id(rooms(:watercooler), :list)} .voice-stack:not(.voice-stack--live)" +
       "[aria-label='Nobody in huddle']" do
       assert_select ".voice-stack__avatar", count: 0
-      assert_select ".voice-stack__count[hidden]", text: "0", visible: false
+      assert_select ".voice-stack__count[hidden]", text: "", visible: false
     end
     assert_select "##{dom_id(rooms(:david_and_jason), :list)} .voice-stack:not(.voice-stack--live)" +
       "[aria-label='Nobody in huddle']"

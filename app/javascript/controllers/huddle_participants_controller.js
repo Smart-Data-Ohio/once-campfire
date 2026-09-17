@@ -125,7 +125,9 @@ export default class extends Controller {
     )
 
     this.countTarget.hidden = participants.length === 0
-    this.countTarget.textContent = participants.length
+    // No text at all when empty: the stack sits inside the room link, and a
+    // hidden "0" would still count toward the link's exact text.
+    this.countTarget.textContent = participants.length > 0 ? participants.length : ""
     const label = participants.length > 0
       ? `${participants.length} ${this.labelValue}: ${participants.map(participant => participant.name).join(", ")}`
       : `Nobody ${this.labelValue}`

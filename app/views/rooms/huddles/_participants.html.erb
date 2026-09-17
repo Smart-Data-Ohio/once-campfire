@@ -19,5 +19,5 @@
             class: "voice-stack__avatar", data: { user_id: participant.id } %>
     <% end %>
   </span>
-  <span class="voice-stack__count" data-huddle-participants-target="count" <%= "hidden" unless participants.any? %>><%= participants.count %></span>
+  <span class="voice-stack__count" data-huddle-participants-target="count" <%= "hidden" unless participants.any? %>><%= participants.count if participants.any? %></span>
 </span>
