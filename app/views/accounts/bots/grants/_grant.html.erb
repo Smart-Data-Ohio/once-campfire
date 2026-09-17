@@ -3,7 +3,7 @@
     <div class="min-width flex-item-grow">
       <div class="overflow-ellipsis txt-large"><strong><%= grant.capability %></strong></div>
       <div class="overflow-ellipsis txt-small">
-        <%= grant.workspace_wide? ? "Workspace-wide" : (grant.room&.name || "Deleted room") %>
+        <%= grant.workspace_wide? ? "Workspace-wide" : (grant.room ? room_display_name(grant.room) : "Deleted room") %>
         · granted by <%= grant.granted_by.name %>
         · <%= grant.created_at.to_fs(:short) %>
         · <%= AgentGrant::ENFORCED_CAPABILITIES.include?(grant.capability) ? "enforced" : "not yet enforced" %>

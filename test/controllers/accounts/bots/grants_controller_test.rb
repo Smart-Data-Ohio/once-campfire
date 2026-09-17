@@ -37,6 +37,16 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='agent_grant[room_id]'] option[value='#{direct_room.id}']", text: "Bender Bot and Kevin"
   end
 
+  test "index names direct-room grants after the other participants" do
+    AgentGrant.create!(agent: @agent, room: rooms(:bender_and_kevin), granted_by: users(:david), capability: "post_messages")
+
+    get account_bot_grants_url(@bot)
+
+    assert_response :ok
+    assert_match "Bender Bot and Kevin", response.body
+    assert_no_match "Deleted room", response.body
+  end
+
   test "index renders a fallback for grants whose room was deleted" do
     AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
     rooms(:watercooler).destroy!
@@ -71,16 +81,32 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert AgentGrant.last.workspace_wide?
   end
 
-  test "create rejects duplicates and unknown capabilities" do
-    AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
+  test "create is idempotent for an already active grant" do
+    existing = AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
 
     assert_no_difference -> { AgentGrant.count } do
       post account_bot_grants_url(@bot), params: {
         agent_grant: { capability: "post_messages", room_id: rooms(:watercooler).id }
       }
     end
-    assert_response :unprocessable_entity
 
+    assert_redirected_to account_bot_grants_url(@bot)
+    assert_predicate existing.reload, :active?
+  end
+
+  test "create regrants a capability after the previous grant was revoked" do
+    AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages").revoke!
+
+    assert_difference -> { AgentGrant.active.count }, +1 do
+      post account_bot_grants_url(@bot), params: {
+        agent_grant: { capability: "post_messages", room_id: rooms(:watercooler).id }
+      }
+    end
+
+    assert_redirected_to account_bot_grants_url(@bot)
+  end
+
+  test "create rejects unknown capabilities" do
     assert_no_difference -> { AgentGrant.count } do
       post account_bot_grants_url(@bot), params: {
         agent_grant: { capability: "launch_missiles", room_id: "" }
@@ -89,7 +115,7 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
-  test "create reuses the existing grant when a concurrent create wins the race" do
+  test "create reuses the existing grant when the unique index rejects a concurrent create" do
     AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
     AgentGrant.any_instance.stubs(:save).raises(ActiveRecord::RecordNotUnique)
 

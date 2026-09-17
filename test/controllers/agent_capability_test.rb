@@ -153,8 +153,10 @@ class AgentCapabilityTest < ActionDispatch::IntegrationTest
     original_forgery_protection = ActionController::Base.allow_forgery_protection
     ActionController::Base.allow_forgery_protection = true
 
-    post room_agent_messages_url(@room),
-      params: { message: { body: "Human", client_message_id: "csrf-human" } }
+    assert_no_difference -> { Message.count } do
+      post room_agent_messages_url(@room),
+        params: { message: { body: "Human", client_message_id: "csrf-human" } }
+    end
 
     assert_response :forbidden
     assert_equal "Forbidden: Bearer agent token required", response.parsed_body["error"]
