@@ -49,6 +49,49 @@
     </p>
   <% end %>
 
+  <% if event.persisted? && event.series? %>
+    <fieldset class="room-events__scope">
+      <legend>Apply changes to</legend>
+      <label>
+        <%= radio_button_tag :update_scope, "this_event", true %>
+        This event
+      </label>
+      <label>
+        <%= radio_button_tag :update_scope, "this_and_following", false %>
+        This and following
+      </label>
+    </fieldset>
+  <% end %>
+
+  <% if !event.persisted? || event.series_head? %>
+    <div>
+      <%= form.label :recurrence_rule, "Repeats" %>
+      <% if event.persisted? %>
+        <%= form.select :recurrence_rule, recurrence_rule_options, {}, class: "input" %>
+      <% else %>
+        <%= form.select :recurrence_rule, [ [ "Does not repeat", "" ] ] + recurrence_rule_options, {}, class: "input" %>
+      <% end %>
+    </div>
+
+    <div>
+      <%= form.label :recurrence_until, "Repeat until" %>
+      <%= form.date_field :recurrence_until, class: "input" %>
+    </div>
+
+    <% if event.persisted? %>
+      <p class="room-events__hint">
+        Changing when this series repeats rebuilds its future occurrences, keeping any
+        occurrence where someone responded differently from this one.
+        The rule can only be changed here, on the first event, with This and following.
+      </p>
+    <% else %>
+      <p class="room-events__hint">
+        Repeating events create one occurrence per repeat, up to 52, until the end date.
+        Members get a single invitation for the whole series.
+      </p>
+    <% end %>
+  <% end %>
+
   <div>
     <%= form.submit event.persisted? ? "Save changes" : "Schedule event", class: "btn btn--primary" %>
   </div>

@@ -43,10 +43,36 @@
     <% if @event.manageable_by?(Current.user) %>
       <nav class="room-events__actions" aria-label="Event management">
         <%= link_to "Edit", edit_room_event_path(@room, @event), class: "btn" %>
-        <%= button_to "Cancel event", cancel_room_event_path(@room, @event), method: :patch, class: "btn btn--negative", form: { data: { turbo_confirm: "Cancel this event? Attendees will be notified." } } %>
+        <% if @event.series? %>
+          <%= form_with url: cancel_room_event_path(@room, @event), method: :patch, data: { turbo_confirm: "Cancel this event? Attendees will be notified." } do %>
+            <label>
+              <%= radio_button_tag :cancel_scope, "this_event", true %>
+              This event
+            </label>
+            <label>
+              <%= radio_button_tag :cancel_scope, "this_and_following", false %>
+              This and following
+            </label>
+            <%= submit_tag "Cancel event", class: "btn btn--negative" %>
+          <% end %>
+        <% else %>
+          <%= button_to "Cancel event", cancel_room_event_path(@room, @event), method: :patch, class: "btn btn--negative", form: { data: { turbo_confirm: "Cancel this event? Attendees will be notified." } } %>
+        <% end %>
       </nav>
     <% end %>
   </header>
+
+  <% if @event.series? && @event.recurrence_rule.present? && @event.recurrence_until.present? %>
+    <p class="room-events__series" role="note">
+      Part of a series: repeats <%= recurrence_phrase(@event.recurrence_rule) %> until <%= recurrence_until_text(@event.recurrence_until) %>.
+      <% if (previous_event = @event.previous_occurrence) %>
+        <%= link_to "Previous occurrence", room_event_path(@room, previous_event) %>
+      <% end %>
+      <% if (next_event = @event.next_occurrence) %>
+        <%= link_to "Next occurrence", room_event_path(@room, next_event) %>
+      <% end %>
+    </p>
+  <% end %>
 
   <% if @event.description.present? %>
     <div class="room-events__description">
@@ -65,11 +91,19 @@
         Currently:
         <strong><%= @current_response ? @current_response.humanize : "No response yet" %></strong>
       </p>
-      <div class="room-events__responses">
-        <%= button_to "Going", room_event_attendance_path(@room, @event), method: :patch, params: { response: "going" }, class: "btn" %>
-        <%= button_to "Maybe", room_event_attendance_path(@room, @event), method: :patch, params: { response: "maybe" }, class: "btn" %>
-        <%= button_to "Declined", room_event_attendance_path(@room, @event), method: :patch, params: { response: "declined" }, class: "btn btn--plain" %>
-      </div>
+      <%= form_with url: room_event_attendance_path(@room, @event), method: :patch, class: "room-events__responses" do %>
+        <% if @event.series_head? %>
+          <p class="room-events__hint">Responding here applies your response to every future occurrence in this series.</p>
+        <% elsif @event.series? && @event.next_occurrence %>
+          <label>
+            <%= check_box_tag :apply_to_future, "1", false %>
+            Apply to all future occurrences
+          </label>
+        <% end %>
+        <%= button_tag "Going", name: "response", value: "going", class: "btn" %>
+        <%= button_tag "Maybe", name: "response", value: "maybe", class: "btn" %>
+        <%= button_tag "Declined", name: "response", value: "declined", class: "btn btn--plain" %>
+      <% end %>
     <% elsif @event.cancelled? %>
       <p>Responses are closed because this event was cancelled.</p>
     <% end %>

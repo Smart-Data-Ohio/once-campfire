@@ -224,14 +224,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022910) do
     t.text "description"
     t.datetime "ends_at"
     t.integer "organizer_id", null: false
+    t.string "recurrence_rule"
+    t.date "recurrence_until"
     t.datetime "reminded_at"
     t.integer "room_id", null: false
+    t.integer "series_id"
     t.datetime "starts_at", null: false
     t.string "time_zone", null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+    t.index ["series_id", "starts_at"], name: "index_events_on_series_slot", unique: true, where: "series_id IS NOT NULL AND cancelled_at IS NULL"
+    t.index ["series_id"], name: "index_events_on_series_id"
   end
 
   create_table "github_notifications", force: :cascade do |t|
