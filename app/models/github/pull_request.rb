@@ -6,6 +6,8 @@ class Github::PullRequest < ApplicationRecord
   has_many :pull_request_references, class_name: "Github::PullRequestReference",
     foreign_key: :github_pull_request_id, dependent: :destroy, inverse_of: :pull_request
   has_many :messages, through: :pull_request_references
+  has_many :pull_request_threads, class_name: "Github::PullRequestThread",
+    foreign_key: :github_pull_request_id, dependent: :destroy, inverse_of: :pull_request
 
   validates :owner, :repo, presence: true
   validates :number, presence: true, numericality: { only_integer: true, greater_than: 0 }
@@ -56,6 +58,47 @@ class Github::PullRequest < ApplicationRecord
         attributes: { maintain_scroll: true }
       )
     end
+
+    pull_request_threads.includes(:channel_thread).find_each do |mapping|
+      thread = mapping.channel_thread
+      next if thread.nil?
+
+      Turbo::StreamsChannel.broadcast_replace_to(
+        thread, :messages,
+        target: ActionView::RecordIdentifier.dom_id(thread, :github_pr_header),
+        partial: "github/pull_requests/thread_header",
+        locals: { thread: thread, pull_request: self },
+        attributes: { maintain_scroll: true }
+      )
+    end
+  end
+
+  # The pull_request object carried by agent delivery payloads for mentions
+  # in this PR's threads. checks_state mirrors the card's check_status.
+  def agent_payload
+    {
+      url: html_url.presence || "https://github.com/#{full_name}/pull/#{number}",
+      owner: owner,
+      repo: repo,
+      number: number,
+      title: title,
+      state: state,
+      head_branch: head_branch,
+      base_branch: base_branch,
+      review_decision: review_decision,
+      checks_state: check_status
+    }
+  end
+
+  # Parsed changed-files summary: { "files" => [...], "total_count" => n }.
+  # Blank or unparseable storage reads as an empty summary, never raises.
+  def changed_files_summary
+    parsed = changed_files.present? ? JSON.parse(changed_files) : nil
+    files = parsed.is_a?(Hash) ? Array(parsed["files"]) : []
+    total = parsed.is_a?(Hash) ? parsed["total_count"].to_i : 0
+    { "files" => files, "total_count" => [ total, files.size ].max }
+  rescue JSON::ParserError
+    { "files" => [], "total_count" => 0 }
   end
 
   private

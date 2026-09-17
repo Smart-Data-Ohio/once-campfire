@@ -70,9 +70,28 @@ module Github
         # Same creation path bot API messages take (MessagesController#create
         # via Messages::ByBotsController): a normal message with the bot as
         # creator, broadcast to the room. The PR URL on its own line syncs a
-        # PR reference, so the card renders and fills in on fetch.
+        # PR reference, so the card renders and fills in on fetch. When the
+        # room already discusses the PR in a thread, the update lands there
+        # as a thread reply instead, which also refreshes the thread's
+        # activity timestamp so it surfaces in the threads list.
         def post_message!(room, bot, post)
-          room.root_messages.create_with_attachment!(creator: bot, markdown_source: "#{post.line}\n#{post.url}").tap(&:broadcast_create)
+          if thread = pull_request_thread_for(room, post)
+            thread.post_message!(creator: bot, attributes: { markdown_source: "#{post.line}\n#{post.url}" }).tap(&:broadcast_create)
+          else
+            room.root_messages.create_with_attachment!(creator: bot, markdown_source: "#{post.line}\n#{post.url}").tap(&:broadcast_create)
+          end
+        end
+
+        # The room's discussion thread for the posted PR, if one exists. The
+        # post carries the subscription's downcased names while stored PRs
+        # keep the link's case, so the lookup is case-insensitive.
+        def pull_request_thread_for(room, post)
+          pull_request = Github::PullRequest
+            .where("LOWER(owner) = ? AND LOWER(repo) = ?", post.owner, post.repo)
+            .find_by(number: post.number)
+          return unless pull_request
+
+          Github::PullRequestThread.find_by(github_pull_request_id: pull_request.id, room_id: room.id)&.channel_thread
         end
 
         def record_review_request_item(room, message, post)
