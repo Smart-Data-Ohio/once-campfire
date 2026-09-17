@@ -45,7 +45,7 @@ class Messages::ForwarderTest < ActiveSupport::TestCase
 
     assert_equal 2, results.size
     results.each do |result|
-      assert_equal %w[ 1AbcDefGhIjKlMnOpQrSt 2BcdEfgHiJkLmNoPqRsTu ], result.message.drive_attachments.map(&:file_id)
+      assert_equal %w[ 1AbcDefGhIjKlMnOpQrSt 2BcdEfgHiJkLmNoPqRsTu ], result.message.reload.drive_attachments.map(&:file_id)
     end
   end
 

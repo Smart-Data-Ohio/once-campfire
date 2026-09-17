@@ -115,17 +115,18 @@ class Rooms::Github::PullRequestCardsControllerTest < ActionDispatch::Integratio
       assert_response :success
       assert_select ".github-pr-card", count: 0
 
-      travel 1.second do
-        post github_connection_url, params: { access_token: "beta-relink" }
-        assert_redirected_to user_profile_path
-      end
+      # Same token, same second: the relink alone must retire the denial.
+      post github_connection_url, params: { access_token: "alpha-link" }
+      assert_redirected_to user_profile_path
 
-      granted = stub_request(:get, "https://api.github.com/repos/acme/secret")
+      stub_request(:get, "https://api.github.com/repos/acme/secret")
         .to_return(status: 200, body: { private: true }.to_json)
 
       get room_github_pull_request_card_url(@room, @pull_request, message_id: @message.id)
       assert_response :success
       assert_select ".github-pr-card__title", text: "Secret plans"
+      # Two GitHub calls in total: the cached denial was not reused.
+      assert_requested :get, "https://api.github.com/repos/acme/secret", times: 2
     end
   end
 

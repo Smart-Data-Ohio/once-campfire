@@ -108,7 +108,9 @@ module Github::PullRequestsHelper
     account = user&.github_connected_account
     return false unless account&.usable?
 
-    Rails.cache.fetch([ "github_repo_access", user.id, account.updated_at, pull_request.owner, pull_request.repo ], expires_in: 10.minutes) do
+    # updated_at at float precision: a relink in the same second as a cached
+    # denial must still retire it.
+    Rails.cache.fetch([ "github_repo_access", user.id, account.updated_at.to_f, pull_request.owner, pull_request.repo ], expires_in: 10.minutes) do
       Github::WriteClient.new(token: account.access_token)
         .repository_readable?(pull_request.owner, pull_request.repo)
     rescue Github::WriteClient::Unauthorized
