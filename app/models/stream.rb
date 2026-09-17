@@ -3,11 +3,11 @@
 # a partial unique index on room_id where ended_at IS NULL. Ended rows stay
 # as history; `live` is the current broadcast, if any.
 #
-# Starting and ending broadcast the same three updates: the room header's
-# Live badge on the room's messages stream, and the sidebar live dot plus a
-# per-viewer stage panel on every member's own rooms stream. Automatic ends
-# (demotion, removal, deactivation, grant revocation) go through the same
-# callbacks, so every path delivers identical updates.
+# Starting and ending broadcast the same four updates: the room header's
+# Live badge on the room's messages stream, and the sidebar live dot, the
+# event venue dot, plus a per-viewer stage panel on every member's own rooms
+# stream. Automatic ends (demotion, removal, deactivation, grant revocation)
+# go through the same callbacks, so every path delivers identical updates.
 class Stream < ApplicationRecord
   QUALITIES = %w[ 720p15 1080p15 1080p30 ].freeze
 
@@ -105,9 +105,11 @@ class Stream < ApplicationRecord
     end
 
     # The header badge is identical for every viewer, so it goes to the
-    # room's stream once. The sidebar dot and the stage panel (whose Stop
-    # button renders only for the presenter and hosts) go to each member's
-    # own stream, mirroring the voice presence and stage roster broadcasts.
+    # room's stream once. The sidebar dot, the event venue dot, and the stage
+    # panel (whose Stop button renders only for the presenter and hosts) go
+    # to each member's own stream, mirroring the voice presence and stage
+    # roster broadcasts. The event page carries the sidebar subscription, so
+    # the venue dot updates without a reload.
     def broadcast_stream_changed
       stage_room = Room.find_by(id: room_id)
       return unless stage_room.is_a?(Rooms::Stage)
@@ -121,6 +123,10 @@ class Stream < ApplicationRecord
         broadcast_replace_to member.user, :rooms,
           target: [ stage_room, :sidebar_stage_live ],
           partial: "rooms/stage/live_dot",
+          locals: { room: stage_room }
+        broadcast_replace_to member.user, :rooms,
+          target: [ stage_room, :event_stage_live ],
+          partial: "rooms/events/venue_live_dot",
           locals: { room: stage_room }
         broadcast_replace_to member.user, :rooms,
           target: [ stage_room, :stage_panel ],

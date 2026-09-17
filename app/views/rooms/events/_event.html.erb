@@ -20,6 +20,9 @@
         <% else %>
           <%= event.venue.name %>
         <% end %>
+        <% if event.venue.stage? && venue_member?(event.venue) %>
+          <%= render "rooms/events/venue_live_dot", room: event.venue, target: dom_id(event, :venue_live_dot) %>
+        <% end %>
       </p>
     <% end %>
   </div>

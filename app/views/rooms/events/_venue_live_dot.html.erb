@@ -1,0 +1,6 @@
+<% target = local_assigns.fetch(:target) { dom_id(room, :event_stage_live) } %>
+<%# The sidebar dot hardcodes the sidebar target id, which the event page's own
+    sidebar already carries. Rewrite it to the event target so the document keeps
+    unique ids and each broadcast replaces the right dot. Both ids are app-generated;
+    the substitution keeps the already-escaped markup safe. -%>
+<%= render("rooms/stage/live_dot", room: room).sub(dom_id(room, :sidebar_stage_live), target).html_safe %>

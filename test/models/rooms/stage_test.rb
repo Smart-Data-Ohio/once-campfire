@@ -185,4 +185,35 @@ class Rooms::StageTest < ActiveSupport::TestCase
 
     assert_empty room.reload.users
   end
+
+  test "live_stream reads the preloaded live stream without querying" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    membership = room.memberships.find_by!(user: users(:david))
+    Stream.create!(room: room, membership: membership, user: users(:david), quality: "1080p15").end!
+    live = Stream.create!(room: room, membership: membership, user: users(:david), quality: "1080p15")
+
+    preloaded = Rooms::Stage.includes(:live_streams).find(room.id)
+    ActiveRecord::Base.connection.clear_query_cache
+
+    assert_equal [ live ], preloaded.live_streams.to_a
+    assert_equal live, assert_no_queries { preloaded.live_stream }
+  end
+
+  test "live_stream is nil from the preloaded association once the stream has ended" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    Stream.create!(room: room, membership: room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15").end!
+
+    preloaded = Rooms::Stage.includes(:live_streams).find(room.id)
+
+    assert_nil assert_no_queries { preloaded.live_stream }
+  end
+
+  test "live_stream queries fresh when streams are not preloaded" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    live = Stream.create!(room: room, membership: room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+
+    assert_equal live, Rooms::Stage.find(room.id).live_stream
+  end
 end

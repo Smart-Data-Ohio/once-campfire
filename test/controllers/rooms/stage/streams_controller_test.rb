@@ -19,8 +19,8 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
     sign_in :david
 
     assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
-      assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 2 do
-        assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 2 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 3 do
+        assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 3 do
           assert_difference -> { Stream.live.count }, 1 do
             post room_stage_stream_url(@room), params: { quality: "1080p30" }
           end
@@ -146,7 +146,7 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
     sign_in :david
 
     assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
-      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 2 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 3 do
         delete room_stage_stream_url(@room)
       end
     end
