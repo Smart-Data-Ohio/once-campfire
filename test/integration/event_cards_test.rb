@@ -105,7 +105,7 @@ class EventCardsTest < ActionDispatch::IntegrationTest
     assert_select ".event-card__title", text: "Announced session"
   end
 
-  test "a member of the message room who is not a member of the event room sees the plain link and no card" do
+  test "a link to an event in another room stays a plain link with no card for anyone" do
     event_room = rooms(:pets) # david is a member; kevin is not
     event = event_room.events.create!(
       organizer: users(:david), title: "Secret planning",
@@ -117,7 +117,17 @@ class EventCardsTest < ActionDispatch::IntegrationTest
       markdown_source: "see #{event_url}",
       client_message_id: "evt-card-foreign"
     )
-    assert_equal [ event ], message.events
+    assert_empty message.events
+
+    # Even a member of both rooms gets no card: the fragment is cached and
+    # broadcast across every viewer of the message's room, so the card only
+    # ever renders for the room's own events.
+    get room_url(@room)
+
+    assert_response :success
+    assert_select ".event-card", count: 0
+    assert_select "a[href=?]", event_url, minimum: 1
+    assert_not_includes response.body, "Secret planning"
 
     delete session_url
     sign_in :kevin # a designers member, but not a pets member
@@ -126,7 +136,6 @@ class EventCardsTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select ".event-card", count: 0
-    assert_select "a[href=?]", event_url, minimum: 1
     assert_not_includes response.body, "Secret planning"
   end
 

@@ -46,6 +46,21 @@ class Event::ReferenceSyncTest < ActiveSupport::TestCase
     assert_empty message.events
   end
 
+  test "a link to an event in another room creates nothing" do
+    other_room = rooms(:pets)
+    other_event = other_room.events.create!(
+      organizer: users(:david), title: "Elsewhere", starts_at: 2.days.from_now, time_zone: "UTC"
+    )
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "see /rooms/#{other_room.id}/events/#{other_event.id}",
+      client_message_id: "evt-ref-other-room"
+    )
+
+    assert_empty message.events
+    assert_empty message.event_references
+  end
+
   test "a link to a missing event creates nothing" do
     message = @room.messages.create!(
       creator: users(:david),

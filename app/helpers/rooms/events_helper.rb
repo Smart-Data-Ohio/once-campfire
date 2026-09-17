@@ -55,11 +55,9 @@ module Rooms::EventsHelper
     # scope to an association builds a fresh relation and so ignores the rows
     # `with_rendering_details` already preloaded — one extra query per message
     # rendered. (Same reason `ordered_boosts` exists.)
-    events = message.events.sort_by { |event| [ event.starts_at, event.id ] }
-    return events if Current.user.nil?
-
-    member_room_ids = (@event_card_room_ids ||= Current.user.room_ids.to_set)
-    events.select { |event| member_room_ids.include?(event.room_id) }
+    # Referenced events always belong to the message's own room (see
+    # Event::ReferenceSync), so no per-viewer membership filter is needed.
+    message.events.sort_by { |event| [ event.starts_at, event.id ] }
   end
 
   # The lazy attendance frame inside an event card. The message id keeps the

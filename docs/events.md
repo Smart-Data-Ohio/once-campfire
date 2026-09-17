@@ -24,7 +24,7 @@ Any message linking to an event — the announcement or a pasted event URL — r
 
 The card carries a response section with your current response and the going/maybe counts, plus **Going**, **Maybe**, and **Declined** buttons that answer in place without leaving the room. On a repeating event the card also offers **Apply to all future occurrences**.
 
-Cards respect room membership. A member of the room the link was posted in who is not a member of the event's room sees the plain link and no card — the event's title and details never reach them through the room.
+Cards render only for the room's own events. A link to an event from another room stays a plain link with no card for everyone, including members of both rooms, so an event's title and details never reach a room it was not scheduled in.
 
 A repeating series announces once, for its first event; the later occurrences post nothing.
 

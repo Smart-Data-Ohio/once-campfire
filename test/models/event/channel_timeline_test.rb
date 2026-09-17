@@ -74,19 +74,19 @@ class Event::ChannelTimelineTest < ActiveSupport::TestCase
       client_message_id: "evt-broadcast-2"
     )
     assert_equal [ event ], message.events
-    assert_equal [ event ], other_message.events
+    # A link from another room never references the event, so that room's
+    # stream gets nothing: cards only render for a room's own events.
+    assert_empty other_message.events
 
     # The announcement references the event too, so the room stream gets one
     # replace per referencing message in the room.
     room_stream = room_messages_stream_name(@room)
     other_stream = room_messages_stream_name(other_room)
     room_count = event.referencing_messages.where(room_id: @room.id).count
-    other_count = event.referencing_messages.where(room_id: other_room.id).count
     assert_equal 2, room_count
-    assert_equal 1, other_count
 
     assert_broadcasts room_stream, room_count do
-      assert_broadcasts other_stream, other_count do
+      assert_broadcasts other_stream, 0 do
         event.update!(title: "A new title")
       end
     end

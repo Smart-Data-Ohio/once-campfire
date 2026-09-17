@@ -7,9 +7,12 @@ module Event::ReferenceSync
     # Reconciles a message's event references with the event URLs its
     # content currently contains. Idempotent: re-running with unchanged
     # content changes nothing. Links to events that do not exist create
-    # nothing.
+    # nothing, and neither do links to events in another room: every
+    # viewer of a message is a member of its room, so a card for one of
+    # the room's own events can be rendered once, cached across viewers,
+    # and broadcast to the room without a per-viewer membership check.
     def call(message)
-      events = ::Event.where(id: extract_event_ids(reference_text(message)))
+      events = ::Event.where(id: extract_event_ids(reference_text(message)), room_id: message.room_id)
 
       message.event_references.where.not(event_id: events.select(:id)).delete_all
 
