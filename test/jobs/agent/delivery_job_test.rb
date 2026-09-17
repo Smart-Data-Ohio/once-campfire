@@ -85,6 +85,47 @@ class Agent::DeliveryJobTest < ActiveSupport::TestCase
     assert @agent.agent_events.where(event_type: "delivery_suppressed_revoked").exists?
   end
 
+  test "performing the same event twice posts the webhook only once" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+
+    create_mentioning_message(@room, @bot, creator: users(:david))
+    event = @agent.agent_events.deliverable.last
+
+    Agent::DeliveryJob.perform_now(event.id)
+    assert_equal "delivered", event.reload.outcome
+
+    Agent::DeliveryJob.perform_now(event.id)
+
+    assert_equal "delivered", event.reload.outcome
+    assert_requested :post, webhooks(:bender).url, times: 1
+  end
+
+  test "a job that loses the delivery race exits without posting" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+
+    create_mentioning_message(@room, @bot, creator: users(:david))
+    event = @agent.agent_events.deliverable.last
+
+    # Another job claims the row after our checks pass but before our claim.
+    Agent::Delivery.stubs(:rate_limited?).with { event.update_columns(outcome: "delivered"); true }.returns(false)
+
+    Agent::DeliveryJob.perform_now(event.id)
+
+    assert_not_requested :post, webhooks(:bender).url
+  end
+
+  test "a job that loses the suppression race writes no duplicate row" do
+    create_mentioning_message(@room, @bot, creator: users(:david))
+    event = @agent.agent_events.deliverable.last
+
+    # Another job claims the row while our suppression decision is in flight.
+    Agent::Delivery.stubs(:rate_limited?).with { event.update_columns(outcome: "suppressed"); true }.returns(true)
+
+    Agent::DeliveryJob.perform_now(event.id)
+
+    assert_empty @agent.agent_events.where(event_type: "delivery_suppressed_rate_limit")
+  end
+
   test "message deleted before delivery suppresses without crashing or posting" do
     WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
 

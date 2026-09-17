@@ -80,7 +80,7 @@ class Agent::Delivery
       message = Message.find_by(id: event.message_id)
 
       if message.nil? || room.nil?
-        event.update!(outcome: "suppressed", detail: "Message no longer available")
+        claim(event, outcome: "suppressed", detail: "Message no longer available")
         return
       end
 
@@ -99,7 +99,7 @@ class Agent::Delivery
         return
       end
 
-      event.update!(outcome: "delivered")
+      return unless claim(event, outcome: "delivered")
 
       if (webhook = agent.user.webhook)
         begin
@@ -174,8 +174,18 @@ class Agent::Delivery
         Membership.exists?(user_id: agent.user_id, room_id: room.id)
       end
 
+      # Atomically transitions a pending row; false when another job
+      # already claimed it, so two concurrent jobs cannot both post and the
+      # loser exits without posting or writing a duplicate suppression row.
+      def claim(event, outcome:, detail: nil)
+        updates = { outcome: outcome }
+        updates[:detail] = detail unless detail.nil?
+        AgentEvent.where(id: event.id, outcome: "pending").update_all(updates) == 1
+      end
+
       def suppress(event, event_type, detail)
-        event.update!(outcome: "suppressed", detail: detail)
+        return unless claim(event, outcome: "suppressed", detail: detail)
+
         event.agent.agent_events.create!(
           event_type: event_type,
           room_id: event.room_id,
