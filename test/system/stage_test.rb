@@ -283,7 +283,7 @@ class StageTest < ApplicationSystemTestCase
     Timeout.timeout(Capybara.default_max_wait_time) do
       sleep 0.05 until page.evaluate_script("window.stageJoinEvents.length") > 0
     end
-    assert_equal [ { "roomId" => room.id, "roomName" => "Town Hall" } ], page.evaluate_script("window.stageJoinEvents")
+    assert_equal [ { "roomId" => room.id, "roomName" => "Town Hall", "canPublishHint" => false } ], page.evaluate_script("window.stageJoinEvents")
 
     page.execute_script(<<~JS, room.id)
       window.dispatchEvent(new CustomEvent("huddle:changed", {
@@ -296,9 +296,40 @@ class StageTest < ApplicationSystemTestCase
 
     click_button "Leave stage"
 
-    assert_equal [ { "roomId" => room.id, "roomName" => "Town Hall" } ], page.evaluate_script("window.stageJoinEvents")
+    assert_equal [ { "roomId" => room.id, "roomName" => "Town Hall", "canPublishHint" => false } ], page.evaluate_script("window.stageJoinEvents")
     assert_selector ".huddle-launcher", text: "Join stage", wait: 10
     assert_selector "#channel-huddle[data-state='idle']", visible: :all
+  end
+
+  test "a listener joins without a microphone or device check" do
+    room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:kevin) ])
+    sign_in "kevin@37signals.com"
+    visit room_path(room)
+    wait_for_cable_connection
+
+    assert_selector '.huddle-launcher[data-huddle-can-publish-param="false"]'
+
+    # A first-time listener with no microphone: permission still prompts and
+    # capture always fails. Without the LiveKit servers this join cannot
+    # connect, but it must attempt to, not strand the listener in prejoin.
+    page.execute_script(<<~JS)
+      window.__stageGumCalls = 0
+      window.__stageHuddleStates = []
+      new MutationObserver(() => {
+        window.__stageHuddleStates.push(document.getElementById("channel-huddle").dataset.state)
+      }).observe(document.getElementById("channel-huddle"), { attributes: true, attributeFilter: [ "data-state" ] })
+      navigator.permissions.query = () => Promise.resolve({ state: "prompt" })
+      navigator.mediaDevices.getUserMedia = () => {
+        window.__stageGumCalls += 1
+        return Promise.reject(new DOMException("No microphone", "NotFoundError"))
+      }
+    JS
+
+    click_button "Join stage"
+
+    assert_selector "#channel-huddle[data-state='failed']", visible: :all, wait: 20
+    assert_not_includes page.evaluate_script("window.__stageHuddleStates"), "prejoin"
+    assert_equal 0, page.evaluate_script("window.__stageGumCalls")
   end
 
   test "stage rooms carry ordinary text chat" do

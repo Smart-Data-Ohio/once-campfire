@@ -49,6 +49,7 @@ export default class extends Controller {
     this.roomName = null
     this.identity = null
     this.canPublish = true
+    this.canPublishHint = undefined
     this.operation = 0
     this.state = "idle"
     this.roomListeners = new Map()
@@ -111,6 +112,7 @@ export default class extends Controller {
   join = async ({ detail }) => {
     const requestedRoomId = Number(detail?.roomId)
     const requestedRoomName = String(detail?.roomName || "Huddle")
+    const canPublishHint = detail?.canPublishHint
 
     if (!Number.isInteger(requestedRoomId) || requestedRoomId <= 0) return
     if (!this.#signedInAsCurrentUser()) {
@@ -131,14 +133,18 @@ export default class extends Controller {
     this.roomName = requestedRoomName
     this.identity = null
     this.canPublish = true
+    this.canPublishHint = canPublishHint
     // Storage is the preference; a transient processor failure only turned it off
     // in memory, so a fresh join gets a fresh attempt.
     this.noiseSuppressionEnabled = this.noiseSuppressionAvailable && this.#storedNoiseSuppression()
 
     // A browser that has never granted microphone access stops at the device
     // check first. Returning users skip it; a denied permission skips it too so
-    // the denial surfaces through the usual failure notice.
-    if (await this.#shouldShowPrejoinCheck()) {
+    // the denial surfaces through the usual failure notice. A stage listener
+    // needs no publishing device, so a false hint skips the check and any
+    // microphone acquisition and connects directly; the token remains the
+    // authority for canPublish after connect.
+    if (canPublishHint !== false && await this.#shouldShowPrejoinCheck()) {
       if (operation !== this.operation) return
       await this.#enterPrejoin(operation)
       return
@@ -216,7 +222,7 @@ export default class extends Controller {
   retry() {
     if (!this.roomId) return
 
-    this.join({ detail: { roomId: this.roomId, roomName: this.roomName } })
+    this.join({ detail: { roomId: this.roomId, roomName: this.roomName, canPublishHint: this.canPublishHint } })
   }
 
   // A stage role change revokes the old grant, so the affected browser leaves

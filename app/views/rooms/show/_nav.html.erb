@@ -48,6 +48,7 @@
       <span class="room-header__action-label">Events</span>
     <% end %>
 
+    <% stage_membership = room.stage? ? room.memberships.find_by(user: Current.user) : nil %>
     <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
       <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
             aria: { label: "View shared screen" }, title: "View shared screen",
@@ -68,14 +69,15 @@
               huddle_launcher_room_name_value: room_display_name(room),
               huddle_launcher_join_label_value: room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle",
               huddle_launcher_active_label_value: room.stage? ? "Leave stage" : room.voice? ? "Leave voice" : "In huddle",
-              huddle_launcher_toggle_value: room.voice? || room.stage?
+              huddle_launcher_toggle_value: room.voice? || room.stage?,
+              huddle_can_publish_param: stage_membership && !stage_membership.listener?
             } do %>
         <%= image_tag "headphones.svg", size: 20, aria: { hidden: "true" } %>
         <span data-huddle-launcher-target="label"><%= room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle" %></span>
       <% end %>
     <% end %>
 
-    <% if room.stage? && (stage_membership = room.memberships.find_by(user: Current.user)) %>
+    <% if stage_membership %>
       <div class="stage-panel-wrap" data-controller="stage-panel">
         <button type="button" class="btn room-header__action"
                 aria-controls="<%= dom_id(room, :stage_panel_dialog) %>"
