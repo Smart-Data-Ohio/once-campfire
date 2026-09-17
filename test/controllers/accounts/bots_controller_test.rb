@@ -34,6 +34,21 @@ class Accounts::BotsControllerTest < ActionDispatch::IntegrationTest
     assert_match "no owner recorded", response.body
   end
 
+  test "edit and update never create an agent for a legacy bot" do
+    agents(:bender_agent).delete
+
+    assert_no_difference "Agent.count" do
+      get edit_account_bot_url(users(:bender))
+      assert_response :ok
+
+      patch account_bot_url(users(:bender)), params: { user: { name: "Bender 2" } }
+      assert_redirected_to account_bots_url
+    end
+
+    assert_equal "Bender 2", users(:bender).reload.name
+    assert_nil users(:bender).reload.agent
+  end
+
   test "create" do
     get new_account_bot_url
     assert_response :ok

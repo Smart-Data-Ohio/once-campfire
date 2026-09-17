@@ -22,13 +22,13 @@ class Accounts::BotsController < ApplicationController
   end
 
   def update
-    @agent.assign_attributes(agent_params)
+    @agent&.assign_attributes(agent_params)
 
-    if @agent.invalid?
+    if @agent&.invalid?
       render :edit, status: :unprocessable_entity
     else
       @bot.update_bot! bot_params
-      @agent.save!
+      @agent&.save!
       redirect_to account_bots_url
     end
   end
@@ -47,8 +47,10 @@ class Accounts::BotsController < ApplicationController
       head :forbidden unless Current.user.administrator? || @bot.agent&.owner == Current.user
     end
 
+    # A legacy bot without an agent row stays that way: reading or editing
+    # its page must not silently convert it into an agent.
     def set_agent
-      @agent = @bot.agent || @bot.create_agent!(kind: :workspace, owner: Current.user)
+      @agent = @bot.agent
     end
 
     def bot_params
