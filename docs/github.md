@@ -15,9 +15,11 @@ is created or its Markdown source is edited.
 
 - Fetching happens in `Github::FetchPullRequestJob`, never inline in a
   request: on first reference, when a card renders with `fetched_at` older
-  than 10 minutes, and when a webhook arrives for a referenced PR. The job
-  is idempotent, safe to enqueue concurrently, and records failures as
-  `fetch_error` instead of retrying forever.
+  than 10 minutes, and when a webhook arrives for a referenced PR. Stale
+  renders enqueue at most one job per PR per 10 minutes, however many
+  messages or viewers race. The job is idempotent, safe to enqueue
+  concurrently, and records failures as `fetch_error` instead of retrying
+  forever.
 - `POST /github/webhooks` handles `pull_request`, `pull_request_review`,
   `check_suite`, `check_run`, and `status` events for PRs the workspace
   references and ignores everything else. `X-GitHub-Delivery` ids are

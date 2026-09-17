@@ -17,7 +17,9 @@ module Github
 
         pull_requests.each do |pull_request|
           reference = message.github_pull_request_references.find_or_create_by!(pull_request: pull_request)
-          Github::FetchPullRequestJob.perform_later(pull_request) if reference.previously_new_record? || pull_request.stale?
+          if reference.previously_new_record? || pull_request.stale?
+            Github::FetchPullRequestJob.perform_later(pull_request) if pull_request.claim_fetch_request!
+          end
         end
       rescue ActiveRecord::RecordNotUnique
         retry

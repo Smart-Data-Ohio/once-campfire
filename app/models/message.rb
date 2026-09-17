@@ -56,7 +56,7 @@ class Message < ApplicationRecord
     with_creator
       .with_attachment_details
       .with_boosts
-      .preload(:room, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
+      .preload(:room, :github_pull_requests, reply_to_message: [ :room, :rich_text_body, { creator: :avatar_attachment } ])
   }
   # The JSON payload reads the creator, body, attachment filename, room, reply
   # source and thread, but never boosts or image variants, so it gets a lighter

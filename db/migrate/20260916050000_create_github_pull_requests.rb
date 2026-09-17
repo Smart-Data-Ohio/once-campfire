@@ -18,6 +18,7 @@ class CreateGithubPullRequests < ActiveRecord::Migration[8.2]
       t.json :payload
       t.datetime :fetched_at
       t.string :fetch_error
+      t.datetime :fetch_requested_at
 
       t.timestamps
     end

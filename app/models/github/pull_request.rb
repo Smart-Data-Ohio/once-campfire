@@ -3,10 +3,6 @@ class Github::PullRequest < ApplicationRecord
 
   STALE_AFTER = 10.minutes
 
-  STATES = %w[ open draft merged closed ].freeze
-  REVIEW_DECISIONS = %w[ approved changes_requested review_required ].freeze
-  CHECK_STATUSES = %w[ passing pending failing ].freeze
-
   has_many :pull_request_references, class_name: "Github::PullRequestReference",
     foreign_key: :github_pull_request_id, dependent: :destroy, inverse_of: :pull_request
   has_many :messages, through: :pull_request_references
@@ -17,8 +13,6 @@ class Github::PullRequest < ApplicationRecord
 
   after_update_commit :broadcast_card_updates
 
-  scope :stale, -> { where(fetched_at: nil).or(where(fetched_at: ...STALE_AFTER.ago)) }
-
   def full_name
     "#{owner}/#{repo}"
   end
@@ -27,8 +21,21 @@ class Github::PullRequest < ApplicationRecord
     fetched_at.nil? || fetched_at < STALE_AFTER.ago
   end
 
-  def loaded?
-    fetched_at.present? && fetch_error.nil?
+  def fetch_requested_recently?
+    fetch_requested_at.present? && fetch_requested_at >= STALE_AFTER.ago
+  end
+
+  # Atomically claim the right to enqueue a fetch for this PR: at most one
+  # caller per PR wins per staleness window, however many renders race. The
+  # update skips callbacks, so claiming never broadcasts a card update.
+  def claim_fetch_request!
+    return false if fetch_requested_recently?
+
+    claimed = self.class.where(id: id)
+      .where("fetch_requested_at IS NULL OR fetch_requested_at < ?", STALE_AFTER.ago)
+      .update_all(fetch_requested_at: Time.current) == 1
+    self.fetch_requested_at = Time.current if claimed
+    claimed
   end
 
   # Find or create the record for a referenced PR. Safe to call concurrently:

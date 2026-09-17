@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_16_020000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -161,6 +161,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_020000) do
     t.string "check_status"
     t.datetime "created_at", null: false
     t.string "fetch_error"
+    t.datetime "fetch_requested_at"
     t.datetime "fetched_at"
     t.datetime "github_updated_at"
     t.string "head_branch"
