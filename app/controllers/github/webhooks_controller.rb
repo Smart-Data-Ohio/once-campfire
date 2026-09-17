@@ -1,6 +1,7 @@
-class Github::WebhooksController < ActionController::Base
-  skip_forgery_protection
-
+# An API controller: GitHub authenticates each delivery with the HMAC
+# signature below, and there is no session, so request forgery protection
+# does not apply and is not loaded rather than skipped.
+class Github::WebhooksController < ActionController::API
   # Handles pull_request, pull_request_review, check_suite, check_run, and
   # status events for referenced PRs; everything else is acknowledged and
   # ignored (see #referenced_pull_requests).
