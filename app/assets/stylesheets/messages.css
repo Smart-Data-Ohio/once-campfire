@@ -476,6 +476,71 @@ img.message__attachment {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* On phones the message action menu is a bottom sheet with comfortable
+   touch targets instead of a pointer-anchored floating popover. The
+   controller skips its coordinates here and lets this CSS place the menu. */
+@media (max-width: 100ch), (pointer: coarse) {
+  .message__actions-menu {
+    border-block-end: none;
+    border-end-end-radius: 0;
+    border-end-start-radius: 0;
+    border-start-end-radius: 1rem;
+    border-start-start-radius: 1rem;
+    bottom: 0;
+    inline-size: auto;
+    inset-inline: 0;
+    max-block-size: 70vh;
+    max-block-size: 70dvh;
+    max-inline-size: none;
+    padding-block-end: calc(0.75rem + var(--safe-area-bottom));
+    top: auto;
+
+    &::backdrop {
+      background: rgb(0 0 0 / 40%);
+      /* Outside taps must reach the page so the existing pointerdown
+         handler keeps closing the menu. */
+      pointer-events: none;
+    }
+  }
+
+  .message__actions-menu > .for-screen-reader {
+    /* Pin the absolutely-positioned live region so its static grid position
+       can't overflow the sheet and summon a horizontal scrollbar. */
+    inset-inline-start: 0;
+  }
+
+  .message__quick-reactions {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scroll-padding-inline: 0.45rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .message__quick-reaction {
+    --btn-size: 44px;
+
+    /* Contain the screen-reader label so it scrolls with its button instead
+       of overflowing the sheet and summoning a horizontal scrollbar. */
+    position: relative;
+
+    > span[aria-hidden="true"] {
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+  }
+
+  .message__menu-action {
+    min-block-size: 44px;
+  }
+}
+
 .message-forward-dialog {
   background: var(--color-bg);
   border: 1px solid var(--color-border-darker);
