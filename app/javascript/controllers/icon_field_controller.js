@@ -28,7 +28,9 @@ export default class extends Controller {
   }
 
   updatePreview() {
-    const name = this.inputTarget.value.trim().replace(/^:+|:+$/g, "")
+    // Same normalization as Icons.normalize_name: strip whitespace and
+    // :name: colons, downcase, so uppercase input previews like the server.
+    const name = this.inputTarget.value.trim().replace(/^:+|:+$/g, "").trim().toLowerCase()
 
     if (!/^[a-z0-9_]{2,}$/.test(name)) {
       this.previewTarget.innerHTML = ""

@@ -21,9 +21,11 @@ module Users::AvatarsHelper
   end
 
   # A bot with an icon and no uploaded picture shows its icon; an uploaded
-  # picture always wins. Everyone else keeps the fresh avatar path.
+  # picture always wins. Everyone else keeps the fresh avatar path. Only
+  # class and size apply to the icon; other caller options (loading, aria)
+  # are for the <img> fallback.
   def avatar_image_tag(user, size: 48, **options)
-    if user.bot? && !user.avatar.attached? && (icon = icon_avatar_tag(user.icon_name, size: size, **options))
+    if user.bot? && !user.avatar.attached? && (icon = icon_avatar_tag(user.icon_name, size: size, class: options[:class]))
       icon
     else
       image_tag fresh_user_avatar_path(user), size: size, **options
