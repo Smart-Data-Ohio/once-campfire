@@ -26,7 +26,7 @@ class Huddle
       opaque_identifier("room", room_id)
     end
 
-    def participant_video_grant(room_name)
+    def participant_video_grant(room_name, publish: true)
       {
         room: room_name,
         roomJoin: true,
@@ -34,9 +34,9 @@ class Huddle
         roomList: false,
         roomAdmin: false,
         roomRecord: false,
-        canPublish: true,
+        canPublish: publish,
         canPublishData: false,
-        canPublishSources: PUBLISH_SOURCES,
+        canPublishSources: publish ? PUBLISH_SOURCES : [],
         canSubscribe: true
       }
     end
@@ -107,11 +107,21 @@ class Huddle
       name: user.name,
       nbf: now - 5,
       sub: identity,
-      video: self.class.participant_video_grant(room_name)
+      video: self.class.participant_video_grant(room_name, publish: can_publish?)
     }, api_secret, "HS256")
   end
 
   private
+    # Only stage listeners are publish-restricted: hosts and speakers publish
+    # like any other huddle participant, and every non-stage room is unchanged.
+    # The grant's role was read under lock at issuance, and a stage grant
+    # without a recorded role publishes nothing.
+    def can_publish?
+      return true unless room.stage?
+
+      grant.stage_role.in?(%w[ host speaker ])
+    end
+
     def api_key
       ENV.fetch("LIVEKIT_API_KEY")
     end

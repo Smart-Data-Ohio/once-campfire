@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_17_042341) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -172,17 +172,6 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
   end
 
-  create_table "github_notifications", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "dedupe_key", null: false
-    t.integer "message_id"
-    t.integer "subscription_id", null: false
-    t.datetime "updated_at", null: false
-    t.index ["message_id"], name: "index_github_notifications_on_message_id"
-    t.index ["subscription_id", "dedupe_key"], name: "index_github_notifications_on_subscription_and_key", unique: true
-    t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
-  end
-
   create_table "event_attendances", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "event_id", null: false
@@ -219,6 +208,17 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+  end
+
+  create_table "github_notifications", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "dedupe_key", null: false
+    t.integer "message_id"
+    t.integer "subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id"], name: "index_github_notifications_on_message_id"
+    t.index ["subscription_id", "dedupe_key"], name: "index_github_notifications_on_subscription_and_key", unique: true
+    t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
   end
 
   create_table "github_pull_request_references", force: :cascade do |t|
@@ -317,6 +317,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.integer "room_id", null: false
     t.string "room_name", null: false
     t.integer "session_id", null: false
+    t.string "stage_role"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
@@ -332,12 +333,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.datetime "connected_at"
     t.integer "connections", default: 0, null: false
     t.datetime "created_at", null: false
+    t.datetime "hand_raised_at"
     t.string "involvement", default: "mentions"
     t.integer "room_id", null: false
+    t.string "stage_role"
     t.datetime "unread_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["room_id", "created_at"], name: "index_memberships_on_room_id_and_created_at"
+    t.index ["room_id", "stage_role"], name: "index_memberships_on_room_id_and_stage_role"
     t.index ["room_id", "user_id"], name: "index_memberships_on_room_id_and_user_id", unique: true
     t.index ["room_id"], name: "index_memberships_on_room_id"
     t.index ["user_id"], name: "index_memberships_on_user_id"
@@ -428,9 +432,9 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.integer "role", default: 0, null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
     t.index ["bot_token"], name: "index_users_on_bot_token", unique: true
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
-    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
   end
 
   create_table "webhooks", force: :cascade do |t|

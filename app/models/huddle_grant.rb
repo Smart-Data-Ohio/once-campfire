@@ -37,11 +37,14 @@ class HuddleGrant < ApplicationRecord
           revoke_scope! active.where(session_id: current_session.id, room_id: current_room.id)
             .where.not(membership_id: current_membership.id)
 
+          stage_role = current_room.stage? ? current_membership.stage_role : nil
+
           existing = active.find_by(session_id: current_session.id, membership_id: current_membership.id)
-          if existing
+          if existing && existing.stage_role == stage_role
             existing.update!(last_issued_at: Time.current)
             existing
           else
+            existing&.revoke!
             create!(
               identity: "campfire-participant-#{SecureRandom.hex(32)}",
               room_name: Huddle.room_name(current_room.id),
@@ -49,6 +52,7 @@ class HuddleGrant < ApplicationRecord
               user_id: user.id,
               membership_id: current_membership.id,
               room_id: current_room.id,
+              stage_role: stage_role,
               last_issued_at: Time.current
             )
           end
@@ -102,10 +106,18 @@ class HuddleGrant < ApplicationRecord
   def authorized?
     return false if revoked?
 
-    User.active.where.not(role: :bot).exists?(id: user_id) &&
+    return false unless User.active.where.not(role: :bot).exists?(id: user_id) &&
       Session.exists?(id: session_id, user_id: user_id) &&
-      Membership.exists?(id: membership_id, user_id: user_id, room_id: room_id) &&
       Room.exists?(id: room_id)
+
+    membership = Membership.find_by(id: membership_id, user_id: user_id, room_id: room_id)
+    return false unless membership
+
+    # A stage grant is only valid for the role it was issued for. The
+    # gateway's per-second check revokes through here, so a demoted speaker
+    # whose grant somehow survived the role-change revocation still loses the
+    # call on the next check.
+    !room.stage? || membership.stage_role == stage_role
   end
 
   def authorize_or_revoke!
@@ -176,10 +188,11 @@ class HuddleGrant < ApplicationRecord
     # invitation or missed item from the last two minutes, handled or not,
     # keeps reconnects and rejoins silent.
     # Refresh the voice presence stacks in the room members' sidebars and in
-    # the room header. Non-voice rooms have no stacks, so they stay silent.
+    # the room header. Stage rooms share the voice stacks wholesale. Other
+    # rooms have no stacks, so they stay silent.
     def broadcast_voice_presence
       voice_room = Room.find_by(id: room_id)
-      return unless voice_room.is_a?(Rooms::Voice)
+      return unless voice_room.is_a?(Rooms::Voice) || voice_room.is_a?(Rooms::Stage)
 
       voice_room.memberships.includes(:user).find_each do |membership|
         broadcast_replace_to membership.user, :rooms,
@@ -195,9 +208,9 @@ class HuddleGrant < ApplicationRecord
     end
 
     def invite_direct_participant
-      # Voice channels are standing calls that members join at will: nobody is
-      # ever invited, rung, or marked as missing the call.
-      return if room.is_a?(Rooms::Voice)
+      # Voice and stage channels are standing calls that members join at
+      # will: nobody is ever invited, rung, or marked as missing the call.
+      return if room.is_a?(Rooms::Voice) || room.is_a?(Rooms::Stage)
 
       recipient = direct_huddle_recipient
       return unless recipient
