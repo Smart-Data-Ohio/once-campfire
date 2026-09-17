@@ -4,6 +4,14 @@ class Agent < ApplicationRecord
   # grants count; revoking the last grant removes access.
   LEGACY_CAPABILITIES = %w[ read_messages post_messages react ].freeze
 
+  # Self-reported status vocabulary, set only by the agent itself through
+  # PATCH /agents/me. `waiting` means waiting on a human. Suspension is
+  # separate and still comes from `suspended_at`.
+  STATUSES = %w[ idle working waiting failed ].freeze
+
+  # `last_seen_at` is touched at most this often per agent.
+  LAST_SEEN_THROTTLE = 1.minute
+
   belongs_to :user
   belongs_to :owner, class_name: "User", optional: true
 
@@ -17,8 +25,23 @@ class Agent < ApplicationRecord
   validates :owner_id, presence: true, if: :personal?
   validates :owner_id, presence: true, on: :create, if: :workspace?
 
+  validates :status, inclusion: { in: STATUSES }
+  validates :description, length: { maximum: 500 }, allow_nil: true
+  validates :status_note, length: { maximum: 200 }, allow_nil: true
+
   before_update -> { AgentGrant.revoke_for_agent!(self) },
     if: -> { will_save_change_to_suspended_at? && suspended_at.present? }
+  before_update :stamp_status_changed_at, if: :will_save_change_to_status?
+  after_update_commit :broadcast_status_change, if: :saved_status_change?
+
+  # Agents for the directory: active first, then suspended or otherwise
+  # inactive, each group name-sorted. Deactivated users are excluded.
+  def self.for_directory
+    includes(:user, :owner).joins(:user)
+      .where.not(users: { status: "deactivated" })
+      .to_a
+      .sort_by { |agent| [ agent.active? ? 0 : 1, agent.user.name.downcase ] }
+  end
 
   def active?
     suspended_at.nil? && user&.active?
@@ -30,6 +53,57 @@ class Agent < ApplicationRecord
 
   def suspend!
     update!(suspended_at: Time.current) unless suspended?
+  end
+
+  def kind_description
+    return "no owner recorded" if owner.nil?
+
+    if personal?
+      "Personal agent of #{owner.name}"
+    else
+      "Workspace agent, managed by #{owner.name}"
+    end
+  end
+
+  # Compact summary of active grants, e.g. "post_messages in 3 rooms,
+  # read_messages workspace-wide". Capabilities with no active grant are
+  # omitted. Reads the database on every call; no caching.
+  def grants_summary
+    return "legacy access (no grants recorded)" if legacy_capabilities?
+
+    summaries = AgentGrant::CAPABILITIES.sort.filter_map do |capability|
+      grants = agent_grants.active.where(capability: capability).to_a
+      next if grants.empty?
+
+      if grants.any?(&:workspace_wide?)
+        "#{capability} workspace-wide"
+      else
+        "#{capability} in #{grants.size} #{"room".pluralize(grants.size)}"
+      end
+    end
+
+    summaries.presence&.join(", ") || "no active grants"
+  end
+
+  # Compact 24-hour activity summary drawn from the delivery ledger.
+  # `posted` rows carry outcome "delivered", so delivered counts
+  # deliverable types only and each row lands in exactly one bucket.
+  def activity_summary
+    scope = agent_events.where("agent_events.created_at >= ?", 24.hours.ago)
+    delivered = scope.deliverable.where(outcome: "delivered").count
+    acknowledged = scope.where(outcome: "acknowledged").count
+    posted = scope.where(event_type: "posted").count
+    suppressed = scope.where(outcome: "suppressed").count
+
+    "#{delivered} delivered, #{acknowledged} acknowledged, #{posted} posted, #{suppressed} suppressed"
+  end
+
+  # Records agent activity without callbacks, validations, or broadcasts.
+  # Throttled to at most once per minute per agent.
+  def touch_last_seen!
+    return if last_seen_at.present? && last_seen_at > LAST_SEEN_THROTTLE.ago
+
+    update_column(:last_seen_at, Time.current)
   end
 
   # True when no agent_grants rows exist for this agent at all, revoked or
@@ -78,4 +152,31 @@ class Agent < ApplicationRecord
 
     AgentGrant.active.where(agent_id: id, capability: capability).exists?
   end
+
+  private
+    def stamp_status_changed_at
+      self.status_changed_at = Time.current
+    end
+
+    def saved_status_change?
+      saved_change_to_status? || saved_change_to_status_note?
+    end
+
+    # Replaces the profile status badge and the directory row over the
+    # agents stream. The rendered badge and row carry no credentials or
+    # grants, so every signed-in human may subscribe.
+    def broadcast_status_change
+      Turbo::StreamsChannel.broadcast_replace_to(
+        AgentsChannel::STREAM_NAME,
+        target: ActionView::RecordIdentifier.dom_id(self, :status_badge),
+        partial: "agents/status_badge",
+        locals: { agent: self }
+      )
+      Turbo::StreamsChannel.broadcast_replace_to(
+        AgentsChannel::STREAM_NAME,
+        target: ActionView::RecordIdentifier.dom_id(self, :directory_row),
+        partial: "agents/directory/agent",
+        locals: { agent: self }
+      )
+    end
 end

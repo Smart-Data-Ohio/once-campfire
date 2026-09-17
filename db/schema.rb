@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_17_030039) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -120,11 +120,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
 
   create_table "agents", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.string "description"
+    t.text "description"
     t.string "kind", default: "personal", null: false
+    t.datetime "last_seen_at"
     t.integer "owner_id"
     t.string "provider"
     t.string "runtime"
+    t.string "status", default: "idle", null: false
+    t.datetime "status_changed_at"
+    t.string "status_note"
     t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false

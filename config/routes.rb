@@ -62,7 +62,9 @@ Rails.application.routes.draw do
     resources :users, only: :index
   end
 
+  get "agents", to: "agents/directory#index"
   get "agents/me", to: "agents#me", defaults: { format: :json }
+  patch "agents/me", to: "agents#update", defaults: { format: :json }
   get "agents/events", to: "agents/events#index", defaults: { format: :json }
   post "agents/events/:id/ack", to: "agents/events#ack", defaults: { format: :json }, as: :ack_agents_event
   get "agents/:id/events", to: "agents/events#ledger", as: :agent_events
