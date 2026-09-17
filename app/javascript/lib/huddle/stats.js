@@ -46,7 +46,9 @@ const readPublisherReport = (report) => {
   // not jump when a screen share starts or stops.
   let feedback = null
   let fallbackFeedback = null
-  let bytesSent = 0
+  // Null until an outbound entry is seen: a failed report must read as "no
+  // sample", not as zero bytes, or the next bitrate spikes off a zero base.
+  let bytesSent = null
   let audioPacketsSent = null
   let totalPacketsSent = 0
   let packetsSentSeen = false
@@ -56,7 +58,7 @@ const readPublisherReport = (report) => {
 
   forEachStat(report, (stat) => {
     if (stat.type === "outbound-rtp" && !stat.isRemote) {
-      if (Number.isFinite(stat.bytesSent)) bytesSent += stat.bytesSent
+      if (Number.isFinite(stat.bytesSent)) bytesSent = (bytesSent || 0) + stat.bytesSent
       // Chrome does not repeat `packetsSent` on the remote-inbound entry, so
       // the loss denominator comes from the outbound side of the same flow.
       if (Number.isFinite(stat.packetsSent)) {
@@ -97,14 +99,16 @@ const readPublisherReport = (report) => {
 }
 
 const readSubscriberReport = (report) => {
-  let bytesReceived = 0
+  // Same "no sample" rule as the publisher side: nothing subscribed to reads
+  // as unknown, not as zero, so a later subscription never spikes.
+  let bytesReceived = null
   let pair = null
   let nominatedPair = null
   const candidates = new Map()
 
   forEachStat(report, (stat) => {
     if (stat.type === "inbound-rtp" && Number.isFinite(stat.bytesReceived)) {
-      bytesReceived += stat.bytesReceived
+      bytesReceived = (bytesReceived || 0) + stat.bytesReceived
     } else if (stat.type === "transport" && stat.selectedCandidatePairId && typeof report.get === "function") {
       pair = report.get(stat.selectedCandidatePairId) || pair
     } else if (stat.type === "candidate-pair") {

@@ -257,6 +257,43 @@ class HuddlesTest < ApplicationSystemTestCase
     end
   end
 
+  test "a camera switched in-call falls back silently when it is unplugged" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Check devices"
+    switch_device_select("cameraSelect")
+    camera_id = device_select_value("cameraSelect")
+    wait_for_condition("the camera switch never completed") do
+      active_device_id("videoinput") == camera_id
+    end
+
+    # Unplug the camera: an exact request for it now fails while an ideal one
+    # falls back to whatever is attached.
+    page.execute_script(<<~JS, camera_id)
+      const missingId = arguments[0];
+      window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = (constraints) => {
+        const wanted = constraints?.video?.deviceId;
+        const exact = wanted?.exact ?? (typeof wanted === "string" ? wanted : undefined);
+        if (exact === missingId) return Promise.reject(new DOMException("Test unplugged camera", "OverconstrainedError"));
+        return window.huddleTestGetUserMedia(constraints);
+      };
+    JS
+
+    click_button "Camera off", exact: true
+    assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
+    using_session("Kevin") do
+      assert_selector ".huddle__camera video"
+      wait_for_condition("the fallback camera did not decode video") { remote_camera_decoding? }
+    end
+
+    # The in-call switch must not leave an exact constraint behind: that is
+    # what turns the unplug into an OverconstrainedError instead of a fallback.
+    assert_equal({ "ideal" => camera_id }, video_capture_device_constraint)
+  end
+
   test "two direct message participants exchange audio and screen while navigating and reconnecting" do
     direct_room = rooms(:david_and_jason)
     open_huddle_as "david@37signals.com", room: direct_room
@@ -822,6 +859,44 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_not connection_sampling?, "connection statistics kept sampling after the panel closed"
   end
 
+  test "reopening the connection panel samples bitrates from scratch" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    wait_for_condition("bitrates were never sampled") do
+      connection_stat("statRx") != "–" && connection_stat("statSent") != "–"
+    end
+
+    find("[data-huddle-target='connection']").click
+    assert_no_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    # Leave the panel closed past a sampling interval, so a stale baseline
+    # would average the next bitrate over the closed gap.
+    sleep 3
+
+    reopened_at = (Time.now.to_f * 1000).to_i
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    wait_for_condition("no fresh sample landed after reopening") do
+      (connection_summary_sampled_at || 0) >= reopened_at
+    end
+    # The first sample after reopening has no previous sample to compare
+    # against, so both bitrates wait one interval instead of spiking.
+    assert_equal "–", connection_stat("statSent")
+    assert_equal "–", connection_stat("statRx")
+  end
+
+  test "the connection panel shows no received bitrate while alone in the call" do
+    open_huddle_as "jz@37signals.com"
+
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    # Sent needs two samples; received has no subscribed track to measure.
+    wait_for_condition("the sent bitrate was never sampled") { connection_stat("statSent") != "–" }
+    assert_equal "–", connection_stat("statRx")
+  end
+
   test "server removal disconnects only the targeted participant and stops their media" do
     open_huddle_as "jz@37signals.com"
     identity = captured_credentials.fetch("identity")
@@ -1162,6 +1237,14 @@ class HuddlesTest < ApplicationSystemTestCase
       JS
     end
 
+    def video_capture_device_constraint
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.options?.videoCaptureDefaults?.deviceId ?? null
+      JS
+    end
+
     def device_select_other_option(target)
       options = device_select_options(target)
       current = device_select_value(target)
@@ -1250,6 +1333,14 @@ class HuddlesTest < ApplicationSystemTestCase
         window.Stimulus
           .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
           ?.connectionStatsTimer !== null
+      JS
+    end
+
+    def connection_summary_sampled_at
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.connectionStatsSummary?.previous?.at ?? null
       JS
     end
 

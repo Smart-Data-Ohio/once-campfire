@@ -800,6 +800,7 @@ export default class extends Controller {
     try {
       await room.switchActiveDevice(kind, deviceId)
       if (room !== this.room) return
+      this.#relaxSwitchedDeviceConstraint(room, kind, deviceId)
       storeDevicePreference(kind, deviceId)
 
       // Switching replaces the underlying track: the meter re-attaches to the
@@ -818,6 +819,18 @@ export default class extends Controller {
       const live = this.state === "connected" || this.state === "prejoin"
       this.#setDeviceSelectsDisabled(!live)
     }
+  }
+
+  // `switchActiveDevice` records the choice as an `exact` constraint, which
+  // turns a later re-acquire — unplug the camera after an in-call switch,
+  // then turn it back on — into an OverconstrainedError. The stored
+  // preference is `ideal`, so the live default is relaxed to match: a missing
+  // device falls back to the default instead of failing the capture.
+  #relaxSwitchedDeviceConstraint(room, kind, deviceId) {
+    const defaults = kind === "audioinput"
+      ? room.options.audioCaptureDefaults
+      : kind === "videoinput" ? room.options.videoCaptureDefaults : null
+    if (defaults) defaults.deviceId = { ideal: deviceId }
   }
 
   #setDeviceSelectsDisabled(disabled) {
@@ -867,6 +880,9 @@ export default class extends Controller {
 
   #startConnectionSampling() {
     this.#stopConnectionSampling()
+    // A reopened panel starts from a fresh baseline instead of averaging the
+    // next bitrate over the interval while it was closed.
+    this.connectionStatsSummary = null
     this.#sampleConnectionStats()
     this.connectionStatsTimer = setInterval(() => this.#sampleConnectionStats(), CONNECTION_STATS_INTERVAL)
   }
