@@ -163,10 +163,8 @@ module Google
           q: drive_query, pageSize: 10, fields: DRIVE_LIST_FIELDS,
           orderBy: "modifiedTime desc", spaces: "drive"
         ),
-        service_name: "Drive")
+        forbidden: :not_found, service_name: "Drive")
     end
-
-
 
     def refresh_access_token!
       response = self.class.post_token_form(

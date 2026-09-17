@@ -300,6 +300,15 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "error" => "drive_unavailable" }, response.parsed_body)
   end
 
+  test "index is 404 when Drive answers forbidden" do
+    connect_google!(@david, scopes: DRIVE_SCOPES)
+    stub_google_drive_list(status: 403)
+
+    get google_drive_files_path, headers: { "Accept" => "application/json" }
+
+    assert_response :not_found
+  end
+
   test "index is 404 when the refresh fails with invalid_grant" do
     account = connect_google!(@david, scopes: DRIVE_SCOPES)
     account.update!(access_token_expires_at: 1.hour.ago)

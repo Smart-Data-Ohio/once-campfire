@@ -101,7 +101,9 @@ export default class extends Controller {
 
   key(event) {
     if (event.key === "Escape") {
+      // Stop here so a picker inside a thread composer does not also close the thread panel.
       event.preventDefault()
+      event.stopPropagation()
       this.close()
       this.buttonTarget.focus()
       return
