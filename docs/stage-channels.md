@@ -110,5 +110,6 @@ are the only stage moderation tool: there is no separate mute, kick, or ban.
 ## Deliberately not included
 
 Recording, streaming to an external audience, and per-speaker mute are not
-part of stage channels. Streaming remains open on the roadmap; a host who
-needs someone silent today moves them to the audience.
+part of stage channels. In-room streaming has shipped; see
+[streaming](streaming.md). A host who needs someone silent moves them to
+the audience.
