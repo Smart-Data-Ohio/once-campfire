@@ -71,6 +71,13 @@ module Icons
     def brand?(name) = find(name).is_a?(Brand)
     def custom?(name) = find(name).is_a?(Custom)
 
+    # Canonical shortcode storage form: surrounding whitespace and `:name:`
+    # colons stripped, downcased. Blank input normalizes to nil.
+    def normalize_name(name)
+      cleaned = name.to_s.strip.sub(/\A:+/, "").sub(/:+\z/, "").strip.downcase
+      cleaned.presence
+    end
+
     # Every shortcode the client treats as an icon, for the meta tag read by
     # optimistic message rendering.
     def client_icon_names

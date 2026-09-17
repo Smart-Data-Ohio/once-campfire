@@ -71,6 +71,61 @@ class Accounts::BotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Bender's New Friend", users(:bender).reload.name
   end
 
+  test "update with an icon normalizes the shortcode" do
+    put account_bot_url(users(:bender)), params: { user: { name: "Bender Bot", icon_name: ":openai:" } }
+
+    assert_redirected_to account_bots_url
+    assert_equal "openai", users(:bender).reload.icon_name
+  end
+
+  test "update with a blank icon clears it" do
+    users(:bender).update!(icon_name: "openai")
+
+    put account_bot_url(users(:bender)), params: { user: { name: "Bender Bot", icon_name: "" } }
+
+    assert_redirected_to account_bots_url
+    assert_nil users(:bender).reload.icon_name
+  end
+
+  test "update ignores unpermitted keys" do
+    put account_bot_url(users(:bender)), params: {
+      user: { name: "Bender Bot", icon_name: "openai", role: "administrator", bot_token: "forged-token" }
+    }
+
+    bot = users(:bender).reload
+    assert_equal "openai", bot.icon_name
+    assert bot.bot?
+    assert_not_equal "forged-token", bot.bot_token
+  end
+
+  test "updating the icon busts the fresh avatar cache through updated_at" do
+    bot = users(:bender)
+    bot.update!(updated_at: 2.days.ago)
+    before = fresh_user_avatar_path(bot)
+
+    put account_bot_url(bot), params: { user: { name: "Bender Bot", icon_name: "openai" } }
+
+    assert_redirected_to account_bots_url
+    assert_not_equal before, fresh_user_avatar_path(bot.reload)
+  end
+
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { User.count } do
+      post account_bots_url, params: { user: { name: "Icon Bot", icon_name: ":notanicon:" } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
+  test "update with an unknown icon re-renders the edit form" do
+    put account_bot_url(users(:bender)), params: { user: { name: "Bender Bot", icon_name: ":notanicon:" } }
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil users(:bender).reload.icon_name
+  end
+
   test "admin can set provider, runtime, and description" do
     get edit_account_bot_url(users(:bender))
     assert_response :ok

@@ -16,6 +16,9 @@ class Accounts::BotsController < ApplicationController
     bot = User.create_bot! bot_params
     bot.create_agent!(kind: :workspace, owner: Current.user)
     redirect_to account_bots_url
+  rescue ActiveRecord::RecordInvalid => error
+    @bot = error.record
+    render :new, status: :unprocessable_entity
   end
 
   def edit
@@ -26,10 +29,11 @@ class Accounts::BotsController < ApplicationController
 
     if @agent&.invalid?
       render :edit, status: :unprocessable_entity
-    else
-      @bot.update_bot! bot_params
+    elsif @bot.update_bot(bot_params)
       @agent&.save!
       redirect_to account_bots_url
+    else
+      render :edit, status: :unprocessable_entity
     end
   end
 
@@ -54,7 +58,7 @@ class Accounts::BotsController < ApplicationController
     end
 
     def bot_params
-      params.require(:user).permit(:name, :avatar, :webhook_url)
+      params.require(:user).permit(:name, :avatar, :webhook_url, :icon_name)
     end
 
     def agent_params
