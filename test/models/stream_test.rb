@@ -71,8 +71,8 @@ class StreamTest < ActiveSupport::TestCase
 
   test "starting broadcasts the badge, dot, and per-viewer panel" do
     assert_turbo_stream_broadcasts [ @room, :messages ], count: 1 do
-      assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 2 do
-        assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 2 do
+      assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 3 do
+        assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 3 do
           Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
         end
       end
@@ -96,11 +96,35 @@ class StreamTest < ActiveSupport::TestCase
     assert_match "Stop stream", host_panel.to_html
   end
 
+  test "starting broadcasts the event venue dot" do
+    Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+
+    dot = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+      .find { |stream| stream["target"] == ActionView::RecordIdentifier.dom_id(@room, :event_stage_live) }
+
+    assert_not_nil dot
+    assert_equal "replace", dot["action"]
+    assert_match "stage-live-dot__pip", dot.to_html
+    assert_no_match "sidebar_stage_live", dot.to_html
+  end
+
+  test "ending broadcasts the cleared event venue dot" do
+    stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+
+    stream.end!
+
+    dot = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+      .select { |stream| stream["target"] == ActionView::RecordIdentifier.dom_id(@room, :event_stage_live) }.last
+
+    assert_not_nil dot
+    assert_no_match "stage-live-dot__pip", dot.to_html
+  end
+
   test "ending broadcasts the cleared badge, dot, and panel" do
     stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
 
     assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
-      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 2 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 3 do
         stream.end!
       end
     end
@@ -138,7 +162,7 @@ class StreamTest < ActiveSupport::TestCase
   test "a presenter stop appends no stream-stopped event" do
     stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
 
-    assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 2 do
+    assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 3 do
       stream.end!(ended_by: users(:david))
     end
 
