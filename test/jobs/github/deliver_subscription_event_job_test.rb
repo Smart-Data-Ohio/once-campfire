@@ -33,6 +33,17 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_not_includes message.markdown_source, "evil/other"
   end
 
+  test "webhook text cannot smuggle a mention token into the post" do
+    payload = pull_request_payload(action: "opened")
+    payload["pull_request"]["title"] = "Ping @[Everyone] please"
+
+    Github::DeliverSubscriptionEventJob.perform_now("pull_request", payload)
+
+    message = @room.messages.order(:created_at).last
+    assert_no_match Message::Markdown::MENTION_TOKEN_PATTERN, message.markdown_source
+    assert_includes message.markdown_source, "Everyone"
+  end
+
   test "reopened, ready for review, and synchronize post nothing after opened" do
     Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
 
