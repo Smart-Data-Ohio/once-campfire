@@ -1,7 +1,7 @@
 // RNNoise microphone noise suppression for huddles.
 //
 // LiveKit Cloud's Krisp filter is not available to a self-hosted deployment, so
-// Campfire runs RNNoise itself as a LiveKit audio `TrackProcessor`. The model
+// Smartfire runs RNNoise itself as a LiveKit audio `TrackProcessor`. The model
 // runs in an AudioWorklet, which keeps it off the main thread, and the WebAssembly
 // module is shipped from this origin rather than a CDN.
 //

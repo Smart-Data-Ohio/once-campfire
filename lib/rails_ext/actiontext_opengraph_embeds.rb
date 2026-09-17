@@ -25,7 +25,7 @@ class ActionText::Attachment::OpengraphEmbed
 
       # A link preview points at what we unfurled: an absolute http or https URL
       # on some other host. Drop anything else a message body asks for, so it
-      # can't aim the preview's link or its image at this Campfire and have every
+      # can't aim the preview's link or its image at this Smartfire and have every
       # reader's browser fetch it with their session attached.
       def web_url(value)
         return if value.blank?
@@ -37,7 +37,7 @@ class ActionText::Attachment::OpengraphEmbed
       end
 
       # "https:/rooms/1" parses as HTTPS with no host at all, and a browser
-      # resolves both that and our own hostname against the origin Campfire is
+      # resolves both that and our own hostname against the origin Smartfire is
       # served from. A percent-escape hides our hostname from this comparison
       # while a browser still unescapes it back to us, so an escaped host is out
       # too, and neither case is anything an unfurl could have produced.

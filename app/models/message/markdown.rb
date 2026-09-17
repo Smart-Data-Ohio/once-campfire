@@ -169,7 +169,7 @@ class Message::Markdown
   private
     def protect_mention_tokens
       tokens = {}
-      prefix = "CAMPFIREMENTION#{SecureRandom.hex(12).upcase}"
+      prefix = "SMARTFIREMENTION#{SecureRandom.hex(12).upcase}"
       index = 0
 
       protected_source = @source.gsub(MENTION_TOKEN_PATTERN) do |token|

@@ -127,7 +127,7 @@ module Calendar
 
         {
           "summary" => @event.title,
-          "description" => [ @event.description.presence, "From Campfire: #{event_url}", join_line ].compact.join("\n\n"),
+          "description" => [ @event.description.presence, "From Smartfire: #{event_url}", join_line ].compact.join("\n\n"),
           "start" => { "dateTime" => starts_at.iso8601, "timeZone" => @event.time_zone },
           "end" => { "dateTime" => ends_at.iso8601, "timeZone" => @event.time_zone },
           "reminders" => { "useDefault" => true }

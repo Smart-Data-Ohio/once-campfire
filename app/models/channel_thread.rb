@@ -56,7 +56,7 @@ class ChannelThread < ApplicationRecord
   }
 
   class << self
-    # There is no scheduled-job facility in this Campfire deployment. Expire
+    # There is no scheduled-job facility in this Smartfire deployment. Expire
     # stale conversations whenever the thread surface is consulted, and take a
     # row lock for the final decision so a concurrent post always wins.
     def close_stale_in(room: nil)

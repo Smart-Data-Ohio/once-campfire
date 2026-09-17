@@ -115,7 +115,7 @@ module Github
         {
           "Accept" => "application/vnd.github+json",
           "X-GitHub-Api-Version" => API_VERSION,
-          "User-Agent" => "Campfire-GitHub-Writes",
+          "User-Agent" => "Smartfire-GitHub-Writes",
           "Content-Type" => "application/json",
           "Authorization" => "Bearer #{@token}"
         }

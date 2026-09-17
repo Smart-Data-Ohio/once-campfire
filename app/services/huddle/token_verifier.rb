@@ -42,7 +42,7 @@ class Huddle::TokenVerifier
     raise Invalid unless FORBIDDEN_VIDEO_PERMISSIONS.none? { |permission| video_grant[permission] }
 
     # Publishers carry the exact source grant; listeners carry no publish
-    # permission and no sources. Anything in between is not a shape Campfire
+    # permission and no sources. Anything in between is not a shape Smartfire
     # mints. A missing canPublish reads as false, and missing sources read as
     # empty: LiveKit's refreshed tokens omit false permissions and empty
     # lists, so a listener's refreshed token drops both keys.

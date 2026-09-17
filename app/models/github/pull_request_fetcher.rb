@@ -183,7 +183,7 @@ module Github
         {
           "Accept" => "application/vnd.github+json",
           "X-GitHub-Api-Version" => API_VERSION,
-          "User-Agent" => "Campfire-GitHub-Cards"
+          "User-Agent" => "Smartfire-GitHub-Cards"
         }.tap do |h|
           h["Authorization"] = "Bearer #{@token}" if @token
         end

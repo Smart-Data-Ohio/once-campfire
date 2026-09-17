@@ -96,7 +96,7 @@ class Message::MarkdownTest < ActiveSupport::TestCase
 
     assert_includes source, "\\@[David]"
     assert_empty message.mentionees
-    assert_no_match /CAMPFIREMENTION/, html
+    assert_no_match /SMARTFIREMENTION/, html
     assert_match %r{<code>@\[David\]</code>}, html
     assert_match %r{<pre><code class="language-text">@\[David\]}, html
     assert_match %r{href="https://example.com/@\[David\]" title="Ping @\[David\]"}, html
