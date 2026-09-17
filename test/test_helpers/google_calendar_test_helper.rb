@@ -3,7 +3,6 @@ module GoogleCalendarTestHelper
 
   GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
   GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-  GOOGLE_CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
 
   included do
     setup :configure_google_for_test
@@ -53,12 +52,24 @@ module GoogleCalendarTestHelper
       )
     end
 
-    def stub_google_code_exchange(access_token: "new-access-token", refresh_token: "new-refresh-token")
+    def stub_google_code_exchange(access_token: "new-access-token", refresh_token: "new-refresh-token", id_token: google_id_token)
+      body = { access_token:, refresh_token:, expires_in: 3600, token_type: "Bearer" }
+      body[:id_token] = id_token if id_token
       stub_request(:post, GOOGLE_TOKEN_URL).to_return(
         status: 200,
-        body: { access_token:, refresh_token:, expires_in: 3600, token_type: "Bearer" }.to_json,
+        body: body.to_json,
         headers: { "Content-Type" => "application/json" }
       )
+    end
+
+    # Real-shaped OIDC id_token (header.payload.signature, base64url JSON).
+    # The app verifies iss/aud/exp but never checks the test signature.
+    def google_id_token(email: "david@gmail.test", aud: "test-client-id", iss: "https://accounts.google.com", exp: 1.hour.from_now.to_i)
+      segments = [
+        { alg: "RS256", kid: "test-key", typ: "JWT" },
+        { iss:, aud:, exp:, email:, sub: "google-sub-123" }
+      ].map { |part| Base64.urlsafe_encode64(part.to_json, padding: false) }
+      segments.join(".") + "." + Base64.urlsafe_encode64("test-signature", padding: false)
     end
 
     def stub_google_event_insert(status: 200, body: {})
@@ -75,13 +86,5 @@ module GoogleCalendarTestHelper
 
     def stub_google_event_delete(google_event_id, status: 204)
       stub_request(:delete, "#{GOOGLE_EVENTS_URL}/#{google_event_id}").to_return(status:)
-    end
-
-    def stub_google_primary_calendar(email)
-      stub_request(:get, GOOGLE_CALENDAR_LIST_URL).to_return(
-        status: 200,
-        body: { id: email, summary: email }.to_json,
-        headers: { "Content-Type" => "application/json" }
-      )
     end
 end

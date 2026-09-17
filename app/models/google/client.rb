@@ -1,4 +1,5 @@
 require "net/http"
+require "base64"
 
 module Google
   # Minimal Google OAuth + Calendar client over Net::HTTP. All network access
@@ -10,7 +11,8 @@ module Google
     TOKEN_HOST = "oauth2.googleapis.com"
     API_HOST = "www.googleapis.com"
     TIMEOUT = 10
-    SCOPE = "https://www.googleapis.com/auth/calendar.events"
+    SCOPE = "openid email https://www.googleapis.com/auth/calendar.events"
+    ID_TOKEN_ISSUERS = %w[ https://accounts.google.com accounts.google.com ].freeze
 
     class Error < StandardError; end
     class Unauthorized < Error; end
@@ -70,6 +72,35 @@ module Google
       rescue JSON::ParserError
         nil
       end
+
+      # The account email comes from the id_token returned by the token
+      # endpoint, so connecting needs no extra API call. The token arrives
+      # directly from Google over TLS, so the payload is trusted after
+      # checking iss/aud/exp; no signature check is needed.
+      def email_from_id_token(id_token)
+        segments = id_token.to_s.split(".")
+        raise Error, "Google rejected the connection" unless segments.size == 3
+
+        payload = JSON.parse(Base64.urlsafe_decode64(pad_base64url(segments[1])))
+        raise Error, "Google rejected the connection" unless valid_id_token_payload?(payload)
+
+        payload["email"]
+      rescue ArgumentError, JSON::ParserError
+        raise Error, "Google rejected the connection"
+      end
+
+      private
+        def pad_base64url(segment)
+          segment + "=" * (-segment.length % 4)
+        end
+
+        def valid_id_token_payload?(payload)
+          payload.is_a?(Hash) &&
+            payload["iss"].in?(ID_TOKEN_ISSUERS) &&
+            payload["aud"] == client_id &&
+            payload["exp"].to_i > Time.current.to_i &&
+            payload["email"].present?
+        end
     end
 
     def initialize(account)
@@ -86,12 +117,6 @@ module Google
 
     def delete_event(google_event_id)
       api_request(:delete, "/calendar/v3/calendars/primary/events/#{google_event_id}")
-    end
-
-    # The primary calendar's id is the Google account email. Userinfo needs
-    # an extra scope, so read it from the calendar list instead.
-    def primary_calendar_email
-      api_request(:get, "/calendar/v3/users/me/calendarList/primary")["id"]
     end
 
     def refresh_access_token!

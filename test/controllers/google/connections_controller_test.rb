@@ -18,7 +18,7 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "test-client-id", query["client_id"]
     assert_equal google_callback_url, query["redirect_uri"]
     assert_equal "code", query["response_type"]
-    assert_equal "https://www.googleapis.com/auth/calendar.events", query["scope"]
+    assert_equal "openid email https://www.googleapis.com/auth/calendar.events", query["scope"]
     assert_equal "offline", query["access_type"]
     assert_equal "consent", query["prompt"]
     assert_predicate query["state"], :present?
@@ -42,7 +42,6 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
   test "callback success stores the account and enqueues syncs for upcoming going/maybe attendances" do
     state = connect_state_from_redirect
     stub_google_code_exchange
-    stub_google_primary_calendar("david@gmail.test")
 
     # launch_party and watercooler_sync are upcoming and going; retro is cancelled.
     assert_enqueued_jobs 2, only: Calendar::SyncEntryJob do
@@ -68,7 +67,6 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
     connect_google!(@david, disconnected_reason: "Google rejected the connection")
     state = connect_state_from_redirect
     stub_google_code_exchange
-    stub_google_primary_calendar("david@gmail.test")
 
     get google_callback_path, params: { state:, code: "auth-code" }
 
@@ -90,6 +88,26 @@ class Google::ConnectionsControllerTest < ActionDispatch::IntegrationTest
     stub_request(:post, GOOGLE_TOKEN_URL).to_return(status: 400, body: { error: "invalid_grant" }.to_json)
 
     get google_callback_path, params: { state:, code: "bad-code" }
+
+    assert_redirected_to user_profile_path
+    assert_not GoogleAccount.exists?(user: @david)
+  end
+
+  test "callback without an id_token redirects without storing" do
+    state = connect_state_from_redirect
+    stub_google_code_exchange(id_token: nil)
+
+    get google_callback_path, params: { state:, code: "auth-code" }
+
+    assert_redirected_to user_profile_path
+    assert_not GoogleAccount.exists?(user: @david)
+  end
+
+  test "callback with an id_token for another client redirects without storing" do
+    state = connect_state_from_redirect
+    stub_google_code_exchange(id_token: google_id_token(aud: "other-client-id"))
+
+    get google_callback_path, params: { state:, code: "auth-code" }
 
     assert_redirected_to user_profile_path
     assert_not GoogleAccount.exists?(user: @david)

@@ -16,8 +16,11 @@ shows "Added to your Google Calendar" while a copy exists for the viewer.
    **Web application**.
 2. Add an authorized redirect URI: `<app root URL>/google/callback`
    (for example `https://campfire.example.com/google/callback`).
-3. No extra APIs to enable beyond Google Calendar; the app requests exactly
-   one scope: `https://www.googleapis.com/auth/calendar.events`.
+3. No extra APIs to enable beyond Google Calendar; the app requests
+   `openid email https://www.googleapis.com/auth/calendar.events`.
+   The `openid email` part is only used to read the account email from
+   the `id_token` returned by the token endpoint (issuer, audience, and
+   expiry are verified); the app makes no extra API call to learn it.
 4. Set the client credentials on the app host:
    `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 

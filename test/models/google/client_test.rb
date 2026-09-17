@@ -24,7 +24,7 @@ class Google::ClientTest < ActiveSupport::TestCase
     assert_equal "test-client-id", query["client_id"]
     assert_equal "http://test.host/google/callback", query["redirect_uri"]
     assert_equal "code", query["response_type"]
-    assert_equal "https://www.googleapis.com/auth/calendar.events", query["scope"]
+    assert_equal "openid email https://www.googleapis.com/auth/calendar.events", query["scope"]
     assert_equal "offline", query["access_type"]
     assert_equal "consent", query["prompt"]
     assert_equal "signed-state", query["state"]
@@ -100,10 +100,34 @@ class Google::ClientTest < ActiveSupport::TestCase
     assert_raises(Google::Client::Error) { @client.delete_event("some-id") }
   end
 
-  test "primary_calendar_email reads the calendar id" do
-    stub_google_primary_calendar("david@gmail.test")
+  test "email_from_id_token returns the verified email" do
+    assert_equal "david@gmail.test", Google::Client.email_from_id_token(google_id_token)
+  end
 
-    assert_equal "david@gmail.test", @client.primary_calendar_email
+  test "email_from_id_token accepts the short issuer" do
+    assert_equal "david@gmail.test",
+      Google::Client.email_from_id_token(google_id_token(iss: "accounts.google.com"))
+  end
+
+  test "email_from_id_token rejects a missing or malformed token" do
+    assert_raises(Google::Client::Error) { Google::Client.email_from_id_token(nil) }
+    assert_raises(Google::Client::Error) { Google::Client.email_from_id_token("") }
+    assert_raises(Google::Client::Error) { Google::Client.email_from_id_token("not-a-jwt") }
+  end
+
+  test "email_from_id_token rejects a wrong issuer, audience, expiry, or missing email" do
+    assert_raises(Google::Client::Error) do
+      Google::Client.email_from_id_token(google_id_token(iss: "https://evil.test"))
+    end
+    assert_raises(Google::Client::Error) do
+      Google::Client.email_from_id_token(google_id_token(aud: "other-client-id"))
+    end
+    assert_raises(Google::Client::Error) do
+      Google::Client.email_from_id_token(google_id_token(exp: 1.hour.ago.to_i))
+    end
+    assert_raises(Google::Client::Error) do
+      Google::Client.email_from_id_token(google_id_token(email: nil))
+    end
   end
 
   test "exchange_code returns the token response" do
@@ -113,6 +137,7 @@ class Google::ClientTest < ActiveSupport::TestCase
 
     assert_equal "new-access-token", tokens["access_token"]
     assert_equal "new-refresh-token", tokens["refresh_token"]
+    assert_predicate tokens["id_token"], :present?
     assert_requested :post, GOOGLE_TOKEN_URL, body: hash_including({ "code" => "auth-code", "grant_type" => "authorization_code" })
   end
 

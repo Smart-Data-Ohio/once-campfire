@@ -32,7 +32,7 @@ module Google
         disconnected_reason: nil
       )
       account.refresh_token = tokens["refresh_token"] if tokens["refresh_token"].present?
-      account.email = Google::Client.new(account).primary_calendar_email
+      account.email = Google::Client.email_from_id_token(tokens["id_token"])
       account.save!
 
       enqueue_upcoming_syncs(Current.user)
