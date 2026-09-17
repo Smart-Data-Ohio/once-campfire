@@ -135,6 +135,7 @@ class HuddleGrant < ApplicationRecord
     transaction do
       update!(revoked_at: Time.current)
       HuddleCleanup.create_participant_removal!(self) if create_cleanup
+      Stream.end_when_last_grant_revoked(self)
     end
   end
 

@@ -127,6 +127,7 @@ Rails.application.routes.draw do
       end
       namespace :stage do
         resource :hand, only: %i[ create destroy ], controller: "hands"
+        resource :stream, only: %i[ create destroy ], controller: "streams"
         patch "roles/:membership_id", to: "roles#update", as: :role
       end
       resource :huddle, only: %i[ show create ] do
