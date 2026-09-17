@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+
+require_relative "../config/environment"
+
+interval = Float(ENV.fetch("EVENT_REMINDERS_INTERVAL", 30))
+abort "EVENT_REMINDERS_INTERVAL must be a positive finite number" unless interval.positive? && interval.finite?
+
+stopping = false
+%w[ INT TERM ].each { |signal| Signal.trap(signal) { stopping = true } }
+
+until stopping
+  begin
+    Event::ReminderDispatcher.dispatch_due!
+  rescue => error
+    Rails.logger.error "Event reminder dispatch failed: #{error.class}: #{error.message}"
+  ensure
+    sleep interval unless stopping
+  end
