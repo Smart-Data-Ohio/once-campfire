@@ -103,6 +103,20 @@ class Github::PullRequestCommentsControllerTest < ActionDispatch::IntegrationTes
     assert_requested stub, times: 1
   end
 
+  test "a failed comment keeps the body for retry" do
+    link_github!(users(:david))
+    stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments")
+      .to_return(status: 422, body: { message: "Validation failed" }.to_json)
+
+    post room_github_pull_request_comments_url(@room),
+      params: { pull_request_id: @pull_request.id, body: "Nice work" }
+
+    assert_response :unprocessable_content
+    assert_select "form[action=?]", room_github_pull_request_comments_path(@room) do
+      assert_select "textarea[name=body]", text: "Nice work"
+    end
+  end
+
   test "a GitHub 401 disconnects the account and shows the reconnect prompt" do
     account = link_github!(users(:david))
     stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments")

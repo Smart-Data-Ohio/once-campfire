@@ -7,6 +7,7 @@ class Github::PullRequestWriteActionsController < ApplicationController
 
   def show
     render partial: "github/pull_requests/write_actions",
-      locals: { thread: @thread, pull_request: @pull_request, notice: nil, alert: nil }
+      locals: { thread: @thread, pull_request: @pull_request, notice: nil, alert: nil,
+        comment_body: nil, review_body: nil }
   end
 end

@@ -43,6 +43,16 @@ class UserTest < ActiveSupport::TestCase
     assert_not EventCalendarEntry.exists?(user:)
   end
 
+  test "deactivating disconnects the user's GitHub account" do
+    account = GithubConnectedAccount.create!(user: users(:david),
+      github_login: "david", access_token: "github-token")
+
+    users(:david).deactivate
+
+    assert_equal "Account deactivated", account.reload.disconnected_reason
+    assert_not_predicate account, :usable?
+  end
+
   test "deactivating disconnects the user's Google account" do
     account = GoogleAccount.create!(user: users(:david), email: "david@gmail.test",
       refresh_token: "refresh-token", access_token: "access-token", access_token_expires_at: 1.hour.from_now)

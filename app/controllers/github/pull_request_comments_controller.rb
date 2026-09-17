@@ -22,6 +22,6 @@ class Github::PullRequestCommentsController < ApplicationController
     account.mark_disconnected!("GitHub rejected the linked token (401)")
     render_write_result(alert: "GitHub rejected your token. Reconnect to post.", status: :unprocessable_content)
   rescue Github::WriteClient::Refused, Github::WriteClient::Error => error
-    render_write_result(alert: error.message, status: :unprocessable_content)
+    render_write_result(alert: error.message, status: :unprocessable_content, comment_body: body)
   end
 end

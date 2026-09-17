@@ -1,6 +1,7 @@
 <%# locals: (thread:, context:, links: nil, linkable_events: nil) -%>
 <% links ||= thread.work_thread_links.sort_by(&:id) %>
 <% linkable_events ||= [] %>
+<% if context != :row || links.any? %>
 <div id="<%= work_thread_links_box_id(thread, context) %>" class="work-links">
   <div class="work-links__list">
     <span class="work-links__label">Linked</span>
@@ -55,3 +56,4 @@
     </details>
   <% end %>
 </div>
+<% end %>

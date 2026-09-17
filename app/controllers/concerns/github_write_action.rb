@@ -21,13 +21,19 @@ module GithubWriteAction
 
     def write_client_for(account)
       Github::WriteClient.new(token: account.access_token)
+    rescue ActiveRecord::Encryption::Errors::Decryption
+      account.mark_disconnected!(GithubConnectedAccount::UNREADABLE_TOKEN_REASON)
+      raise Github::WriteClient::Error, GithubConnectedAccount::UNREADABLE_TOKEN_REASON
     end
 
     # Re-renders the thread's write-actions frame: fresh forms plus an
-    # inline confirmation or error. The frame submission takes the HTML
-    # branch; Turbo Stream requests take the stream branch.
-    def render_write_result(notice: nil, alert: nil, status: :ok)
-      locals = { thread: @thread, pull_request: @pull_request, notice: notice, alert: alert }
+    # inline confirmation or error. Failed submissions pass the submitted
+    # body back so the member can retry without retyping. The frame
+    # submission takes the HTML branch; Turbo Stream requests take the
+    # stream branch.
+    def render_write_result(notice: nil, alert: nil, status: :ok, comment_body: nil, review_body: nil)
+      locals = { thread: @thread, pull_request: @pull_request, notice: notice, alert: alert,
+        comment_body: comment_body, review_body: review_body }
 
       respond_to do |format|
         format.turbo_stream do

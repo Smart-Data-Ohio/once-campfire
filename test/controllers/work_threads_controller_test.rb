@@ -87,6 +87,22 @@ class WorkThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".work-threads__owner .agent-badge", text: "agent"
   end
 
+  test "work list rows hide the empty link box but show linked items" do
+    sign_in :jz
+
+    get work_threads_url
+    assert_response :success
+    assert_not_includes response.body, "Nothing linked yet"
+
+    @open_thread.work_thread_links.create!(kind: "drive_file",
+      url: "https://drive.google.com/file/d/abc123", title: "Spec doc", created_by: @creator)
+
+    get work_threads_url
+    assert_response :success
+    assert_not_includes response.body, "Nothing linked yet"
+    assert_includes response.body, "Spec doc"
+  end
+
   test "global work access requires an active human room member" do
     inactive = @creator.dup
     inactive.status = :deactivated

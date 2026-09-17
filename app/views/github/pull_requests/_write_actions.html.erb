@@ -11,7 +11,7 @@
   <% if account&.usable? %>
     <%= form_with url: room_github_pull_request_comments_path(thread.room_id), class: "github-pr-write__comment" do |form| %>
       <%= hidden_field_tag :pull_request_id, pull_request.id %>
-      <%= form.text_area :body, rows: 2, required: true, class: "input",
+      <%= form.text_area :body, rows: 2, required: true, class: "input", value: comment_body,
             placeholder: "Comment on GitHub as @#{account.github_login}…",
             aria: { label: "Comment on GitHub" } %>
       <%= form.submit "Comment on GitHub", class: "btn" %>
@@ -19,7 +19,7 @@
 
     <%= form_with url: room_github_pull_request_reviews_path(thread.room_id), class: "github-pr-write__review" do |form| %>
       <%= hidden_field_tag :pull_request_id, pull_request.id %>
-      <%= form.text_area :body, rows: 2, class: "input",
+      <%= form.text_area :body, rows: 2, class: "input", value: review_body,
             placeholder: "Review note (required to request changes)",
             aria: { label: "Review note" } %>
       <div class="github-pr-write__review-buttons">
