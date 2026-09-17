@@ -234,7 +234,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022903) do
     t.datetime "updated_at", null: false
     t.index ["organizer_id"], name: "index_events_on_organizer_id"
     t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
-    t.index ["series_id"], name: "index_events_on_series_id"
+    t.index [ "series_id" ], name: "index_events_on_series_id"
   end
 
   create_table "github_notifications", force: :cascade do |t|
