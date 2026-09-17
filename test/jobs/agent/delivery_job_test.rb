@@ -256,6 +256,104 @@ class Agent::DeliveryJobTest < ActiveSupport::TestCase
     assert_equal 3, suppression.hop
   end
 
+  test "replying to an old low-hop message does not reset the chain" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+    agent_b = create_agent_in(@room, name: "Reply Bot B")
+    bot_b = agent_b.user
+
+    m1 = @room.messages.create!(
+      creator: users(:david), markdown_source: "Hey @[#{@bot.name}]", client_message_id: "reply-hop-m1"
+    )
+    perform_enqueued_jobs only: Agent::DeliveryJob
+
+    m2 = @room.messages.create!(
+      creator: @bot, markdown_source: "Hey @[#{bot_b.name}]", reply_to_message: m1,
+      client_message_id: "reply-hop-m2"
+    )
+    perform_enqueued_jobs only: Agent::DeliveryJob
+
+    m3 = @room.messages.create!(
+      creator: bot_b, markdown_source: "Hey @[#{@bot.name}]", reply_to_message: m2,
+      client_message_id: "reply-hop-m3"
+    )
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    assert_equal 2, @agent.agent_events.deliverable.last.hop
+
+    # Replying to the ancient hop-0 message still chains off the most recent
+    # delivered event (hop 2), so this reaches hop 3 and is suppressed.
+    assert_no_enqueued_jobs only: Agent::DeliveryJob do
+      @room.messages.create!(
+        creator: @bot, markdown_source: "Hey @[#{bot_b.name}] again", reply_to_message: m1,
+        client_message_id: "reply-hop-m4"
+      )
+    end
+
+    suppression = agent_b.agent_events.where(event_type: "delivery_suppressed_hop_limit").last
+    assert suppression.present?
+    assert_equal 3, suppression.hop
+  end
+
+  test "suppression rows are never hop triggers" do
+    agent_b = create_agent_in(@room, name: "Suppression Bot B")
+    @agent.agent_events.create!(
+      event_type: "delivery_suppressed_hop_limit", room: @room,
+      outcome: "suppressed", detail: "old cap", metadata: { "hop" => 3 }
+    )
+
+    assert_enqueued_jobs 1, only: Agent::DeliveryJob do
+      @room.messages.create!(
+        creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] fresh",
+        client_message_id: "suppression-trigger"
+      )
+    end
+
+    assert_equal 0, agent_b.agent_events.deliverable.last.hop
+  end
+
+  test "pending rows are never hop triggers" do
+    agent_b = create_agent_in(@room, name: "Pending Bot B")
+    create_mentioning_message(@room, @bot, creator: users(:david))
+    assert_equal "pending", @agent.agent_events.deliverable.last.outcome
+
+    @room.messages.create!(
+      creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] fresh",
+      client_message_id: "pending-trigger"
+    )
+
+    assert_equal 0, agent_b.agent_events.deliverable.last.hop
+  end
+
+  test "deliveries older than five minutes are not hop triggers" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+    agent_b = create_agent_in(@room, name: "Window Bot B")
+    create_mentioning_message(@room, @bot, creator: users(:david))
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    @agent.agent_events.deliverable.last.update_columns(created_at: 6.minutes.ago)
+
+    @room.messages.create!(
+      creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] fresh",
+      client_message_id: "window-trigger"
+    )
+
+    assert_equal 0, agent_b.agent_events.deliverable.last.hop
+  end
+
+  test "consecutive posts without new deliveries chain off the latest row" do
+    agent_b = create_agent_in(@room, name: "Chain Bot B")
+
+    @room.messages.create!(
+      creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] one",
+      client_message_id: "chain-one"
+    )
+    assert_equal 0, agent_b.agent_events.deliverable.last.hop
+
+    @room.messages.create!(
+      creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] two",
+      client_message_id: "chain-two"
+    )
+    assert_equal 1, agent_b.agent_events.deliverable.last.hop
+  end
+
   test "two agents mentioning each other stop at the hop limit with both suppressions" do
     WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
     agent_b = create_agent_in(@room, name: "Loop Bot B")

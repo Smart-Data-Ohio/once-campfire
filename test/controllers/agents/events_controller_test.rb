@@ -285,6 +285,24 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "agent posts ignore hop hints in the request body" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+    agent_b = create_agent_in(@room, name: "Body Hop Bot")
+    @room.messages.create!(
+      creator: users(:david), body: "Hey #{mention_attachment_for(:bender)}",
+      client_message_id: "body-hop-trigger"
+    )
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    assert_equal "delivered", @agent.agent_events.deliverable.last.outcome
+
+    post room_agent_messages_url(@room),
+      params: { message: { markdown_source: "Hey @[#{agent_b.user.name}]", hop: 99 } }.to_json,
+      headers: bearer_headers.merge("Content-Type" => "application/json")
+
+    assert_response :created
+    assert_equal 1, agent_b.agent_events.deliverable.last.hop
+  end
+
   test "ledger page renders for admins" do
     sign_in :david
     @room.messages.create!(

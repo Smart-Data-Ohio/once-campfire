@@ -2,6 +2,7 @@ class Agent::Delivery
   RATE_LIMIT_PER_MINUTE = 20
   RATE_WINDOW = 1.minute
   HOP_LIMIT = 3
+  TRIGGER_WINDOW = 5.minutes
 
   class << self
     # Called after a message commits. Writes a `posted` row when the author
@@ -145,27 +146,19 @@ class Agent::Delivery
       end
 
       # Human messages start a chain at hop 0. An agent's message continues
-      # the chain of the event that triggered it (the replied-to event when
-      # the message is a reply, otherwise the sender's most recent incoming
-      # event in the room); a spontaneous agent message with no trigger is a
-      # new root at hop 0. Suppression rows count as triggers so a chain that
-      # reached the hop limit stays suppressed instead of restarting.
+      # the chain of its server-authorized trigger: the agent's most recent
+      # delivered or acknowledged event in the room within the trigger
+      # window. Suppression rows and pending rows are never triggers, and
+      # neither the request body nor the reply target influences the hop. A
+      # message with no recent trigger is a new root at hop 0.
       def message_hop_for(message, sender_agent)
         return 0 unless sender_agent
 
-        trigger = trigger_event_for(sender_agent, message)
+        trigger = sender_agent.agent_events
+          .where(room_id: message.room_id, outcome: %w[ delivered acknowledged ])
+          .where("created_at >= ?", TRIGGER_WINDOW.ago)
+          .order(id: :desc).first
         trigger ? trigger.hop + 1 : 0
-      end
-
-      def trigger_event_for(sender_agent, message)
-        scope = sender_agent.agent_events.where(room_id: message.room_id).where.not(event_type: "posted")
-
-        if message.reply_to_message_id
-          replied = scope.where(message_id: message.reply_to_message_id).order(id: :desc).first
-          return replied if replied
-        end
-
-        scope.order(id: :desc).first
       end
 
       def rate_limited?(agent, room, exclude: nil)
