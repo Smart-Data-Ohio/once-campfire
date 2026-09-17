@@ -1,0 +1,70 @@
+<% if Current.user.can_administer?(room) && !room.direct? %>
+  <section class="panel txt-align-center" id="github-subscriptions">
+    <div class="pad-inline-double center">
+      <h2 class="margin-none">GitHub</h2>
+      <p class="txt-small margin-none-block-start">
+        Subscribed repositories post pull-request events to this room as the GitHub bot.
+        Titles from private repositories become visible to the whole room.
+      </p>
+    </div>
+
+    <div class="pad-inline pad-block-start txt-align-start">
+      <% subscriptions = room.github_repository_subscriptions.order(:owner, :repo) %>
+      <% if subscriptions.any? %>
+        <menu class="flex flex-column gap margin-none pad">
+          <% subscriptions.each do |subscription| %>
+            <li class="flex flex-column gap">
+              <div class="flex align-center gap">
+                <strong><%= subscription.full_name %></strong>
+                <%= button_to "Remove", room_github_subscription_path(room, subscription), method: :delete,
+                      class: "btn btn--negative txt-small", form: { data: { turbo_confirm: "Unsubscribe #{subscription.full_name}?" } } %>
+              </div>
+
+              <%= form_with url: room_github_subscription_path(room, subscription), method: :patch, class: "flex align-center gap" do %>
+                <%= hidden_field_tag "github_repository_subscription[events][]", "" %>
+                <% Github::RepositorySubscription::EVENT_KEYS.each do |event_key| %>
+                  <label class="flex align-center gap txt-small">
+                    <%= check_box_tag "github_repository_subscription[events][]", event_key,
+                          subscription.subscribed_to?(event_key), id: "github_subscription_#{subscription.id}_#{event_key}" %>
+                    <%= event_key.humanize %>
+                  </label>
+                <% end %>
+                <%= submit_tag "Save", class: "btn txt-small" %>
+              <% end %>
+            </li>
+          <% end %>
+        </menu>
+      <% else %>
+        <p class="txt-small">No repositories subscribed yet.</p>
+      <% end %>
+    </div>
+
+    <div class="pad-inline pad-block txt-align-start">
+      <h3 class="txt-large margin-none">Subscribe a repository</h3>
+
+      <%= form_with url: room_github_subscriptions_path(room), class: "flex flex-column gap margin-block-start" do %>
+        <div class="flex align-center gap">
+          <label class="flex align-center gap flex-item-grow txt-large input input--actor">
+            <%= text_field_tag "github_repository_subscription[full_name]", nil,
+                  placeholder: "owner/repo", required: true, class: "input", autocomplete: "off", data: { "1p-ignore": true } %>
+          </label>
+        </div>
+
+        <div class="flex align-center gap">
+          <%= hidden_field_tag "github_repository_subscription[events][]", "" %>
+          <% Github::RepositorySubscription::EVENT_KEYS.each do |event_key| %>
+            <label class="flex align-center gap txt-small">
+              <%= check_box_tag "github_repository_subscription[events][]", event_key,
+                    Github::RepositorySubscription::DEFAULT_EVENTS.include?(event_key), id: "github_subscription_new_#{event_key}" %>
+              <%= event_key.humanize %>
+            </label>
+          <% end %>
+        </div>
+
+        <div>
+          <%= submit_tag "Subscribe", class: "btn btn--reversed" %>
+        </div>
+      <% end %>
+    </div>
+  </section>
+<% end %>

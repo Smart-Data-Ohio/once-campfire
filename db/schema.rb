@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -172,6 +172,17 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
   end
 
+  create_table "github_notifications", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "dedupe_key", null: false
+    t.integer "message_id"
+    t.integer "subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id"], name: "index_github_notifications_on_message_id"
+    t.index ["subscription_id", "dedupe_key"], name: "index_github_notifications_on_subscription_and_key", unique: true
+    t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
+  end
+
   create_table "event_attendances", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "event_id", null: false
@@ -229,6 +240,20 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.index ["owner", "repo", "number"], name: "index_github_pull_requests_on_owner_repo_number", unique: true
+  end
+
+  create_table "github_repository_subscriptions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "created_by_id"
+    t.json "events", default: [], null: false
+    t.string "owner", null: false
+    t.string "repo", null: false
+    t.integer "room_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_github_repository_subscriptions_on_created_by_id"
+    t.index ["owner", "repo"], name: "index_github_subscriptions_on_owner_and_repo"
+    t.index ["room_id", "owner", "repo"], name: "index_github_subscriptions_on_room_and_repo", unique: true
+    t.index ["room_id"], name: "index_github_repository_subscriptions_on_room_id"
   end
 
   create_table "github_webhook_deliveries", force: :cascade do |t|
@@ -372,6 +397,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.string "bot_token"
     t.datetime "created_at", null: false
     t.string "email_address"
+    t.string "github_login"
     t.string "name", null: false
     t.string "password_digest"
     t.integer "role", default: 0, null: false
@@ -379,6 +405,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
     t.datetime "updated_at", null: false
     t.index ["bot_token"], name: "index_users_on_bot_token", unique: true
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
+    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
   end
 
   create_table "webhooks", force: :cascade do |t|
@@ -430,8 +457,12 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_17_010000) do
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "github_notifications", "github_repository_subscriptions", column: "subscription_id", on_delete: :cascade
+  add_foreign_key "github_notifications", "messages", on_delete: :nullify
   add_foreign_key "github_pull_request_references", "github_pull_requests"
   add_foreign_key "github_pull_request_references", "messages"
+  add_foreign_key "github_repository_subscriptions", "rooms", on_delete: :cascade
+  add_foreign_key "github_repository_subscriptions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify

@@ -46,6 +46,8 @@ module ActivityItemsHelper
       "Event cancelled"
     when "event_reminder"
       "Event reminder"
+    when "pr_review_request"
+      "Review requested"
     else
       item.event_type.humanize
     end

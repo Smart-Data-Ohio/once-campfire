@@ -22,6 +22,8 @@ class Github::WebhooksController < ActionController::API
       Github::FetchPullRequestJob.perform_later(pull_request)
     end
 
+    enqueue_subscription_delivery(event, payload)
+
     head :ok
   end
 
@@ -37,6 +39,18 @@ class Github::WebhooksController < ActionController::API
       expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", secret, request.raw_post)}"
 
       signature.start_with?("sha256=") && ActiveSupport::SecurityUtils.secure_compare(signature, expected)
+    end
+
+    # Enqueue subscription delivery only when some room subscribes to the
+    # event's repository; unsubscribed repositories enqueue nothing and
+    # create no rows or bot users.
+    def enqueue_subscription_delivery(event, payload)
+      owner, repo = Github::Notifier.repository_owner_and_repo(payload)
+      return unless owner
+
+      if Github::RepositorySubscription.exists?(owner: owner, repo: repo)
+        Github::DeliverSubscriptionEventJob.perform_later(event, payload)
+      end
     end
 
     # Stored PRs the workspace references that this event is about. Events

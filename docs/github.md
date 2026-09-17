@@ -33,6 +33,46 @@ PR URLs are excluded from the generic OpenGraph unfurl
 (`UnfurlLinksController` answers 204) so a PR does not render twice. Messages
 composed before this shipped keep any stored unfurl embed they already have.
 
+## Repository subscriptions
+
+A room administrator (or the room's creator) can subscribe an open or closed
+room to a GitHub repository from the room's edit page and pick which
+pull-request events post into it: `opened` (opened, reopened, ready for
+review), `merged`, `closed` (without merge), `review_requested`,
+`review_submitted` (approved / changes requested / commented), and
+`checks_failed` (a check concluding `failure`, `timed_out`, or `cancelled`,
+or a commit status of `failure`/`error`). New subscriptions default to
+`opened`, `merged`, `review_requested`, and `checks_failed`. Direct rooms
+cannot be subscribed. Subscribing performs no GitHub API call, so a typo in
+`owner/repo` simply never receives events.
+
+Each selected event arrives once as a normal message from the workspace
+**GitHub** bot (created lazily, member only of subscribed rooms), with one
+line of Markdown plus the PR URL on its own line so the PR card renders
+beneath it. The card fills in when the regular PR fetch runs; posting never
+waits for it.
+
+Dedupe rules (`github_notifications`, one row per subscription and key):
+
+- `opened` posts once per PR, even across reopens and ready-for-review.
+- `merged` posts once per PR; `closed` posts once per close timestamp.
+- `review_requested` posts once per PR and reviewer login.
+- `review_submitted` posts once per review id.
+- `checks_failed` posts once per PR and head SHA, however many checks fail.
+
+The webhook's redelivery dedup (`github_webhook_deliveries`) still applies on
+top. The required webhook events are the ones already documented above; no
+new environment variables were added.
+
+## Review requests in the inbox
+
+Link a GitHub username on the profile page to receive an inbox item ("Review
+requested") when a subscribed repository requests a review from that login.
+The item points at the posted message, so its visibility follows room
+membership: it appears only while the reviewer is a member of the room the
+event posted into. A login can be linked to only one user. No item is
+recorded for reviewers who are not room members or have no linked login.
+
 ## Configuration
 
 ### API token (optional, workspace-level)
@@ -76,4 +116,6 @@ was posted in.** Cards are fetched with the single workspace-level token and
 render inside the message, so the room's membership is the visibility
 boundary for this slice. Posting a private-repo link to a room shares its
 card (title, author, branches, review and check state) with the whole room.
-Per-user GitHub identity and per-user visibility are a later slice.
+Likewise, subscribing a room to a private repository makes its PR titles
+visible to the whole room through the posted messages. Per-user GitHub
+identity and per-user visibility are a later slice.
