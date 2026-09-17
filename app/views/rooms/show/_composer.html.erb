@@ -41,6 +41,25 @@
                 <span class="for-screen-reader">Attach a file</span>
               </label>
 
+              <% if Current.user&.google_account&.drive? %>
+                <div class="drive-picker flex-item-no-shrink" data-controller="drive-picker">
+                  <button type="button" class="btn btn--borderless composer__drive-btn" title="Insert a Drive file"
+                          aria-haspopup="dialog" aria-expanded="false"
+                          data-action="drive-picker#toggle" data-drive-picker-target="button">
+                    Drive
+                  </button>
+                  <div class="drive-picker__panel" role="dialog" aria-label="Find a Drive file" hidden
+                       data-drive-picker-target="panel" data-action="keydown->drive-picker#key">
+                    <input type="text" class="drive-picker__search input" placeholder="Search Drive files"
+                           autocomplete="off" autocapitalize="off" spellcheck="false"
+                           role="combobox" aria-label="Search Drive files" aria-expanded="false" aria-autocomplete="list"
+                           data-drive-picker-target="search" data-action="input->drive-picker#search" />
+                    <ul class="drive-picker__results" role="listbox" aria-label="Drive files" data-drive-picker-target="results"></ul>
+                    <p class="drive-picker__status txt-small" role="status" hidden data-drive-picker-target="status"></p>
+                  </div>
+                </div>
+              <% end %>
+
               <div class="composer__editor min-width flex-item-grow" data-controller="markdown-editor">
                 <%= form.text_area :markdown_source,
                       rows: 1,
