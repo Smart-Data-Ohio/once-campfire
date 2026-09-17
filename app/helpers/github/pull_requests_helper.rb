@@ -2,8 +2,12 @@ module Github::PullRequestsHelper
   # Cache key for a message rendered with its PR cards. A PR update never
   # touches the message, so the key folds in the newest card row; otherwise a
   # collection cache would keep serving "Loading pull request" indefinitely.
+  # Cards with a PR link also fold in the room's discussion-thread stamp, so
+  # a cached Discuss control flips to its thread link once one is created.
   def message_with_pr_cards_cache_key(message)
-    [ message, message.github_pull_requests.map(&:updated_at).max ]
+    key = [ message, message.github_pull_requests.map(&:updated_at).max ]
+    key << github_pr_threads_stamp(message.room_id) if message.github_pull_requests.any?
+    key
   end
 
   # PRs referenced by a message, sorted by repository and number. Rendering
@@ -49,7 +53,32 @@ module Github::PullRequestsHelper
     end
   end
 
+  # The room's discussion-thread mapping for a PR card's Discuss control,
+  # if one exists. Mappings preload once per room per render, so any number
+  # of cards costs one query.
+  def github_pr_thread_mapping_for(room_id, pull_request)
+    github_pr_threads_for_room(room_id)[pull_request.id]
+  end
+
+  # The PR a thread discusses, if any. Like message cards, the thread
+  # header refreshes a stale card so rarely viewed threads converge.
+  def github_pr_thread_pull_request(thread)
+    pull_request = thread.pull_request_thread&.pull_request
+    request_pr_refresh(pull_request) if pull_request
+    pull_request
+  end
+
   private
+    def github_pr_threads_for_room(room_id)
+      id = room_id.is_a?(Room) ? room_id.id : room_id.to_i
+      (@github_pr_threads_by_room ||= {})[id] ||=
+        Github::PullRequestThread.where(room_id: id).index_by(&:github_pull_request_id)
+    end
+
+    def github_pr_threads_stamp(room_id)
+      github_pr_threads_for_room(room_id).values.map(&:updated_at).max
+    end
+
     # Enqueue a refresh for a stale card, bounded two ways: once per PR per
     # render (this helper instance lives for one request, so the set needs no
     # clearing), and at most one enqueue per PR per staleness window across

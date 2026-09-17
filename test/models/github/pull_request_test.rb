@@ -16,6 +16,87 @@ class Github::PullRequestTest < ActiveSupport::TestCase
     assert_equal 1, Github::PullRequest.where(owner: "rails", repo: "rails", number: 1).count
   end
 
+  test "repository names are stored downcased so links in any case share one row" do
+    first = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Once-Campfire", number: 5)
+    assert_equal "smart-data-ohio", first.owner
+    assert_equal "once-campfire", first.repo
+
+    message = @room.messages.create!(
+      creator: @creator,
+      markdown_source: "see https://github.com/smart-data-ohio/once-campfire/pull/5",
+      client_message_id: "pr-case-reuse"
+    )
+
+    assert_equal [ first ], message.github_pull_requests
+    assert_equal 1, Github::PullRequest.where(number: 5).count
+  end
+
+  test "display_full_name keeps the fetched repository name case" do
+    pull_request = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Once-Campfire", number: 5)
+    assert_equal "smart-data-ohio/once-campfire", pull_request.display_full_name
+
+    pull_request.update!(html_url: "https://github.com/Smart-Data-Ohio/Once-Campfire/pull/5")
+    assert_equal "Smart-Data-Ohio/Once-Campfire", pull_request.display_full_name
+
+    pull_request.update!(payload: { "base" => { "repo" => { "full_name" => "Smart-Data-Ohio/Once-Campfire" } } })
+    assert_equal "Smart-Data-Ohio/Once-Campfire", pull_request.display_full_name
+  end
+
+  test "display_full_name falls back to the stored names" do
+    pull_request = Github::PullRequest.for_reference(owner: "smart-data-ohio", repo: "once-campfire", number: 5)
+    pull_request.update!(payload: { "base" => { "repo" => { "full_name" => "not a name" } } }, html_url: nil)
+
+    assert_equal "smart-data-ohio/once-campfire", pull_request.display_full_name
+  end
+
+  test "collapse_case_duplicates! merges case variants onto the lowest id and repoints links and threads" do
+    winner = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 12)
+    solo = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 13)
+    loser = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 14)
+    loser.update_columns(owner: "Rails", repo: "Rails", number: 12)
+    solo.update_columns(owner: "Rails", repo: "Rails", number: 13)
+
+    watercooler = rooms(:watercooler)
+
+    linked = @room.messages.create!(
+      creator: @creator, markdown_source: "no links here", client_message_id: "collapse-linked"
+    )
+    Github::PullRequestReference.create!(message: linked, pull_request: loser)
+    double_linked = @room.messages.create!(
+      creator: @creator, markdown_source: "no links here either", client_message_id: "collapse-double"
+    )
+    Github::PullRequestReference.create!(message: double_linked, pull_request: winner)
+    Github::PullRequestReference.create!(message: double_linked, pull_request: loser)
+
+    repoint_parent = watercooler.messages.create!(
+      creator: @creator, markdown_source: "watercooler link", client_message_id: "collapse-repoint"
+    )
+    repoint_thread = ChannelThread.create!(room: watercooler, creator: @creator, name: "WC chat", parent_message: repoint_parent)
+    repoint_mapping = Github::PullRequestThread.create!(pull_request: loser, room: watercooler, channel_thread: repoint_thread)
+
+    clash_parent = @room.messages.create!(
+      creator: @creator, markdown_source: "clash link", client_message_id: "collapse-clash"
+    )
+    clash_thread = ChannelThread.create!(room: @room, creator: @creator, name: "Clash chat", parent_message: clash_parent)
+    clash_mapping = Github::PullRequestThread.create!(pull_request: loser, room: @room, channel_thread: clash_thread)
+    kept_parent = @room.messages.create!(
+      creator: @creator, markdown_source: "kept link", client_message_id: "collapse-kept"
+    )
+    kept_thread = ChannelThread.create!(room: @room, creator: @creator, name: "Kept chat", parent_message: kept_parent)
+    kept_mapping = Github::PullRequestThread.create!(pull_request: winner, room: @room, channel_thread: kept_thread)
+
+    Github::PullRequest.collapse_case_duplicates!
+
+    assert_equal [ winner.id, solo.id ].sort, Github::PullRequest.ids.sort
+    assert_equal "rails", solo.reload.owner
+    assert_equal [ winner ], linked.reload.github_pull_requests
+    assert_equal [ winner ], double_linked.reload.github_pull_requests
+    assert_equal winner.id, repoint_mapping.reload.github_pull_request_id
+    assert_equal winner.id, kept_mapping.reload.github_pull_request_id
+    assert_not Github::PullRequestThread.exists?(clash_mapping.id)
+    assert ChannelThread.exists?(clash_thread.id)
+  end
+
   test "stale? is true until fetched and after ten minutes" do
     pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 1)
     assert pull_request.stale?
