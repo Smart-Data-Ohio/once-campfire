@@ -27,6 +27,19 @@ class Event::ReminderPusherTest < ActiveSupport::TestCase
     Event::ReminderPusher.new(event:).push
   end
 
+  test "the push body names the venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    event = events(:launch_party)
+    event.update!(venue_room_id: voice.id)
+
+    pool = Rails.configuration.x.web_push_pool
+    pool.expects(:queue).with do |payload, _subscriptions|
+      payload.fetch(:body) == "Starts in 15 minutes: Launch party planning in Lounge"
+    end
+
+    Event::ReminderPusher.new(event:).push
+  end
+
   test "a direct room reminder is titled by the organizer" do
     room = rooms(:david_and_jason)
     event = room.events.create!(
