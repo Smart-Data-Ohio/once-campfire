@@ -42,7 +42,7 @@ source .bundle/livekit/env
 LIVEKIT_SYSTEM_TESTS=1 PARALLEL_WORKERS=1 bin/rails test test/system/huddles_test.rb
 ```
 
-The test suite starts its own gateway on port 7884. The `start` and `gateway` commands run the private server or gateway separately for that kind of controlled test and for diagnosis. They are not safe substitutes for `serve` in normal operation because a separately launched LiveKit process can outlive gateway enforcement.
+The test suite starts its own gateway on port 7884 and pins the Rails fixture server to port 3001 only when `LIVEKIT_SYSTEM_TESTS=1` is set, so ordinary parallel `bin/rails test:system` runs keep using random ports. The `start` and `gateway` commands run the private server or gateway separately for that kind of controlled test and for diagnosis. They are not safe substitutes for `serve` in normal operation because a separately launched LiveKit process can outlive gateway enforcement.
 
 The same suite can opt into a remote production-shaped media stack while keeping Rails, fixtures, and application data local. Point `LIVEKIT_INTERNAL_URL` through a local SSH forward to remote port 7880 (for example, `http://127.0.0.1:7880`). Use a separate reverse forward from remote `127.0.0.1:3301` to the local fixture Rails server on port 3001, and set the remote gateway's `GATEWAY_CAMPFIRE_URL=http://127.0.0.1:3301`. Then run:
 
