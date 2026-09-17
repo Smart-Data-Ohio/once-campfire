@@ -1,5 +1,6 @@
 class WorkspaceIconsController < ApplicationController
   allow_unauthenticated_access only: :show
+  before_action :restore_authentication, only: :show
 
   SVG_CONTENT_TYPE = "image/svg+xml"
 
@@ -25,7 +26,7 @@ class WorkspaceIconsController < ApplicationController
       blob = icon.image.blob
 
       response.headers["Cache-Control"] = "private, max-age=3600"
-      response.etag = blob.checksum
+      response.headers["ETag"] = %("#{blob.checksum}")
       response.headers.merge!(SVG_SECURITY_HEADERS) if blob.content_type == SVG_CONTENT_TYPE
 
       if request.fresh?(response)

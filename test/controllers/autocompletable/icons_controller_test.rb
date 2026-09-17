@@ -52,6 +52,21 @@ class Autocompletable::IconsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [], response.parsed_body
   end
 
+  test "returns workspace icons with their stable image URL" do
+    create_workspace_icon(name: "acme", title: "Acme Corp")
+
+    get autocompletable_icons_url(format: :json), params: { q: "acme" }
+
+    assert_response :success
+    acme = response.parsed_body.first
+
+    assert_equal "acme", acme["name"]
+    assert_equal "Acme Corp", acme["title"]
+    assert_equal "custom", acme["kind"]
+    assert_equal "/icons/acme", acme["image"]
+    assert_not acme.key?("character")
+  end
+
   private
     def sign_out
       delete session_url

@@ -40,6 +40,63 @@ class IconsTest < ActiveSupport::TestCase
     assert_nil Icons.find(nil)
   end
 
+  test "find resolves workspace icons between brands and gemoji" do
+    create_workspace_icon(name: "acme")
+    create_workspace_icon(name: "tada")
+
+    acme = Icons.find("acme")
+
+    assert_instance_of Icons::Custom, acme
+    assert_equal "custom", acme.kind
+    assert_not acme.brand?
+    assert acme.custom?
+    assert_not acme.emoji?
+    assert_equal "/icons/acme", acme.image_url
+    assert Icons.custom?("acme")
+    assert_not Icons.brand?("acme")
+
+    assert_instance_of Icons::Custom, Icons.find("tada"),
+      "workspace icons shadow gemoji aliases like brands do"
+    assert_instance_of Icons::Brand, Icons.find("openai"),
+      "brands still win over workspace icons"
+  end
+
+  test "workspace icons appear and disappear without a restart" do
+    assert_nil Icons.find("acme")
+
+    icon = create_workspace_icon(name: "acme")
+    assert_instance_of Icons::Custom, Icons.find("acme")
+
+    icon.destroy
+    assert_nil Icons.find("acme")
+  end
+
+  test "image_url_for resolves brands and workspace icons" do
+    create_workspace_icon(name: "acme")
+
+    assert_match %r{\A/assets/icons/brands/openai-[a-z0-9]+\.svg\z},
+      Icons.image_url_for(Icons.find("openai"))
+    assert_equal "/icons/acme", Icons.image_url_for(Icons.find("acme"))
+    assert_nil Icons.image_url_for(Icons.find("thumbsup"))
+    assert_nil Icons.image_url_for(nil)
+  end
+
+  test "search ranks workspace icons with brands" do
+    create_workspace_icon(name: "acme")
+
+    results = Icons.search("acme")
+
+    assert_equal "acme", results.first.name
+    assert_instance_of Icons::Custom, results.first
+  end
+
+  test "client icon names include workspace icons" do
+    create_workspace_icon(name: "acme")
+
+    assert_includes Icons.client_icon_names, "acme"
+    assert_includes Icons.client_icon_names, "openai"
+  end
+
   test "shortcode pattern fires only on standalone shortcodes" do
     assert_equal "openai", ":openai: ships".match(Icons::SHORTCODE_PATTERN)[:name]
     assert_equal "openai", ":openai::fire:🔥".match(Icons::SHORTCODE_PATTERN)[:name]
