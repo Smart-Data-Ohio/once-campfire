@@ -618,7 +618,7 @@ class HuddlesTest < ApplicationSystemTestCase
     wait_for_condition("the microphone meter never rose") { microphone_meter_level > 0 }
 
     click_button "Mute", exact: true
-    assert_selector "[data-huddle-target='meter'][hidden]"
+    assert_no_selector "[data-huddle-target='meter']:not([hidden])"
     assert_equal 0, microphone_meter_level
     assert_not microphone_meter_running,
       "the meter kept polling while muted"
@@ -715,7 +715,7 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_equal force_relay? ? "Relayed (TURN)" : "Direct", connection_stat("statTransport")
 
     find("[data-huddle-target='connection']").click
-    assert_selector "[data-huddle-target='connectionDetails'][hidden]"
+    assert_no_selector "[data-huddle-target='connectionDetails']:not([hidden])"
     assert_not connection_sampling?, "connection statistics kept sampling after the panel closed"
   end
 
@@ -1044,7 +1044,7 @@ class HuddlesTest < ApplicationSystemTestCase
     end
 
     def device_select_options(target)
-      page.evaluate_script("Array.from(document.querySelector(\"[data-huddle-target='#{target}']\").options).map(option => ({ value: option.value, label: option.text })))")
+      page.evaluate_script("Array.from(document.querySelector(\"[data-huddle-target='#{target}']\").options).map(option => ({ value: option.value, label: option.text }))")
     end
 
     def device_select_value(target)
