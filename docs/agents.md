@@ -26,12 +26,13 @@ path is frozen and unchanged.
 a partial unique index over active rows. Capabilities are `read_messages`,
 `post_messages`, `react`, `manage_threads`, and `external_action`.
 
-`read_messages`, `post_messages`, and `react` are enforced so far, through
+`read_messages`, `post_messages`, and `react` are enforced through
 the `AgentAuthorization` concern (`require_agent_capability`) on the bot
 message endpoints, the bot boost endpoints,
 `POST /rooms/:room_id/agents/messages` (JSON, Bearer-only), and the event
-polling endpoints below. The other capabilities are storable and shown in
-the UI marked "not yet enforced". Enforcement reads the database on every
+polling endpoints below; `external_action` is enforced on the approval
+endpoints (see Approvals). `manage_threads` is storable and shown in the
+UI marked "not yet enforced". Enforcement reads the database on every
 request; nothing is cached.
 
 Room membership still applies on top of grants: every endpoint returns 404 for
