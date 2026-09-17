@@ -45,12 +45,68 @@ class Rooms::OpensControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "update" do
-    assert_turbo_stream_broadcasts :rooms, count: 1 do
+    # Sidebar row plus room header.
+    assert_turbo_stream_broadcasts :rooms, count: 2 do
       put rooms_open_url(rooms(:pets)), params: { room: { name: "New Name" } }
     end
 
     assert_redirected_to room_url(rooms(:pets))
     assert rooms(:pets).reload.name, "New Name"
+  end
+
+  test "update with an icon normalizes the shortcode" do
+    put rooms_open_url(rooms(:pets)), params: { room: { name: "All Pets", icon_name: " :OpenAI: " } }
+
+    assert_redirected_to room_url(rooms(:pets))
+    assert_equal "openai", rooms(:pets).reload.icon_name
+  end
+
+  test "update clears the icon with a blank shortcode" do
+    rooms(:pets).update!(icon_name: "openai")
+
+    put rooms_open_url(rooms(:pets)), params: { room: { name: "All Pets", icon_name: "" } }
+
+    assert_redirected_to room_url(rooms(:pets))
+    assert_nil rooms(:pets).reload.icon_name
+  end
+
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_opens_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
+  test "update with an unknown icon re-renders the edit form" do
+    assert_turbo_stream_broadcasts :rooms, count: 0 do
+      put rooms_open_url(rooms(:pets)), params: { room: { name: "All Pets", icon_name: ":notanicon:" } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil rooms(:pets).reload.icon_name
+  end
+
+  test "a plain member cannot set an icon" do
+    sign_in :jz
+
+    put rooms_open_url(rooms(:hq)), params: { room: { name: "HQ", icon_name: "openai" } }
+
+    assert_response :forbidden
+    assert_nil rooms(:hq).reload.icon_name
+  end
+
+  test "update ignores unpermitted keys" do
+    put rooms_open_url(rooms(:pets)), params: {
+      room: { name: "All Pets", icon_name: "openai", type: "Rooms::Direct", creator_id: users(:jz).id }
+    }
+
+    room = rooms(:pets).reload
+    assert_equal "openai", room.icon_name
+    assert_equal "Rooms::Open", room.type
+    assert_equal users(:david).id, room.creator_id
   end
 
   test "update a closed room to be open" do
