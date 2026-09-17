@@ -3,10 +3,10 @@ class Agents::MessagesController < MessagesController
 
   allow_agent_access only: :create
 
-  # Bearer-only endpoint: session-cookie requests are rejected with 403 JSON by
-  # ensure_agent_token, so no session-authenticated state change is possible
-  # and forgery verification would only mask that rejection with a 422.
-  skip_forgery_protection only: :create
+  # Bearer-only endpoint. Forgery protection stays on: Bearer requests already
+  # bypass it through the Authentication concern, and a session-cookie request
+  # that trips it gets the same 403 JSON that ensure_agent_token would return.
+  rescue_from ActionController::InvalidAuthenticityToken, with: :reject_session_request
 
   # Re-declaring :set_room replaces the inherited except-create callback (same
   # filter name), so membership is checked as a before_action that halts with
@@ -30,8 +30,10 @@ class Agents::MessagesController < MessagesController
     end
 
     def ensure_agent_token
-      unless authenticated_by.agent_token?
-        render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
-      end
+      reject_session_request unless authenticated_by.agent_token?
+    end
+
+    def reject_session_request
+      render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
     end
 end
