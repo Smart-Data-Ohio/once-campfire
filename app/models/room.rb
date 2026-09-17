@@ -30,6 +30,7 @@ class Room < ApplicationRecord
   scope :opens,           -> { where(type: "Rooms::Open") }
   scope :closeds,         -> { where(type: "Rooms::Closed") }
   scope :directs,         -> { where(type: "Rooms::Direct") }
+  scope :voices,          -> { where(type: "Rooms::Voice") }
   scope :without_directs, -> { where.not(type: "Rooms::Direct") }
 
   scope :ordered, -> { order("LOWER(name)") }
@@ -63,6 +64,10 @@ class Room < ApplicationRecord
 
   def direct?
     is_a?(Rooms::Direct)
+  end
+
+  def voice?
+    is_a?(Rooms::Voice)
   end
 
   def default_involvement
