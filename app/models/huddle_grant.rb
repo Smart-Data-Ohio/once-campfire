@@ -204,6 +204,11 @@ class HuddleGrant < ApplicationRecord
       return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?
       return if recent_invitation?(recipient)
 
+      unless recipient.inbox_preferences.huddle_invitations
+        broadcast_suppressed_invitation!(recipient)
+        return
+      end
+
       item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
       return unless item
       return unless item.previously_new_record? || refresh_invitation!(item)
@@ -236,7 +241,13 @@ class HuddleGrant < ApplicationRecord
       return unless User.active.without_bots.where(id: member_ids).count == 2
 
       other_id = (member_ids - [ user_id ]).first
-      User.active.without_bots.find_by(id: other_id) if other_id
+      return unless other_id
+
+      recipient = User.active.without_bots.find_by(id: other_id)
+      return unless recipient
+      return if room.memberships.where(user_id: other_id, involvement: %w[ nothing invisible ]).exists?
+
+      recipient
     end
 
     def recent_invitation?(recipient)
@@ -258,5 +269,36 @@ class HuddleGrant < ApplicationRecord
 
     def stale_invitation?(item)
       item.handled? || item.event_type != "huddle_started" || item.created_at < INVITATION_DEDUP_WINDOW.ago
+    end
+
+    # With huddle inbox items switched off, the call still rings in-app
+    # through a banner payload without an item. Join and Dismiss skip the
+    # read/handled round-trip that needs an item id.
+    def broadcast_suppressed_invitation!(recipient)
+      return unless ActivityItem.active_human?(recipient)
+
+      routes = Rails.application.routes.url_helpers
+      ActionCable.server.broadcast ActivityChannel.stream_name_for(recipient.id), {
+        activityItemId: nil,
+        huddleInvitation: {
+          activityItemId: nil,
+          eventType: "huddle_started",
+          state: "unread",
+          roomId: room.id,
+          roomName: suppressed_invitation_room_name(recipient),
+          roomPath: routes.room_path(room),
+          callerName: user&.name || "Someone",
+          readPath: nil,
+          handledPath: nil
+        }
+      }
+    end
+
+    def suppressed_invitation_room_name(recipient)
+      if room.direct?
+        room.users.without(recipient).pluck(:name).to_sentence.presence || recipient.name
+      else
+        room.name
+      end
     end
 end

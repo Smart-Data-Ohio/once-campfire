@@ -145,8 +145,15 @@ class WorkThreadEvent < ApplicationRecord
       recipient_user_ids.each do |recipient_id|
         recipient = User.active.without_bots.find_by(id: recipient_id)
         next unless recipient
+        next if agent_assignment_for_opted_out_recipient?(recipient)
 
         ActivityItems::Recorder.record!(recipient:, source: self, event_type:)
       end
+    end
+
+    # Work assigned by an agent honours the recipient's agent_work switch;
+    # human-driven assignments and status updates always record.
+    def agent_assignment_for_opted_out_recipient?(recipient)
+      event_type == "work_assignment" && Agent.exists?(user_id: actor_id) && !recipient.inbox_preferences.agent_work
     end
 end

@@ -1,5 +1,5 @@
 <% if activity_items.any? %>
-  <%= render partial: "activity_items/item", collection: activity_items, as: :item, locals: { filter: filter } %>
+  <%= render partial: "activity_items/item", collection: activity_items, as: :item, locals: { filter: filter, type_filter: type_filter } %>
 <% else %>
   <div class="activity-inbox__empty">
     <p class="activity-inbox__empty-title">No <%= filter %> activity</p>
