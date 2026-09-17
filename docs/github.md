@@ -112,8 +112,9 @@ payload gains a `pull_request` object (`url`, `owner`, `repo`,
 `review_decision`, `checks_state`), null in other threads. See [AI
 agents](agents.md) for the payload shape.
 
-Visibility follows the same boundary as cards: room membership. A PR
-thread is a normal thread and respects the normal thread rules.
+A PR thread is a normal thread and respects the normal thread rules:
+room membership gates the thread itself, while the card in its header
+follows the per-viewer rule in [Visibility](#visibility).
 
 ## Connect your GitHub account
 
@@ -288,15 +289,28 @@ stale; the webhook only makes updates arrive live.
 3. The endpoint verifies `X-Hub-Signature-256` with constant-time
    comparison and answers 401 when the signature is missing or mismatched.
 
-## Visibility caveat
+## Visibility
 
-**A PR from a private repository is shown to everyone in the room the link
-was posted in.** Cards are fetched with the single workspace-level token and
-render inside the message, so the room's membership is the visibility
-boundary for this slice. Posting a private-repo link to a room shares its
-card (title, author, branches, review and check state) with the whole room.
-Likewise, subscribing a room to a private repository makes its PR titles
-visible to the whole room through the posted messages. Per-user GitHub
-identity exists for write actions only (each member's posts act as
-themselves); card visibility stays room-wide and per-user visibility is a
-later slice.
+Cards for **public** repositories render inline for every room member,
+exactly like any other message content.
+
+Cards for **private** repositories render only for viewers whose own
+linked GitHub account can read the repository: when the card loads, the
+app asks GitHub (`GET /repos/{owner}/{repo}`) with the viewer's linked
+token and shows the card on a 200. Everyone else — members without a
+linked account, or whose token GitHub refuses — sees only the plain link
+the author typed, and nothing else. A repository whose privacy is still
+unknown (no fetch has recorded it yet) is treated as private until one
+does. PR thread headers follow the same rule: the card and its Files
+changed summary load per viewer behind the same gate. Work thread links
+to a private pull request show `owner/repo#number` and its state but
+never the title.
+
+The per-viewer decision is cached for ten minutes per repository, grants
+and denials alike, so a page of cards from one repository costs at most
+one GitHub request per viewer per window. The card content itself still
+comes from the stored record fetched with the workspace token; only the
+gate is per viewer. Likewise, subscribing a room to a private repository
+makes its PR titles visible to the whole room through the posted
+messages: subscription messages carry the PR title as text, which room
+membership alone gates.

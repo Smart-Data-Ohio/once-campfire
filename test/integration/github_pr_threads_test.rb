@@ -119,6 +119,26 @@ class GithubPrThreadsTest < ActionDispatch::IntegrationTest
     assert_select ".github-pr-files__path img", count: 0
   end
 
+  test "a PR thread for a private PR shows only the lazy frame in its header" do
+    message = pr_message(number: 147, client_id: "threads-view-private-frame")
+    pull_request = message.github_pull_requests.first
+    fill_card(pull_request, is_private: true)
+    fill_files(pull_request,
+      files: [ { "filename" => "app/models/secret.rb", "additions" => 3, "deletions" => 1, "status" => "modified" } ],
+      total_count: 1)
+    thread = discuss(pull_request, parent: message)
+
+    get room_thread_url(@room, thread)
+
+    assert_response :success
+    assert_select ".github-pr-thread-header .github-pr-card", count: 0
+    assert_select ".github-pr-thread-header .github-pr-files", count: 0
+    assert_select ".github-pr-thread-header turbo-frame.github-pr-card-frame[loading=lazy][src=?]",
+      room_github_pull_request_card_path(@room, pull_request, thread_id: thread.id), count: 1
+    assert_not_includes response.body, "Add shiny things"
+    assert_not_includes response.body, "app/models/secret.rb"
+  end
+
   test "a non-member cannot open the PR thread" do
     room = rooms(:watercooler) # kevin is not a member
     message = room.messages.create!(
@@ -156,8 +176,9 @@ class GithubPrThreadsTest < ActionDispatch::IntegrationTest
       thread
     end
 
-    def fill_card(pull_request)
+    def fill_card(pull_request, is_private: false)
       pull_request.update!(
+        private: is_private,
         title: "Add shiny things", author_login: "dhh",
         author_avatar_url: "https://avatars.example/dhh",
         state: "open", base_branch: "main", head_branch: "shiny", head_sha: "abc123",

@@ -150,6 +150,12 @@ Rails.application.routes.draw do
       resources :pull_request_write_actions, only: :show
     end
 
+    # Per-viewer card frame for private-repository PRs. Served from the
+    # Rooms::Github namespace (room-membership scoped) rather than the
+    # shared Github namespace above, because the response differs per
+    # viewer while the surrounding message HTML is cached across viewers.
+    get "github/pull_requests/:id/card", to: "rooms/github/pull_request_cards#show", as: :github_pull_request_card
+
     get "@:message_id", to: "rooms#show", as: :at_message
   end
 

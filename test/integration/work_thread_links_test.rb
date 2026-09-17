@@ -9,11 +9,27 @@ class WorkThreadLinksTest < ActionDispatch::IntegrationTest
     @thread.update_work!(actor: users(:david), work_status: "planned", work_owner_id: users(:david).id)
 
     @pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 12)
-    @pull_request.update!(title: "Fix login", state: "open", html_url: "https://github.com/rails/rails/pull/12")
+    @pull_request.update!(title: "Fix login", state: "open", html_url: "https://github.com/rails/rails/pull/12", private: false)
     @thread.work_thread_links.create!(kind: :pull_request, github_pull_request: @pull_request, created_by: users(:david))
     @thread.work_thread_links.create!(kind: :event, event: events(:watercooler_sync), created_by: users(:david))
     @drive_url = "https://drive.google.com/file/d/1AbcDefGhIjKlMnOpQrSt/view"
     @thread.work_thread_links.create!(kind: :drive_file, url: @drive_url, title: "Q3 Planning", created_by: users(:david))
+  end
+
+  test "a private pull request link shows its reference and state but never its title" do
+    @pull_request.update!(private: true)
+
+    get room_thread_url(@room, @thread)
+
+    assert_response :success
+    assert_select "a.work-links__pr", text: "rails/rails#12"
+    assert_select ".work-links__pr-state", text: "Open"
+    assert_select ".work-links__pr-title", count: 0
+    assert_no_match "Fix login", response.body
+
+    @pull_request.update!(private: nil)
+    get room_thread_url(@room, @thread)
+    assert_no_match "Fix login", response.body
   end
 
   test "the thread header renders each link kind with remove controls and link forms" do

@@ -139,6 +139,12 @@ button.github-pr-card__discuss:hover {
   margin-bottom: 1rem;
 }
 
+/* Bare turbo-frames are display:contents (see base.css) and never intersect
+   the viewport, so the lazy card frame needs its own box to load. */
+.github-pr-card-frame {
+  display: block;
+}
+
 .github-pr-files {
   border: 1px solid var(--color-border-dark);
   border-radius: 0.5em;

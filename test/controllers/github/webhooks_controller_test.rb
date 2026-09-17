@@ -46,6 +46,36 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_empty response.body
   end
 
+  test "pull_request webhook stores repository privacy when the payload carries it" do
+    body = pull_request_payload
+    body["repository"]["private"] = true
+
+    post github_webhooks_url, params: body.to_json, headers: webhook_headers(event: "pull_request", body: body.to_json)
+
+    assert_response :success
+    assert_equal true, @pull_request.reload.private
+  end
+
+  test "pull_request webhook stores a public repository when the payload says so" do
+    @pull_request.update!(private: true)
+    body = pull_request_payload
+    body["repository"]["private"] = false
+
+    post github_webhooks_url, params: body.to_json, headers: webhook_headers(event: "pull_request", body: body.to_json)
+
+    assert_response :success
+    assert_equal false, @pull_request.reload.private
+  end
+
+  test "pull_request webhook leaves privacy alone when the payload omits it" do
+    @pull_request.update!(private: false)
+
+    post github_webhooks_url, params: pull_request_payload.to_json, headers: webhook_headers(event: "pull_request", body: pull_request_payload.to_json)
+
+    assert_response :success
+    assert_equal false, @pull_request.reload.private
+  end
+
   test "bad signature is rejected without enqueueing" do
     assert_no_enqueued_jobs only: Github::FetchPullRequestJob do
       post github_webhooks_url, params: pull_request_payload.to_json,

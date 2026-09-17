@@ -45,6 +45,7 @@ module Github
     private
       def card_attributes(data)
         {
+          private: data.dig("base", "repo", "private"),
           title: data["title"],
           author_login: data.dig("user", "login"),
           author_avatar_url: data.dig("user", "avatar_url"),

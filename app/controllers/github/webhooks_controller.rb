@@ -19,6 +19,7 @@ class Github::WebhooksController < ActionController::API
     return head(:ok) unless Github::WebhookDelivery.claim!(delivery_guid, event: event)
 
     referenced_pull_requests(event, payload).each do |pull_request|
+      store_repository_privacy(pull_request, payload)
       Github::FetchPullRequestJob.perform_later(pull_request)
     end
 
@@ -55,6 +56,16 @@ class Github::WebhooksController < ActionController::API
       if Github::RepositorySubscription.exists?(owner: owner, repo: repo)
         Github::DeliverSubscriptionEventJob.perform_later(event, payload)
       end
+    end
+
+    # The event's repository privacy is stored immediately when the payload
+    # carries it, so card visibility converges even before the fetch job
+    # confirms it from the PR JSON. Absent, the record keeps its value.
+    def store_repository_privacy(pull_request, payload)
+      repository = payload["repository"]
+      return unless repository.is_a?(Hash) && repository.key?("private")
+
+      pull_request.update!(private: repository["private"])
     end
 
     # Stored PRs the workspace references that this event is about. Events

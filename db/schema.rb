@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_120000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -313,6 +313,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
     t.integer "number", null: false
     t.string "owner", null: false
     t.json "payload"
+    t.boolean "private"
     t.string "repo", null: false
     t.string "review_decision"
     t.string "state"
