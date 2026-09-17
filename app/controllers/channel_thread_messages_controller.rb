@@ -1,5 +1,5 @@
 class ChannelThreadMessagesController < ApplicationController
-  include RoomScoped
+  include RoomScoped, Messages::DriveAttachable
 
   before_action :close_stale_threads
   before_action :set_thread
@@ -39,7 +39,7 @@ class ChannelThreadMessagesController < ApplicationController
   end
 
   def create
-    @message = @thread.post_message!(creator: Current.user, attributes: message_params)
+    @message = @thread.post_message!(creator: Current.user, attributes: message_params, drive_file_ids: validated_drive_file_ids!)
 
     @message.broadcast_create
     no_store_response! if request.format.json?
@@ -56,16 +56,23 @@ class ChannelThreadMessagesController < ApplicationController
 
   def update
     attributes = message_params
+    replace_drive_attachments = drive_file_ids_key_present?
     @thread.with_lock do
       @thread.reload
       raise ChannelThread::LockedError, "This thread is locked" if @thread.locked?
 
       @message.reload
       @message.preserve_legacy_attachments_on_next_markdown_render! if !@message.markdown? && attributes[:markdown_source].present?
-      @message.update!(attributes)
+      @message.assign_attributes(attributes)
+      apply_drive_file_ids!(@message) if replace_drive_attachments
+      @message.save!
     end
     @message.broadcast_replace_to @thread, :messages,
       target: [ @message, :presentation ], partial: "messages/presentation", attributes: { maintain_scroll: true }
+    if replace_drive_attachments
+      @message.broadcast_replace_to @thread, :messages, target: [ @message, :drive_attachments ],
+        partial: "messages/drive_attachments", locals: { message: @message }, attributes: { maintain_scroll: true }
+    end
 
     no_store_response! if request.format.json?
     respond_to do |format|
@@ -130,8 +137,9 @@ class ChannelThreadMessagesController < ApplicationController
     def message_params
       permitted = params.require(:message).permit(
         :body, :attachment, :client_message_id, :markdown_source,
-        :reply_to_message_id, :reply_notify_author
+        :reply_to_message_id, :reply_notify_author, drive_file_ids: []
       )
+      permitted.delete(:drive_file_ids)
 
       if permitted.key?(:markdown_source) && !permitted[:markdown_source].nil?
         permitted.delete(:body)

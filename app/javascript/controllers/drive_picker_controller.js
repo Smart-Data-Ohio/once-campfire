@@ -17,9 +17,6 @@ let pickerCount = 0
 export default class extends Controller {
   static targets = [ "button", "panel", "search", "results", "status" ]
 
-  // attach: false hides the Attach buttons (thread composers only insert links).
-  static values = { attach: { type: Boolean, default: true } }
-
   initialize() {
     this.search = debounce(this.search.bind(this), 300)
   }
@@ -162,18 +159,23 @@ export default class extends Controller {
   }
 
   #optionElement(file, index) {
+    // The li is presentational: the insert button carries role=option and
+    // the Attach button sits beside it, so no focusable control nests
+    // inside an option. Arrow keys move the active option (activedescendant
+    // on the search field); Tab reaches each row's Attach button.
     const item = document.createElement("li")
     item.className = "drive-picker__item"
     if (index === this.activeIndex) item.classList.add("drive-picker__item--active")
-    item.id = `drive-picker-${this.pickerId}-option-${index}`
-    item.dataset.index = index
-    item.setAttribute("role", "option")
-    item.setAttribute("aria-selected", String(index === this.activeIndex))
+    item.setAttribute("role", "presentation")
 
     const button = document.createElement("button")
     button.type = "button"
     button.className = "drive-picker__option"
     button.tabIndex = -1
+    button.id = `drive-picker-${this.pickerId}-option-${index}`
+    button.dataset.index = index
+    button.setAttribute("role", "option")
+    button.setAttribute("aria-selected", String(index === this.activeIndex))
 
     const icon = document.createElement("span")
     icon.className = "drive-picker__icon"
@@ -200,7 +202,6 @@ export default class extends Controller {
     button.addEventListener("click", () => this.#insert(file))
 
     item.append(button)
-    if (!this.attachValue) return item
 
     const attach = document.createElement("button")
     attach.type = "button"
