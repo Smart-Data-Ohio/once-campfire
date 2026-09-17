@@ -1,11 +1,12 @@
-<%# Icon shortcode field with `:` autocomplete, a live preview, and a remove control. Locals: form (builder), record (room or bot). %>
+<%# Icon shortcode field with `:` autocomplete, a live preview, and a remove control. Locals: form (builder), record (room or bot), scope ("room" or "user"). %>
 <div data-controller="icon-field" data-icon-field-url-value="<%= autocompletable_icons_path %>">
-  <%= form.label :icon_name, "Icon", class: "txt-small" %>
+  <%= form.label :icon_name, "Icon", class: "txt-small", for: "#{scope}_icon_name" %>
 
   <div class="flex align-center gap">
     <span class="icon-field__preview flex-item-no-shrink" data-icon-field-target="preview"><%= icon_avatar_tag(record.icon_name, size: 32) %></span>
 
-    <%= form.text_field :icon_name, value: (record.icon_name.present? ? ":#{record.icon_name}:" : nil),
+    <%= form.text_field :icon_name, name: "#{scope}[icon_name]", id: "#{scope}_icon_name",
+          value: (record.icon_name.present? ? ":#{record.icon_name}:" : nil),
           class: "input flex-item-grow", placeholder: ":shortcode:", autocomplete: "off", autocorrect: "off",
           autocapitalize: "off", spellcheck: false,
           data: {

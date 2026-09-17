@@ -51,6 +51,17 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "update with an icon normalizes the shortcode" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    put rooms_voice_url(room), params: {
+      room: { name: "Lounge", icon_name: ":fire:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "fire", room.reload.icon_name
+  end
+
   test "update with membership revisions" do
     room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason), users(:jz) ])
 

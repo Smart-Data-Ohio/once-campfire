@@ -70,6 +70,41 @@ class UserTest < ActiveSupport::TestCase
     end
   end
 
+  test "icon_name accepts brand, workspace, and emoji names and normalizes colons" do
+    create_workspace_icon(name: "acme")
+
+    {
+      "openai" => "openai", ":openai:" => "openai", "  :OpenAI: " => "openai",
+      "gpt" => "gpt", "acme" => "acme", ":acme:" => "acme",
+      "thumbsup" => "thumbsup", ":fire:" => "fire"
+    }.each do |given, expected|
+      bot = users(:bender)
+      bot.icon_name = given
+
+      assert bot.valid?, "#{given.inspect} should be valid: #{bot.errors.full_messages.to_sentence}"
+      assert_equal expected, bot.icon_name
+    end
+  end
+
+  test "icon_name allows nil and blank" do
+    bot = users(:bender)
+
+    bot.icon_name = nil
+    assert bot.valid?
+
+    bot.icon_name = ""
+    assert bot.valid?
+    assert_nil bot.icon_name
+  end
+
+  test "icon_name rejects unknown names" do
+    bot = users(:bender)
+    bot.icon_name = "nope_not_real"
+
+    assert_not bot.valid?
+    assert_equal [ "is not a known icon" ], bot.errors[:icon_name]
+  end
+
   private
     def create_new_user
       User.create!(name: "User", email_address: "user@example.com", password: "secret123456")

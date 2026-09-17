@@ -34,4 +34,39 @@ class RoomTest < ActiveSupport::TestCase
     room = Rooms::Closed.create_for({ name: "Hello!", creator: users(:david) }, users: [ users(:kevin), users(:david) ])
     assert room.memberships.all? { |m| m.involved_in_mentions? }
   end
+
+  test "icon_name accepts brand, workspace, and emoji names and normalizes colons" do
+    create_workspace_icon(name: "acme")
+
+    {
+      "openai" => "openai", ":openai:" => "openai", "  :OpenAI: " => "openai",
+      "gpt" => "gpt", "acme" => "acme", ":acme:" => "acme",
+      "thumbsup" => "thumbsup", ":fire:" => "fire"
+    }.each do |given, expected|
+      room = rooms(:pets)
+      room.icon_name = given
+
+      assert room.valid?, "#{given.inspect} should be valid: #{room.errors.full_messages.to_sentence}"
+      assert_equal expected, room.icon_name
+    end
+  end
+
+  test "icon_name allows nil and blank" do
+    room = rooms(:pets)
+
+    room.icon_name = nil
+    assert room.valid?
+
+    room.icon_name = ""
+    assert room.valid?
+    assert_nil room.icon_name
+  end
+
+  test "icon_name rejects unknown names" do
+    room = rooms(:pets)
+    room.icon_name = "nope_not_real"
+
+    assert_not room.valid?
+    assert_equal [ "is not a known icon" ], room.errors[:icon_name]
+  end
 end

@@ -66,6 +66,29 @@ class Rooms::ClosedsControllerTest < ActionDispatch::IntegrationTest
     assert rooms(:designers).reload.name, "Designers"
   end
 
+  test "updating the icon replaces sidebar rows and headers for members only" do
+    room = rooms(:designers)
+
+    put rooms_closed_url(room), params: {
+      room: { name: room.name, icon_name: ":openai:" }, user_ids: room.user_ids
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "openai", room.reload.icon_name
+
+    icon_src = Icons.brand_image_urls.fetch("openai")
+    room.users.each do |member|
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :list ] do
+        assert_select ".sidebar-item__icon--custom img.icon-avatar[src='#{icon_src}']"
+      end
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :header ] do
+        assert_select "img.icon-avatar[src='#{icon_src}']"
+      end
+    end
+
+    assert_empty capture_turbo_stream_broadcasts([ users(:bender), :rooms ])
+  end
+
   test "a direct room can't be converted to closed and have its participants revised" do
     sign_in :kevin
     direct = rooms(:bender_and_kevin)
