@@ -121,14 +121,14 @@ class StageTest < ApplicationSystemTestCase
     assert_selector "##{dom_id(room, :stage_controls)}", text: "Lower hand"
     kevin_row = "##{dom_id(room.memberships.find_by!(user: users(:kevin)), :stage_row)}"
     within kevin_row do
-      assert_selector ".stage-panel__hand-badge", text: "Hand raised"
+      assert_selector ".stage-panel__hand-badge", text: "Hand raised", wait: BROADCAST_WAIT
     end
 
     click_button "Lower hand"
 
     assert_selector "##{dom_id(room, :stage_controls)}", text: "Raise hand"
     within kevin_row do
-      assert_no_selector ".stage-panel__hand-badge"
+      assert_no_selector ".stage-panel__hand-badge", wait: BROADCAST_WAIT
     end
   end
 
@@ -241,7 +241,7 @@ class StageTest < ApplicationSystemTestCase
     end
 
     within jason_row, wait: 10 do
-      assert_no_selector ".stage-panel__hand-badge"
+      assert_no_selector ".stage-panel__hand-badge", wait: BROADCAST_WAIT
     end
     within "[aria-label='Listeners']" do
       assert_selector ".stage-panel__member", text: "Jason"
