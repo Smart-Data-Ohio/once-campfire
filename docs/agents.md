@@ -341,3 +341,28 @@ curl -X PATCH https://campfire.example.com/agents/work/7 \
 
 This is the first enforcement of `manage_threads`: the status update
 requires it in the thread's room, with the standard 403 error shape.
+
+### Link payloads
+
+Every work payload — `GET /agents/work`, `GET /agents/work/:id`,
+`PATCH /agents/work/:id`, and the `work` key in assignment event
+polling and webhooks — carries a `links` array, in link order:
+
+```json
+[
+  { "kind": "pull_request", "url": "https://github.com/rails/rails/pull/7", "title": "Fix login",
+    "pull_request": { "url": "https://github.com/rails/rails/pull/7", "owner": "rails", "repo": "rails", "number": 7, "title": "Fix login", "state": "open", "head_branch": "shiny", "base_branch": "main", "review_decision": "approved", "checks_state": "passing" },
+    "event": null },
+  { "kind": "event", "url": "/rooms/2/events/3", "title": "Watercooler sync",
+    "pull_request": null,
+    "event": { "id": 3, "title": "Watercooler sync", "starts_at": "2026-09-20T14:00:00.000Z", "ends_at": null, "cancelled": false, "url": "/rooms/2/events/3" } },
+  { "kind": "drive_file", "url": "https://drive.google.com/file/d/1AbcDefGhIjKlMnOpQrSt/view", "title": "Q3 Planning",
+    "pull_request": null, "event": null }
+]
+```
+
+The `pull_request` object reuses the PR context shape from message
+delivery; the `event` object gives the linked event's scheduling
+fields. Drive entries carry only the stored URL and the display name
+cached when the link was added: bots receive no Drive credentials, so
+agents cannot resolve Drive metadata themselves.

@@ -85,6 +85,65 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
     assert_equal "planned", response.parsed_body["work_status"]
   end
 
+  test "show includes links with pull request, event, and drive entries" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    thread = create_owned_thread!(name: "Linked work")
+    pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 7)
+    pull_request.update!(title: "Fix login", state: "open", html_url: "https://github.com/rails/rails/pull/7")
+    thread.work_thread_links.create!(kind: :pull_request, github_pull_request: pull_request, created_by: users(:david))
+    thread.work_thread_links.create!(kind: :event, event: events(:watercooler_sync), created_by: users(:david))
+    drive_url = "https://drive.google.com/file/d/1AbcDefGhIjKlMnOpQrSt/view"
+    thread.work_thread_links.create!(kind: :drive_file, url: drive_url, title: "Q3 Planning", created_by: users(:david))
+
+    get agents_work_thread_url(thread), headers: bearer_headers
+
+    assert_response :success
+    links = response.parsed_body["links"]
+    assert_equal 3, links.size
+
+    pr_entry = links.find { |entry| entry["kind"] == "pull_request" }
+    assert_equal "https://github.com/rails/rails/pull/7", pr_entry["url"]
+    assert_equal "Fix login", pr_entry["title"]
+    assert_equal "rails", pr_entry.dig("pull_request", "owner")
+    assert_equal "rails", pr_entry.dig("pull_request", "repo")
+    assert_equal 7, pr_entry.dig("pull_request", "number")
+    assert_equal "Fix login", pr_entry.dig("pull_request", "title")
+    assert_equal "open", pr_entry.dig("pull_request", "state")
+    assert_nil pr_entry["event"]
+
+    event_entry = links.find { |entry| entry["kind"] == "event" }
+    assert_equal room_event_path(@room, events(:watercooler_sync)), event_entry["url"]
+    assert_equal "Watercooler sync", event_entry["title"]
+    assert_nil event_entry["pull_request"]
+    assert_equal events(:watercooler_sync).id, event_entry.dig("event", "id")
+    assert_equal "Watercooler sync", event_entry.dig("event", "title")
+    assert_equal events(:watercooler_sync).starts_at.utc.iso8601(3), event_entry.dig("event", "starts_at")
+    assert_equal false, event_entry.dig("event", "cancelled")
+    assert_equal room_event_path(@room, events(:watercooler_sync)), event_entry.dig("event", "url")
+
+    drive_entry = links.find { |entry| entry["kind"] == "drive_file" }
+    assert_equal drive_url, drive_entry["url"]
+    assert_equal "Q3 Planning", drive_entry["title"]
+    assert_nil drive_entry["pull_request"]
+    assert_nil drive_entry["event"]
+  end
+
+  test "list includes links on owned threads" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    thread = create_owned_thread!(name: "Listed links")
+    thread.work_thread_links.create!(kind: :event, event: events(:watercooler_sync), created_by: users(:david))
+    create_owned_thread!(name: "Unlinked work")
+
+    get agents_work_url, headers: bearer_headers
+
+    assert_response :success
+    rows = response.parsed_body.index_by { |row| row["id"] }
+    assert_equal [ "event" ], rows[thread.id]["links"].map { |entry| entry["kind"] }
+    assert_equal [], rows.values.find { |row| row["title"] == "Unlinked work" }["links"]
+  end
+
   test "show is 404 for threads the agent does not own" do
     grant!(capability: "read_messages", room: @room)
     human_thread = create_human_thread!(name: "Not mine")

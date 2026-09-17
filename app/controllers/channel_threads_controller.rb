@@ -21,6 +21,12 @@ class ChannelThreadsController < ApplicationController
 
   def show
     @messages = @thread.messages.with_rendering_details.last_page
+    if @thread.work? && request.format.html?
+      @work_links = @thread.work_thread_links.ordered.includes(:github_pull_request, :event).to_a
+      @linkable_events = @room.events.upcoming.soonest_first
+        .where.not(id: @thread.work_thread_links.where.not(event_id: nil).select(:event_id))
+        .to_a
+    end
     no_store_response! if request.format.json?
 
     respond_to do |format|

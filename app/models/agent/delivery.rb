@@ -80,7 +80,8 @@ class Agent::Delivery
         title: thread.name,
         status: thread.work_status,
         url: Rails.application.routes.url_helpers.room_path(room, thread: thread.id),
-        assigned_by: assigned_by
+        assigned_by: assigned_by,
+        links: WorkThreadLink.agent_payloads_for(thread)
       }
     end
 

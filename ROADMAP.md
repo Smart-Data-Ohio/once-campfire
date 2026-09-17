@@ -120,7 +120,7 @@ Done for the first slice when a member can find a mention or reply, open its exa
 
 ### 8. Work threads
 
-The first human-owned slice is live, including status/owner history, completion and reopening, the global work list, and activity inbox updates. Agent assignment is live; richer external integration links remain planned.
+The first human-owned slice is live, including status/owner history, completion and reopening, the global work list, and activity inbox updates. Agent assignment is live, as are links to pull requests, events, and Drive files.
 
 - Extend conversations into trackable work with a title, owner, status, and linked PRs, files, or events; keep the conversation and its history together.
 - Show human and agent progress, blockers, and the next action so ongoing work is easy to resume.
@@ -130,7 +130,7 @@ The first human-owned slice is live, including status/owner history, completion 
 
 Done for the first slice when members can turn a channel thread into work, assign an eligible owner, update its status, find it again, and complete or reopen it without losing messages. Following a discussion and owning its work remain distinct choices.
 
-**Status:** agent assignment shipped. Eligible agents can own work threads, learn about assignments through their event ledger and webhooks, and update status through the agent API with progress visible in Work history and the activity inbox; see `docs/agents.md#work-threads`. Still open: richer links to PRs, Drive files, and Events.
+**Status:** agent assignment shipped. Eligible agents can own work threads, learn about assignments through their event ledger and webhooks, and update status through the agent API with progress visible in Work history and the activity inbox; see `docs/agents.md#work-threads`. Links shipped as well: work threads link GitHub pull requests, room events, and Drive files from the thread header and the Work list, with the same links in the agent work payload; linking creates no inbox items.
 
 ### 9. Custom icons and emoji shortcodes
 

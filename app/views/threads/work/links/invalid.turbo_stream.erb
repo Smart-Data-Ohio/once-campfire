@@ -1,0 +1,6 @@
+<%= turbo_stream.replace work_thread_links_status_id(@thread, :panel) do %>
+  <%= render "threads/work/links/status", thread: @thread, context: :panel, message: @error %>
+<% end %>
+<%= turbo_stream.replace work_thread_links_status_id(@thread, :header) do %>
+  <%= render "threads/work/links/status", thread: @thread, context: :header, message: @error %>
+<% end %>

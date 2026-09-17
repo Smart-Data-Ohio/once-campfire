@@ -31,6 +31,23 @@ class Agents::WorkDeliveryTest < ActionDispatch::IntegrationTest
     assert_equal "David", row.dig("work", "assigned_by")
   end
 
+  test "assignment work payload includes links" do
+    thread = assign_owned_thread!(name: "Linked assignment")
+    thread.work_thread_links.create!(kind: :event, event: events(:watercooler_sync), created_by: users(:david))
+    drive_url = "https://drive.google.com/file/d/1AbcDefGhIjKlMnOpQrSt/view"
+    thread.work_thread_links.create!(kind: :drive_file, url: drive_url, created_by: users(:david))
+
+    get agents_events_url, headers: bearer_headers
+
+    assert_response :success
+    row = response.parsed_body.find { |entry| entry["event_type"] == "work_assigned" }
+    links = row.dig("work", "links")
+    assert_equal %w[ event drive_file ], links.map { |entry| entry["kind"] }
+    assert_equal room_event_path(@room, events(:watercooler_sync)), links.first["url"]
+    assert_equal drive_url, links.second["url"]
+    assert_nil links.second["title"]
+  end
+
   test "unassignment appears in event polling" do
     thread = assign_owned_thread!(name: "Unassigned work")
     thread.update_work!(actor: users(:david), work_owner_id: nil)
