@@ -195,3 +195,59 @@ button.github-pr-card__discuss:hover {
   font-size: 0.8rem;
   opacity: 0.7;
 }
+
+.github-pr-write {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5em;
+  background-color: var(--color-bg);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.github-pr-write__loading {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.github-pr-write__notice {
+  margin: 0;
+  color: var(--color-positive);
+}
+
+.github-pr-write__error {
+  margin: 0;
+  color: var(--color-negative);
+}
+
+.github-pr-write__comment,
+.github-pr-write__review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.github-pr-write__comment textarea,
+.github-pr-write__review textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.github-pr-write__comment .btn {
+  align-self: flex-end;
+}
+
+.github-pr-write__review-buttons {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.github-pr-write__connect {
+  margin: 0;
+}
