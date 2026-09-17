@@ -19,6 +19,12 @@ class GoogleAccount < ApplicationRecord
     connected? && refresh_token.present?
   end
 
+  # True when the stored OAuth grant includes the Drive metadata scope.
+  # Existing rows have null scopes (calendar only).
+  def drive?
+    scopes.to_s.split.include?(Google::Client::DRIVE_SCOPE)
+  end
+
   def access_token_expired?
     access_token.blank? || access_token_expires_at.blank? || access_token_expires_at <= Time.current
   end
