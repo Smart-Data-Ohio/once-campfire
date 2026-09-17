@@ -75,6 +75,40 @@ class HuddleRevocationTest < ActiveSupport::TestCase
     assert_equal grant.room_name, deletion.room_name
   end
 
+  test "removing a voice member mid-call revokes only their grant" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    target = issue_grant(sessions(:david_safari), room.memberships.find_by!(user: users(:david)))
+    other = issue_grant(users(:jason).sessions.create!(user_agent: "Other"), room.memberships.find_by!(user: users(:jason)))
+
+    room.memberships.find_by!(user: users(:david)).destroy!
+
+    assert target.reload.revoked?
+    assert_not other.reload.revoked?
+    assert_equal [ target.id ], participant_cleanups.pluck(:huddle_grant_id)
+  end
+
+  test "destroying a voice room revokes its grants and persists one room deletion" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    grant = issue_grant(sessions(:david_safari), room.memberships.first!)
+
+    room.destroy!
+
+    assert grant.reload.revoked?
+    assert_empty participant_cleanups
+    deletion = HuddleCleanup.find_by!(operation: :delete_room)
+    assert_equal grant.room_name, deletion.room_name
+  end
+
+  test "deactivating a user ends their voice session" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    grant = issue_grant(sessions(:david_safari), room.memberships.first!)
+
+    users(:david).deactivate
+
+    assert grant.reload.revoked?
+    assert_equal [ grant.id ], participant_cleanups.pluck(:huddle_grant_id)
+  end
+
   test "revocation remains durable while LiveKit is unavailable" do
     grant = issue_grant(sessions(:david_safari), memberships(:david_watercooler))
     ENV.delete("LIVEKIT_INTERNAL_URL")

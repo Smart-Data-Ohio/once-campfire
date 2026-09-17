@@ -140,6 +140,114 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_json_error :not_found, "Room not found or inaccessible"
   end
 
+  test "participants lists the room's in-call members without caching" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    david_grant.update_columns(last_seen_at: Time.current)
+    jason_grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: room.memberships.find_by!(user: users(:jason)))
+    jason_grant.update_columns(last_seen_at: Time.current)
+
+    sign_in :david
+    get participants_room_huddle_url(room)
+
+    assert_response :success
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_equal [
+      { "id" => users(:david).id, "name" => users(:david).name, "avatar_url" => fresh_user_avatar_url(users(:david)) },
+      { "id" => users(:jason).id, "name" => users(:jason).name, "avatar_url" => fresh_user_avatar_url(users(:jason)) }
+    ], response.parsed_body
+  end
+
+  test "participants reflects only in-call grants" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
+    david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    david_grant.update_columns(last_seen_at: Time.current)
+    # Issued but never seen by the gateway.
+    HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: room.memberships.find_by!(user: users(:jason)))
+    # Seen, but outside the in-call window.
+    kevin_grant = HuddleGrant.issue!(session: users(:kevin).sessions.create!(user_agent: "Test"), membership: room.memberships.find_by!(user: users(:kevin)))
+    kevin_grant.update_columns(last_seen_at: 21.seconds.ago)
+
+    sign_in :david
+    get participants_room_huddle_url(room)
+
+    assert_response :success
+    assert_equal [ users(:david).id ], response.parsed_body.pluck("id")
+  end
+
+  test "a member removed mid-call is revoked and disappears from participants" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    grant.update_columns(last_seen_at: Time.current)
+
+    sign_in :jason
+    get participants_room_huddle_url(room)
+    assert_equal [ users(:david).id ], response.parsed_body.pluck("id")
+
+    room.memberships.find_by!(user: users(:david)).destroy!
+    assert grant.reload.revoked?
+
+    get participants_room_huddle_url(room)
+    assert_response :success
+    assert_empty response.parsed_body
+  end
+
+  test "participants is reported for group direct rooms" do
+    room = Rooms::Direct.create_for({ creator: users(:david) }, users: [ users(:david), users(:jason), users(:kevin) ])
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    grant.update_columns(last_seen_at: Time.current)
+
+    sign_in :david
+    get participants_room_huddle_url(room)
+
+    assert_response :success
+    assert_equal [ users(:david).id ], response.parsed_body.pluck("id")
+  end
+
+  test "participants denies non-members, outsiders, and unauthenticated requests" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    sign_in :jz
+    get participants_room_huddle_url(room)
+    assert_json_error :not_found, "Room not found or inaccessible"
+
+    sign_in :jz
+    get participants_room_huddle_url(rooms(:david_and_jason))
+    assert_json_error :not_found, "Room not found or inaccessible"
+
+    delete session_url
+    get participants_room_huddle_url(room)
+    assert_json_error :unauthorized, "Authentication required"
+  end
+
+  test "participants denies bots and inactive users" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    get participants_room_huddle_url(room), params: { bot_key: users(:bender).bot_key }
+    assert_json_error :forbidden, "Bots cannot join huddles"
+
+    bot = users(:bender)
+    bot.update!(email_address: "bender@example.test", password: "secret123456")
+    sign_in bot
+    get participants_room_huddle_url(room)
+    assert_json_error :forbidden, "Bots cannot join huddles"
+
+    sign_in :david
+    users(:david).banned!
+    get participants_room_huddle_url(room)
+    assert_json_error :forbidden, "User cannot join huddles"
+  end
+
+  test "participants requires LiveKit configuration" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    sign_in :david
+    ENV.delete("LIVEKIT_API_SECRET")
+    get participants_room_huddle_url(room)
+
+    assert_json_error :service_unavailable, "Huddles are not configured"
+  end
+
   test "GET denies access after sign out" do
     sign_in :david
     current_session = Session.find_by!(token: parsed_cookies.signed[:session_token])
