@@ -312,7 +312,8 @@ also gated on `read_messages`. `ack` works on these rows.
   first, max 100, filtered to rooms where the agent holds
   `read_messages`.
 - `GET /agents/work/:id` returns one owned thread, or 404 for anything
-  the agent does not own.
+  the agent does not own or whose room the agent's user no longer belongs
+  to.
 - `PATCH /agents/work/:id` updates the status of an owned thread. It
   takes `work_status` (one of `planned`, `in_progress`, `blocked`,
   `done`) and an optional plain-text `note` (max 500 characters),
