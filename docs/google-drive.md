@@ -92,6 +92,42 @@ Results are the viewer's own Drive view: nothing is shared until the
 member sends the message, and then only the link, which other viewers
 resolve with their own credentials as with pasted Drive links.
 
+## Attachments
+
+Members with Drive previews enabled can also **attach** Drive files to a
+room message (thread composers only insert links for now). Every picker
+row carries an **Attach** button next to the
+click-to-insert row: it pins the file as a chip in a strip above the
+composer (showing the same name and kind icon the row showed), and sending
+the message stores the attachment with it. A message with attachments and
+no text is valid. Up to 10 files per message.
+
+Only the file id is stored (`drive_attachments`: `message_id`, `file_id`).
+No name, MIME type, owner, or URL is persisted. The attachment renders as a
+block under the message body carrying an `open?id=` link, in markup that is
+identical for every viewer: a generic file icon, the text "Google Drive
+file", and an "Open in Drive" hint. The `drive-link` controller then
+upgrades the block with the viewer's own credentials, exactly like a
+pasted link: viewers who can open the file see its name, kind icon,
+modified time, and owner, while viewers without Drive consent or without
+access keep the generic block and learn nothing else. No new endpoints are
+involved, and the file name is never logged.
+
+The message's edit form lists the current attachments as removable chips
+(the author can drop all of them; only the existing edit permission
+applies). Attachment changes touch the message so caches refresh.
+
+The JSON message shape and the agent delivery payload carry the set as:
+
+```json
+"drive_attachments": [
+  { "file_id": "1AbcDefGhIjKlMnOpQrSt", "url": "https://drive.google.com/open?id=1AbcDefGhIjKlMnOpQrSt" }
+]
+```
+
+Never a name: bots receive no Drive credentials. The bot posting API does
+not accept attachments.
+
 ## The 404 policy
 
 The endpoint answers **404 with an empty body** in every denial case: the

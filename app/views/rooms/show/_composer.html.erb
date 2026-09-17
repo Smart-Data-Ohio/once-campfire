@@ -33,6 +33,9 @@
 
             <%= form.hidden_field :reply_to_message_id, data: { composer_target: "replyTo" }, autocomplete: "off" %>
             <div class="composer__filelist flex flex--align-center gap flex-wrap" data-composer-target="fileList"></div>
+            <% if thread.nil? %>
+              <%# Pending Drive attachment chips, added by the drive-picker; keep empty so :empty hides the strip. %><div class="composer__drive-attachments" aria-live="polite"></div>
+            <% end %>
 
             <div class="composer__surface flex align-end gap">
               <label class="composer__attachment-btn btn btn--borderless flex-item-no-shrink input--file" title="Attach a file">
@@ -42,7 +45,8 @@
               </label>
 
               <% if Current.user&.google_account&.drive? %>
-                <div class="drive-picker flex-item-no-shrink" data-controller="drive-picker">
+                <%# Thread messages do not take attachments yet, so the thread composer only inserts links. %>
+                <div class="drive-picker flex-item-no-shrink" data-controller="drive-picker" data-drive-picker-attach-value="<%= thread.nil? %>">
                   <button type="button" class="btn btn--borderless composer__drive-btn" title="Insert a Drive file"
                           aria-haspopup="dialog" aria-expanded="false"
                           data-action="drive-picker#toggle" data-drive-picker-target="button">

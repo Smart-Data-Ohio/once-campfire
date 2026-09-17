@@ -104,7 +104,7 @@ Done for the calendar slice when an opted-in attendee receives a calendar entry 
 
 Done for the first slice when one Drive workflow and one selected Smart App workflow work end to end without exposing private source content to unauthorized channel members.
 
-**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). File discovery shipped as well: members with Drive previews enabled can find a file by name or from recents in the composer and insert its link without leaving Campfire. Still open: attachments and the first selected Smart App workflow.
+**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). File discovery shipped as well: members with Drive previews enabled can find a file by name or from recents in the composer and insert its link without leaving Campfire. Attachments shipped as well: members attach Drive files from the picker, only the file id is stored, and each viewer resolves the name with their own credentials; see [Google Drive attachments](docs/google-drive.md#attachments). Still open: the first selected Smart App workflow.
 
 ### 7. Unified activity inbox
 

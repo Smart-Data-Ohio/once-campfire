@@ -47,6 +47,9 @@ class Webhook < ApplicationRecord
       if agent
         hash[:agent] = { id: agent.id, name: agent.user.name, owner: agent.owner&.name, delivery_id: delivery_id }
         hash[:pull_request] = Github::PullRequestThread.payload_for_message(message)
+        hash[:message][:drive_attachments] = message.drive_attachments.map do |attachment|
+          { file_id: attachment.file_id, url: attachment.url }
+        end
       end
       hash.to_json
     end

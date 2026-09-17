@@ -25,7 +25,10 @@ class MessagesController < ApplicationController
 
   def create
     set_room
-    @message = @room.root_messages.create_with_attachment!(message_params)
+    @message = @room.root_messages.new(message_params)
+    apply_drive_file_ids!(@message) if drive_file_ids_key_present?
+    @message.save!
+    @message.process_attachment
 
     @message.broadcast_create
     deliver_webhooks_to_bots
@@ -61,9 +64,15 @@ class MessagesController < ApplicationController
   def update
     attributes = message_params
     @message.preserve_legacy_attachments_on_next_markdown_render! if !@message.markdown? && attributes[:markdown_source].present?
-    @message.update!(attributes)
+    @message.assign_attributes(attributes)
+    apply_drive_file_ids!(@message) if drive_file_ids_key_present?
+    @message.save!
 
     @message.broadcast_replace_to @room, :messages, target: [ @message, :presentation ], partial: "messages/presentation", attributes: { maintain_scroll: true }
+    if drive_file_ids_key_present?
+      @message.broadcast_replace_to @room, :messages, target: [ @message, :drive_attachments ],
+        partial: "messages/drive_attachments", locals: { message: @message }, attributes: { maintain_scroll: true }
+    end
 
     respond_to do |format|
       format.html { redirect_to room_message_url(@room, @message) }
@@ -113,8 +122,9 @@ class MessagesController < ApplicationController
     def message_params
       permitted = params.require(:message).permit(
         :body, :attachment, :client_message_id, :markdown_source,
-        :reply_to_message_id, :reply_notify_author
+        :reply_to_message_id, :reply_notify_author, drive_file_ids: []
       )
+      permitted.delete(:drive_file_ids)
 
       if permitted.key?(:markdown_source) && !permitted[:markdown_source].nil?
         permitted.delete(:body)
@@ -132,6 +142,44 @@ class MessagesController < ApplicationController
       end
 
       permitted.to_h.symbolize_keys
+    end
+
+    # True when the form submitted the Drive attachment set at all. The edit
+    # form always sends the key (with a blank sentinel so "remove all" is
+    # expressible); the composer only sends it when the strip holds chips.
+    # Absent means "leave the stored set alone".
+    def drive_file_ids_key_present?
+      params[:message].is_a?(ActionController::Parameters) && params[:message].key?(:drive_file_ids)
+    end
+
+    # nil when the key is not an array (a scalar would otherwise permit to an
+    # empty set and silently remove everything).
+    def normalized_drive_file_ids
+      raw = params[:message][:drive_file_ids]
+      return nil unless raw.is_a?(Array)
+
+      raw.map { |id| id.to_s.strip }.reject(&:blank?).uniq
+    end
+
+    # Replaces the message's stored Drive set with the submitted ids, in
+    # memory so the message and its attachments save in one transaction. An
+    # invalid id raises before anything is written; the Drive scope is not
+    # required because an id alone reveals nothing about the file.
+    def apply_drive_file_ids!(message)
+      ids = normalized_drive_file_ids
+
+      if ids.nil? || ids.reject { |id| Google::DriveLink.valid_id?(id) }.any?
+        message.errors.add :drive_attachments, "includes an invalid file id"
+        raise ActiveRecord::RecordInvalid, message
+      end
+
+      current = message.drive_attachments.to_a
+      current.each do |attachment|
+        attachment.mark_for_destruction unless ids.include?(attachment.file_id)
+      end
+      (ids - current.map(&:file_id)).each do |file_id|
+        message.drive_attachments.build(file_id:)
+      end
     end
 
     def render_record_invalid(error)

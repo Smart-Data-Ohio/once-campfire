@@ -12,6 +12,14 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "create ignores drive_file_ids" do
+    assert_difference -> { Message.count }, +1 do
+      post room_bot_messages_url(@room, users(:bender).bot_key),
+        params: { message: { markdown_source: "hello", drive_file_ids: [ "1AbcDefGhIjKlMnOpQrSt" ] } }
+    end
+    assert_empty Message.last.drive_attachments
+  end
+
   test "create with UTF-8 content" do
     assert_difference -> { Message.count }, +1 do
       post room_bot_messages_url(@room, users(:bender).bot_key), params: +"Hello 👋!"
