@@ -92,7 +92,11 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     ], removed_streams.map { |stream| stream["target"] }
 
     remaining_streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
-    assert_equal [ "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [ "replace", "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [
+      ActionView::RecordIdentifier.dom_id(room, :list),
+      ActionView::RecordIdentifier.dom_id(room, :header)
+    ], remaining_streams.map { |stream| stream["target"] }
   end
 
   test "a non-administrator creator can manage members of their own stage room" do
@@ -146,6 +150,52 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     assert_nil room.reload.icon_name
     assert_equal "Town Hall", room.name
     assert_equal [ users(:david).id, users(:jason).id ].sort, room.user_ids.sort
+  end
+
+  test "update with an icon normalizes the shortcode" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+
+    put rooms_stage_url(room), params: {
+      room: { name: "Town Hall", icon_name: ":fire:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "fire", room.reload.icon_name
+  end
+
+  test "update clears the icon with a blank shortcode" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    room.update!(icon_name: "openai")
+
+    put rooms_stage_url(room), params: {
+      room: { name: "Town Hall", icon_name: "" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_redirected_to room_url(room)
+    assert_nil room.reload.icon_name
+  end
+
+  test "updating the icon replaces sidebar rows and headers for members only" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    put rooms_stage_url(room), params: {
+      room: { name: room.name, icon_name: ":openai:" }, user_ids: room.user_ids
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "openai", room.reload.icon_name
+
+    icon_src = Icons.brand_image_urls.fetch("openai")
+    room.users.each do |member|
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :list ] do
+        assert_select ".stage-room .sidebar-item__icon--custom img.icon-avatar[src='#{icon_src}']"
+      end
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :header ] do
+        assert_select "img.icon-avatar[src='#{icon_src}']"
+      end
+    end
+
+    assert_empty capture_turbo_stream_broadcasts([ users(:kevin), :rooms ])
   end
 
   test "a host removes themselves once another host exists" do

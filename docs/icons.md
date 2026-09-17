@@ -122,7 +122,7 @@ renders any resolvable icon at avatar sizes: brand and workspace icons as
 `<img>` from their existing paths with `alt` set to the icon title, emoji as
 a `<span>` glyph with an accessible name. It returns nil for an unresolvable
 name. Rooms show the icon at 24px in sidebar rows
-(`users/sidebars/rooms/_shared` and `_voice`), at 32px in the room header
+(`users/sidebars/rooms/_shared`, `_voice`, and `_stage`), at 32px in the room header
 (`rooms/show/_header_identity`), and at 16px next to the room name in search
 results (`messages/_message`), each in place of the plain `#` or `→` marker;
 rooms without an icon render exactly as before. Bots show the icon through

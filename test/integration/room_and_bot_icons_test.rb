@@ -16,6 +16,16 @@ class RoomAndBotIconsTest < ActionDispatch::IntegrationTest
     assert_select "##{dom_id(rooms(:hq), :list)} img", count: 0
   end
 
+  test "stage sidebar rows show the room icon when set" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    room.update!(icon_name: "openai")
+
+    get user_sidebar_url
+    assert_response :success
+
+    assert_select "##{dom_id(room, :list)}.stage-room .sidebar-item__icon--custom img.icon-avatar[src='#{icon_src}']"
+  end
+
   test "room header shows the icon when set and the hash otherwise" do
     rooms(:pets).update!(icon_name: "openai")
 
