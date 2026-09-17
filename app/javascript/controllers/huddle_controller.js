@@ -274,6 +274,17 @@ export default class extends Controller {
   #handleRoleEvent(node) {
     if (node?.nodeType !== Node.ELEMENT_NODE) return
 
+    // A host stopping this browser's stream: the server state is already
+    // ended, so this only stops the local share. streamStopped clears the
+    // streaming flag before stopping, which keeps the unpublish below from
+    // DELETEing a stream that is already gone.
+    if (node.dataset.huddleStreamKind === "stream-stopped") {
+      const roomId = Number(node.dataset.huddleStreamRoomId)
+      node.remove()
+      this.streamStopped({ detail: { roomId } })
+      return
+    }
+
     const roomId = Number(node.dataset.huddleRejoinRoomId)
     const stageRole = node.dataset.huddleRejoinStageRole
     node.remove()

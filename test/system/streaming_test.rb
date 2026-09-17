@@ -233,6 +233,66 @@ class StreamingTest < ApplicationSystemTestCase
     assert_no_selector ".stage-live__badge"
   end
 
+  test "a host stop event stops the presenter's share without a DELETE" do
+    room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:jason) ])
+    Stream.create!(room: room, membership: room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    sign_in "david@37signals.com"
+    visit room_path(room)
+    wait_for_cable_connection
+
+    # The presenting browser, mid-stream: the flag set and a stubbed room in
+    # place of the LiveKit connection, like the cancelled-capture test. The
+    # injected node is what a host's stop broadcasts to the persistent
+    # target; the stream stays live here to prove stopping the share issues
+    # no DELETE of its own.
+    page.execute_script(<<~JS, room.id)
+      window.__streamShareCalls = [];
+      window.__streamDeleteSeen = [];
+      const originalFetch = window.fetch;
+      window.fetch = (url, options) => {
+        if (typeof url === "string" && url.endsWith("/stage/stream") && options?.method === "DELETE") {
+          window.__streamDeleteSeen.push(url);
+        }
+        return originalFetch(url, options);
+      };
+      const controller = window.Stimulus
+        .getControllerForElementAndIdentifier(document.getElementById("channel-huddle"), "huddle");
+      controller.roomId = arguments[0];
+      controller.state = "connected";
+      controller.streaming = { roomId: arguments[0], quality: "1080p15" };
+      controller.room = {
+        localParticipant: {
+          isMicrophoneEnabled: true,
+          isScreenShareEnabled: true,
+          isCameraEnabled: false,
+          trackPublications: new Map(),
+          setScreenShareEnabled: (enabled) => {
+            window.__streamShareCalls.push(enabled);
+            return Promise.resolve({});
+          }
+        }
+      };
+      const event = document.createElement("div");
+      event.dataset.huddleStreamRoomId = String(arguments[0]);
+      event.dataset.huddleStreamKind = "stream-stopped";
+      event.hidden = true;
+      document.getElementById("huddle_role_events").appendChild(event);
+    JS
+
+    wait_for_condition("the host stop did not stop the share") do
+      page.evaluate_script("window.__streamShareCalls.length") > 0 &&
+        page.evaluate_script("document.getElementById('huddle_role_events').childElementCount") == 0
+    end
+
+    assert_equal [ false ], page.evaluate_script("window.__streamShareCalls")
+
+    sleep 0.5
+    assert_equal [ false ], page.evaluate_script("window.__streamShareCalls")
+    assert_equal [], page.evaluate_script("window.__streamDeleteSeen")
+    assert_predicate Stream.find_by(room_id: room.id), :live?
+  end
+
   test "viewers see the stream go live and end without reloading" do
     room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:kevin) ])
 

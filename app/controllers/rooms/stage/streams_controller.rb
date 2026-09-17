@@ -43,7 +43,8 @@ class Rooms::Stage::StreamsController < ApplicationController
   # Ends the room's live stream. The presenter or any host or administrator
   # member can stop; anyone else gets 403 even when nothing is live, so the
   # endpoint never confirms stream state to listeners. Stopping an already
-  # ended stream succeeds without doing anything.
+  # ended stream succeeds without doing anything. The actor travels with the
+  # end so a host's stop can notify the presenter's browser.
   def destroy
     stream = @room.live_stream
 
@@ -51,7 +52,7 @@ class Rooms::Stage::StreamsController < ApplicationController
       return render plain: "Only the presenter or a host can stop the stream", status: :forbidden
     end
 
-    stream&.end!
+    stream&.end!(ended_by: Current.user)
     respond_with_panel
   end
 

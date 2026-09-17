@@ -177,6 +177,31 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @room.live_stream
   end
 
+  test "a host stop appends a stream-stopped event for the presenter" do
+    @listener.change_stage_role!("speaker")
+    Stream.create!(room: @room, membership: @listener, user: users(:jason), quality: "1080p15")
+    sign_in :david
+
+    delete room_stage_stream_url(@room)
+
+    event = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+      .find { |broadcast| broadcast["action"] == "append" }
+    assert_equal "huddle_role_events", event["target"]
+    assert_match "data-huddle-stream-room-id=\"#{@room.id}\"", event.to_html
+    assert_match "data-huddle-stream-kind=\"stream-stopped\"", event.to_html
+  end
+
+  test "a presenter stop appends no stream-stopped event" do
+    Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+    sign_in :david
+
+    delete room_stage_stream_url(@room)
+
+    appends = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+      .select { |broadcast| broadcast["action"] == "append" }
+    assert_empty appends
+  end
+
   test "an administrator member stops the stream without being a host" do
     Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
     users(:kevin).update!(role: :administrator)

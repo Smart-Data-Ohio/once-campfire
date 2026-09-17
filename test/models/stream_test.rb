@@ -122,6 +122,41 @@ class StreamTest < ActiveSupport::TestCase
     end
   end
 
+  test "a host stop appends a stream-stopped event to the presenter's persistent target" do
+    @listener.change_stage_role!("speaker")
+    stream = Stream.create!(room: @room, membership: @listener, user: users(:jason), quality: "1080p15")
+
+    stream.end!(ended_by: users(:david))
+
+    event = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+      .find { |broadcast| broadcast["action"] == "append" }
+    assert_equal "huddle_role_events", event["target"]
+    assert_match "data-huddle-stream-room-id=\"#{@room.id}\"", event.to_html
+    assert_match "data-huddle-stream-kind=\"stream-stopped\"", event.to_html
+  end
+
+  test "a presenter stop appends no stream-stopped event" do
+    stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+
+    assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 2 do
+      stream.end!(ended_by: users(:david))
+    end
+
+    appends = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+      .select { |broadcast| broadcast["action"] == "append" }
+    assert_empty appends
+  end
+
+  test "an automatic end appends no stream-stopped event" do
+    stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
+
+    stream.end!
+
+    appends = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+      .select { |broadcast| broadcast["action"] == "append" }
+    assert_empty appends
+  end
+
   test "revoking the presenter's last grant for the room ends the stream" do
     stream = Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
     grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @host)

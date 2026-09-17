@@ -51,12 +51,21 @@ class Stream < ApplicationRecord
     end
   end
 
+  # Who ended the stream, when an explicit stop did. A host or administrator
+  # stopping someone else's stream notifies the presenter's browser through a
+  # stream-stopped event; the presenter's own stop needs none, and neither do
+  # the automatic ends, which already drop the presenter's connection.
+  attr_accessor :ended_by
+
   def live?
     ended_at.nil?
   end
 
-  def end!
-    update!(ended_at: Time.current) if live?
+  def end!(ended_by: nil)
+    return unless live?
+
+    self.ended_by = ended_by
+    update!(ended_at: Time.current)
   end
 
   private
@@ -70,6 +79,24 @@ class Stream < ApplicationRecord
 
     def broadcast_stream_ended
       broadcast_stream_changed
+      broadcast_stream_stopped_event
+    end
+
+    # A host stopping someone else's stream tells the presenter's browser to
+    # stop sharing, through the same persistent target the role rejoin event
+    # uses: the huddle panel observes it on every page. The presenter's own
+    # stop already stopped the share locally, and the automatic ends passed
+    # no actor, so only an explicit stop by someone else sends this.
+    def broadcast_stream_stopped_event
+      return if ended_by.nil? || ended_by.id == user_id
+
+      stage_room = Room.find_by(id: room_id)
+      return unless stage_room.is_a?(Rooms::Stage)
+
+      broadcast_append_to user, :rooms,
+        target: "huddle_role_events",
+        partial: "rooms/stage/stream_event",
+        locals: { room_id: room_id }
     end
 
     # The header badge is identical for every viewer, so it goes to the
