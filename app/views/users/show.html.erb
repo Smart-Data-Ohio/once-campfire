@@ -25,6 +25,14 @@
       <div class="pad-double--inline push--inline push--block-start">
         <% if @user.active? %>
           <%= button_to_direct_room_with @user%>
+          <% if Current.user.administrator? || @user.agent&.owner == Current.user %>
+            <div class="margin-block-start">
+              <%= link_to account_bot_grants_path(@user), class: "btn full-width" do %>
+                <%= image_tag "key.svg", aria: { hidden: "true" }, size: 20 %>
+                Manage capability grants
+              <% end %>
+            </div>
+          <% end %>
         <% else %>
           <div><%= @user.name %> is no longer on this account</div>
         <% end %>
