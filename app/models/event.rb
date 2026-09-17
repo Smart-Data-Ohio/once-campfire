@@ -314,6 +314,8 @@ class Event < ApplicationRecord
     end
 
     def update_series_and_following!(attributes, actor:)
+      time_changed = false
+
       transaction do
         assign_attributes(attributes)
 

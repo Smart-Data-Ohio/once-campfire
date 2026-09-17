@@ -281,6 +281,28 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     assert_no_google_requests
   end
 
+  test "responding going on the first event of a series syncs every occurrence" do
+    connect_google!(@jason)
+    head = @room.events.create!(
+      organizer: @david, title: "Daily sync", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "daily", recurrence_until: Date.current + 2 + 2
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 3, occurrences.size
+    stub_google_event_insert
+
+    assert_enqueued_jobs 3, only: Calendar::SyncEntryJob do
+      head.respond!(@jason, "going")
+    end
+
+    perform_enqueued_jobs only: Calendar::SyncEntryJob
+
+    assert_requested :post, GOOGLE_EVENTS_URL, times: 3
+    google_ids = EventCalendarEntry.where(user: @jason, event: occurrences).pluck(:google_event_id)
+    assert_equal 3, google_ids.size
+    assert_equal 3, google_ids.uniq.size
+  end
+
   test "creating an attendance enqueues a sync" do
     assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ @event.id, users(:kevin).id ]) do
       @event.attendances.create!(user: users(:kevin), response: :going)

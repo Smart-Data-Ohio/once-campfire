@@ -82,6 +82,30 @@ class Event::ReminderDispatcherTest < ActiveSupport::TestCase
     end
   end
 
+  test "consecutive occurrences of a series are each reminded once at their own time" do
+    series = @room.events.create!(
+      organizer: @organizer, title: "Daily sync", starts_at: 10.minutes.from_now, time_zone: "UTC",
+      recurrence_rule: "daily", recurrence_until: Date.current + 1
+    )
+    occurrences = series.series_events.to_a
+    assert_equal 2, occurrences.size
+    occurrences.second.update!(starts_at: 70.minutes.from_now)
+    occurrences.each { |occurrence| occurrence.attendances.create!(user: users(:jason), response: :going) }
+
+    Event::ReminderDispatcher.dispatch_due!
+
+    assert_not_nil occurrences.first.reload.reminded_at
+    assert_nil occurrences.second.reload.reminded_at
+    assert_equal "event_reminder", ActivityItem.find_by!(user: users(:jason), source: occurrences.first).event_type
+
+    travel_to 1.hour.from_now do
+      Event::ReminderDispatcher.dispatch_due!
+    end
+
+    assert_not_nil occurrences.second.reload.reminded_at
+    assert_equal "event_reminder", ActivityItem.find_by!(user: users(:jason), source: occurrences.second).event_type
+  end
+
   test "one failing event does not stop the others" do
     other = @room.events.create!(
       organizer: @organizer, title: "Other standup", starts_at: 10.minutes.from_now, time_zone: "UTC"
