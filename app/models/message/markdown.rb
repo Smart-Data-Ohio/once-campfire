@@ -49,7 +49,8 @@ class Message::Markdown
     #
     # Icon sources are rewritten from the :name: in their alt text, so a stored
     # body keeps rendering after a digest change or an asset host move. Every
-    # image is checked: mention avatars are allowlisted by route path and
+    # image is checked: mention avatars are allowlisted by route path, an icon
+    # whose name is no longer known falls back to its literal :name: text, and
     # anything else is dropped.
     def sanitize_presentation(html)
       safe = sanitize(html, tags: PRESENTATION_TAGS, attributes: PRESENTATION_ATTRIBUTES)
@@ -57,8 +58,10 @@ class Message::Markdown
 
       fragment = Nokogiri::HTML5.fragment(safe)
       fragment.css("img").each do |img|
-        if (brand = brand_from_alt(img["alt"])) && (url = Icons.brand_image_urls[brand.name])
+        if (icon = icon_from_alt(img["alt"])) && (url = Icons.image_url_for(icon))
           img["src"] = url
+        elsif icon_alt?(img["alt"])
+          img.replace(Nokogiri::XML::Text.new(img["alt"].to_s, fragment.document))
         elsif !avatar_src?(img["src"])
           img.remove
         end
@@ -67,13 +70,17 @@ class Message::Markdown
     end
 
     private
-      # The icon name carried in alt text, e.g. ":openai:". Aliases resolve to
-      # their brand; anything else is not an icon.
-      def brand_from_alt(alt)
+      # The icon record carried in alt text, e.g. ":openai:". Brand aliases
+      # resolve to their brand; emoji and unknown names are not icons.
+      def icon_from_alt(alt)
         name = alt.to_s.match(ICON_ALT_PATTERN)&.[](:name)
         icon = name && Icons.find(name)
 
-        icon if icon.is_a?(Icons::Brand)
+        icon if icon.is_a?(Icons::Brand) || icon.is_a?(Icons::Custom)
+      end
+
+      def icon_alt?(alt)
+        alt.to_s.match?(ICON_ALT_PATTERN)
       end
 
       # A same-origin avatar path, or the same path served from the configured
@@ -111,12 +118,16 @@ class Message::Markdown
       def plain_text_from(node)
         return node.text if node.text?
         return "\n" if node.name == "br"
-        return node["alt"].to_s if node.name == "img" && (brand_from_alt(node["alt"]) || node["class"].to_s.split.include?("icon--brand"))
+        return node["alt"].to_s if node.name == "img" && (icon_from_alt(node["alt"]) || icon_class?(node["class"]))
 
         text = node.children.map { |child| plain_text_from(child) }.join
         return "#{text}\t" if CELL_TAGS.include?(node.name)
 
         BLOCK_TAGS.include?(node.name) ? "#{text}\n\n" : text
+      end
+
+      def icon_class?(classes)
+        classes.to_s.split.intersect?(%w[ icon--brand icon--custom ])
       end
   end
 
@@ -276,17 +287,17 @@ class Message::Markdown
 
     def icon_node(fragment, name)
       case (icon = Icons.find(name))
-      when Icons::Brand
-        if (url = Icons.brand_image_urls[icon.name])
+      when Icons::Brand, Icons::Custom
+        if (url = Icons.image_url_for(icon))
           Nokogiri::XML::Node.new("img", fragment.document).tap do |img|
-            img["class"] = "icon icon--brand"
+            img["class"] = icon.brand? ? "icon icon--brand" : "icon icon--custom"
             img["src"] = url
             img["alt"] = ":#{icon.name}:"
             img["title"] = icon.title
             img["draggable"] = "false"
           end
         else
-          # The asset is missing (see Icons.brand_image_urls); leave the
+          # The asset is missing (see Icons.image_url_for); leave the
           # shortcode literal rather than emitting a broken image.
           Nokogiri::XML::Text.new(":#{name}:", fragment.document)
         end

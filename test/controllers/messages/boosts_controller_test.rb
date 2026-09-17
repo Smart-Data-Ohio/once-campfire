@@ -60,6 +60,25 @@ class Messages::BoostsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ":openai:", icon["alt"]
   end
 
+  test "create accepts a workspace icon shortcode and renders its image" do
+    create_workspace_icon(name: "acme", title: "Acme Corp")
+
+    assert_difference -> { @message.boosts.count }, 1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":acme:" } }
+      assert_redirected_to message_boosts_url(@message)
+    end
+
+    assert_equal ":acme:", @message.boosts.last.content
+
+    get message_boosts_url(@message)
+
+    assert_response :success
+    icon = Nokogiri::HTML5.fragment(response.body).at_css("img.icon--custom")
+    assert icon, "expected a custom icon image in #{response.body}"
+    assert_equal "/icons/acme", icon["src"]
+    assert_equal ":acme:", icon["alt"]
+  end
+
   test "create stores an unknown shortcode as literal text" do
     assert_turbo_stream_broadcasts [ @message.room, :messages ], count: 1 do
       assert_difference -> { @message.boosts.count }, 1 do

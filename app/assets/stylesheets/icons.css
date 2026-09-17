@@ -8,6 +8,15 @@
   vertical-align: -0.25em;
 }
 
+/* Administrator-uploaded workspace icons (see docs/icons.md). They are
+   full-colour, so unlike brand icons they are never inverted. */
+.icon--custom {
+  block-size: 1.2em;
+  display: inline;
+  inline-size: auto;
+  vertical-align: -0.25em;
+}
+
 /* Autocomplete suggestion rows. */
 
 .autocomplete__icon {
@@ -19,7 +28,8 @@
   justify-content: center;
 }
 
-.autocomplete__icon .icon--brand {
+.autocomplete__icon .icon--brand,
+.autocomplete__icon .icon--custom {
   block-size: 1.4em;
   inline-size: auto;
   vertical-align: baseline;
