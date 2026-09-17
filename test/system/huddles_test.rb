@@ -1304,9 +1304,12 @@ class HuddlesTest < ApplicationSystemTestCase
 
     def microphone_analyser_restarted?
       page.evaluate_script(<<~JS)
-        window.Stimulus
-          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
-          .microphoneMeter.analyser !== window.huddleTestMeterAnalyser
+        (() => {
+          const analyser = window.Stimulus
+            .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+            .microphoneMeter.analyser
+          return Boolean(analyser) && analyser !== window.huddleTestMeterAnalyser
+        })()
       JS
     end
 
