@@ -647,6 +647,35 @@ class HuddlesTest < ApplicationSystemTestCase
       "leaving the huddle left the meter AudioContext alive"
   end
 
+  test "the microphone meter restarts after a full reconnect" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    wait_for_condition("the microphone meter never rose") { microphone_meter_level > 0 }
+    track_id_before = microphone_track_id
+    remember_microphone_analyser
+
+    peer_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+    force_full_reconnect
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_new_active_media_received "audio", after: peer_connection_count
+
+    # The reconnect republishes the microphone onto a new track. The analyser
+    # is bound to the old one, so the meter has to restart on the new track.
+    assert_not_equal track_id_before, microphone_track_id,
+      "the full reconnect did not restart the microphone track"
+    wait_for_condition("the microphone meter was not restarted after the reconnect") do
+      microphone_analyser_restarted?
+    end
+    # The meter keeps showing live input on the new track. Headless Chrome's
+    # fake microphone keeps feeding an ended track's analyser, so the level
+    # alone cannot prove the restart here; the analyser swap above does.
+    wait_for_condition("the microphone meter never came back after the reconnect") do
+      microphone_meter_level > 0
+    end
+    using_session("Kevin") { assert_media_received "audio" }
+  end
+
   test "the device check appears for a first join and is skipped once permissions were granted" do
     prepare_browser
     sign_in "jz@37signals.com"
@@ -1090,6 +1119,32 @@ class HuddlesTest < ApplicationSystemTestCase
         window.Stimulus
           .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
           ?.microphoneMeter?.running ?? false
+      JS
+    end
+
+    # The raw capture track, not the noise suppressor's processed output: a
+    # republish replaces this one.
+    def microphone_track_id
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.localParticipant?.getTrackPublication('microphone')?.audioTrack?._mediaStreamTrack?.id ?? null
+      JS
+    end
+
+    def remember_microphone_analyser
+      page.execute_script(<<~JS)
+        window.huddleTestMeterAnalyser = window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          .microphoneMeter.analyser;
+      JS
+    end
+
+    def microphone_analyser_restarted?
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          .microphoneMeter.analyser !== window.huddleTestMeterAnalyser
       JS
     end
 

@@ -1062,6 +1062,10 @@ export default class extends Controller {
         this.#renderRoster()
         this.#updateMediaControls()
         this.#updateAudioPlaybackControl()
+        // A full reconnect republishes every track, so the microphone
+        // analyser is bound to a dead track until the meter restarts on the
+        // new one. The restart is idempotent and stays stopped while muted.
+        this.#startMicrophoneMeter()
       }
     })
     on(RoomEvent.Disconnected, (reason) => this.#unexpectedDisconnect(room, reason))
