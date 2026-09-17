@@ -14,12 +14,12 @@ class Rooms::EventsController < ApplicationController
     representative_ids = remaining_by_series.keys.filter_map do |series_id|
       upcoming_scope.where(series_id:).soonest_first.pick(:id)
     end
-    representatives = @room.events.where(id: representative_ids).includes(:organizer, :attendances).to_a
+    representatives = @room.events.where(id: representative_ids).includes(:organizer, :attendances, :venue).to_a
     @series_counts = representatives.to_h { |event| [ event.id, remaining_by_series.fetch(event.series_id) ] }
-    singles = @room.events.upcoming.where(series_id: nil).soonest_first.includes(:organizer, :attendances).to_a
+    singles = @room.events.upcoming.where(series_id: nil).soonest_first.includes(:organizer, :attendances, :venue).to_a
     @upcoming_events = (singles + representatives).sort_by { |event| [ event.starts_at, event.id ] }
-    @past_events = @room.events.past.ordered.includes(:organizer, :attendances)
-    @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances)
+    @past_events = @room.events.past.ordered.includes(:organizer, :attendances, :venue)
+    @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances, :venue)
   end
 
   def show
@@ -78,7 +78,7 @@ class Rooms::EventsController < ApplicationController
     end
 
     def event_attributes
-      permitted = params.require(:event).permit(:title, :description, :starts_at, :ends_at, :time_zone, :recurrence_rule, :recurrence_until)
+      permitted = params.require(:event).permit(:title, :description, :starts_at, :ends_at, :time_zone, :recurrence_rule, :recurrence_until, :venue_room_id)
       # The zone is fixed when the event is scheduled. Edits keep reading the
       # posted times in that zone, so an editor elsewhere cannot move the event
       # by saving the form untouched.

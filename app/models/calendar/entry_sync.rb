@@ -6,7 +6,7 @@ module Calendar
   # room member. Failures are recorded on the entry for the next change
   # to retry; nothing here raises for Google or network problems.
   class EntrySync
-    SYNCED_ATTRIBUTES = (Event::TIME_CHANGE_ATTRIBUTES + %w[ title description ]).freeze
+    SYNCED_ATTRIBUTES = (Event::TIME_CHANGE_ATTRIBUTES + %w[ title description venue_room_id ]).freeze
     GOOGLE_EVENT_ID_PREFIX = "campfire"
     BASE32HEX_ALPHABET = "0123456789abcdefghijklmnopqrstuv"
 
@@ -127,11 +127,11 @@ module Calendar
 
         {
           "summary" => @event.title,
-          "description" => [ @event.description.presence, "From Campfire: #{event_url}" ].compact.join("\n\n"),
+          "description" => [ @event.description.presence, "From Campfire: #{event_url}", join_line ].compact.join("\n\n"),
           "start" => { "dateTime" => starts_at.iso8601, "timeZone" => @event.time_zone },
           "end" => { "dateTime" => ends_at.iso8601, "timeZone" => @event.time_zone },
           "reminders" => { "useDefault" => true }
-        }
+        }.merge(location_line)
       end
 
       def payload_with_id(entry)
@@ -144,6 +144,23 @@ module Calendar
           helpers.room_event_url(@event.room, @event, host:)
         else
           helpers.room_event_path(@event.room, @event)
+        end
+      end
+
+      def join_line
+        "Join: #{venue_url}" if @event.venue.present?
+      end
+
+      def location_line
+        @event.venue.present? ? { "location" => @event.venue.name } : {}
+      end
+
+      def venue_url
+        helpers = Rails.application.routes.url_helpers
+        if (host = Rails.application.routes.default_url_options[:host].presence)
+          helpers.room_url(@event.venue, host:)
+        else
+          helpers.room_path(@event.venue)
         end
       end
 

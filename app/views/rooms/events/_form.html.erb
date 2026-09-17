@@ -24,6 +24,13 @@
     <%= form.text_area :description, class: "input", rows: 4 %>
   </div>
 
+  <div>
+    <%= form.label :venue_room_id, "Where" %>
+    <%= form.select :venue_room_id, event_venue_options(form.object),
+          { include_blank: "No channel" },
+          class: "input" %>
+  </div>
+
   <div class="room-events__time-fields">
     <div>
       <%= form.label :starts_at, "Starts" %>

@@ -11,9 +11,12 @@ class Event::ReminderPusher
 
   private
     def build_payload
+      body = "Starts in 15 minutes: #{event.title}"
+      body += " in #{event.venue.name}" if event.venue.present?
+
       {
         title: event.room.direct? ? event.organizer.name : event.room.name,
-        body: "Starts in 15 minutes: #{event.title}",
+        body:,
         path: Rails.application.routes.url_helpers.room_event_path(event.room, event)
       }
     end
