@@ -85,6 +85,42 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "issue_comment on a referenced PR enqueues exactly one refresh" do
+    body = issue_comment_payload(number: 123).to_json
+
+    assert_enqueued_jobs 1, only: Github::FetchPullRequestJob do
+      post github_webhooks_url, params: body, headers: webhook_headers(event: "issue_comment", body: body)
+      assert_response :success
+    end
+  end
+
+  test "redelivered issue_comment events enqueue nothing" do
+    body = issue_comment_payload(number: 123).to_json
+    headers = webhook_headers(event: "issue_comment", body: body)
+
+    post github_webhooks_url, params: body, headers: headers
+    assert_response :success
+
+    assert_no_enqueued_jobs only: Github::FetchPullRequestJob do
+      post github_webhooks_url, params: body, headers: headers
+      assert_response :success
+    end
+  end
+
+  test "issue_comment on plain issues and unreferenced PRs is ignored" do
+    assert_no_enqueued_jobs only: Github::FetchPullRequestJob do
+      body = issue_comment_payload(number: 123, pull_request: false).to_json
+      post github_webhooks_url, params: body, headers: webhook_headers(event: "issue_comment", body: body)
+      assert_response :success
+
+      body = issue_comment_payload(number: 999).to_json
+      post github_webhooks_url, params: body, headers: webhook_headers(event: "issue_comment", body: body)
+      assert_response :success
+    end
+
+    assert_nil Github::PullRequest.find_by(number: 999)
+  end
+
   test "events for unreferenced PRs are ignored" do
     body = pull_request_payload(number: 999).to_json
 
@@ -235,6 +271,17 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
           "closed_at" => "2026-09-17T12:00:00Z",
           "base" => { "repo" => { "full_name" => "rails/rails" } }
         }
+      }
+    end
+
+    def issue_comment_payload(number:, pull_request: true)
+      issue = { "number" => number }
+      issue["pull_request"] = { "url" => "https://api.github.com/repos/rails/rails/pulls/#{number}" } if pull_request
+      {
+        "action" => "created",
+        "repository" => { "full_name" => "rails/rails" },
+        "issue" => issue,
+        "comment" => { "id" => 456, "body" => "Nice work" }
       }
     end
 

@@ -2,9 +2,9 @@
 # signature below, and there is no session, so request forgery protection
 # does not apply and is not loaded rather than skipped.
 class Github::WebhooksController < ActionController::API
-  # Handles pull_request, pull_request_review, check_suite, check_run, and
-  # status events for referenced PRs; everything else is acknowledged and
-  # ignored (see #referenced_pull_requests).
+  # Handles pull_request, pull_request_review, issue_comment, check_suite,
+  # check_run, and status events for referenced PRs; everything else is
+  # acknowledged and ignored (see #referenced_pull_requests).
   def create
     secret = ENV["GITHUB_WEBHOOK_SECRET"].presence
     return head(:service_unavailable) unless secret
@@ -61,6 +61,8 @@ class Github::WebhooksController < ActionController::API
         case event
         when "pull_request", "pull_request_review"
           pr_numbers_from_pull_request_payload(payload)
+        when "issue_comment"
+          pr_numbers_from_issue_comment_payload(payload)
         when "check_suite"
           pr_numbers_from_check_payload(payload["check_suite"], payload)
         when "check_run"
@@ -87,6 +89,19 @@ class Github::WebhooksController < ActionController::API
       return [] unless full_name && number
 
       [ owner_and_repo(full_name) + [ number ] ]
+    end
+
+    # issue_comment deliveries carry the commented issue; only ones that
+    # are pull requests (issue_number == PR number, pull_request key
+    # present) refresh a card. Plain issue comments resolve to nothing.
+    def pr_numbers_from_issue_comment_payload(payload)
+      issue = payload["issue"]
+      return [] unless issue && issue["number"] && issue.key?("pull_request")
+
+      full_name = payload.dig("repository", "full_name")
+      return [] unless full_name
+
+      [ owner_and_repo(full_name) + [ issue["number"] ] ]
     end
 
     def pr_numbers_from_check_payload(check, payload)
