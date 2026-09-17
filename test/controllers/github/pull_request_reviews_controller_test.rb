@@ -108,6 +108,20 @@ class Github::PullRequestReviewsControllerTest < ActionDispatch::IntegrationTest
     assert_requested stub, times: 1
   end
 
+  test "a failed review keeps the body for retry" do
+    link_github!(users(:david))
+    stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/reviews")
+      .to_return(status: 422, body: { message: "Validation failed" }.to_json)
+
+    post room_github_pull_request_reviews_url(@room),
+      params: { pull_request_id: @pull_request.id, event: "REQUEST_CHANGES", body: "Fix the typo" }
+
+    assert_response :unprocessable_content
+    assert_select "form[action=?]", room_github_pull_request_reviews_path(@room) do
+      assert_select "textarea[name=body]", text: "Fix the typo"
+    end
+  end
+
   test "a GitHub 401 disconnects the account and shows the reconnect prompt" do
     account = link_github!(users(:david))
     stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/reviews")
