@@ -1,6 +1,6 @@
 <% content_for :nav do %>
   <div class="room-header__identity room--current min-width">
-    <span class="room-header__kind"><%= room.direct? ? "Direct message" : "Channel" %></span>
+    <span class="room-header__kind"><%= room_kind_label(room) %></span>
     <h1 class="room__contents overflow-ellipsis">
       <% if room.direct? %>
         <span class="for-screen-reader">Ping with</span>
@@ -39,6 +39,10 @@
       <% end %>
     <% end %>
 
+    <% if room.voice? %>
+      <%= render "rooms/huddles/participants", room: room, placement: :header %>
+    <% end %>
+
     <%= link_to room_events_path(room), class: "btn room-header__action", aria: { label: "Show events" }, title: "Show events" do %>
       <%= image_tag "calendar.svg", size: 20, aria: { hidden: "true" } %>
       <span class="room-header__action-label">Events</span>
@@ -56,15 +60,18 @@
         <span data-huddle-share-indicator-target="label">Screen shared</span>
       <% end %>
 
-      <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: "Join huddle" },
+      <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: room.voice? ? "Join voice" : "Join huddle" },
             data: {
               controller: "huddle-launcher",
-              action: "huddle-launcher#join",
+              action: room.voice? ? "huddle-launcher#toggle" : "huddle-launcher#join",
               huddle_launcher_room_id_value: room.id,
-              huddle_launcher_room_name_value: room_display_name(room)
+              huddle_launcher_room_name_value: room_display_name(room),
+              huddle_launcher_join_label_value: room.voice? ? "Join voice" : "Join huddle",
+              huddle_launcher_active_label_value: room.voice? ? "Leave voice" : "In huddle",
+              huddle_launcher_toggle_value: room.voice?
             } do %>
         <%= image_tag "headphones.svg", size: 20, aria: { hidden: "true" } %>
-        <span data-huddle-launcher-target="label">Join huddle</span>
+        <span data-huddle-launcher-target="label"><%= room.voice? ? "Join voice" : "Join huddle" %></span>
       <% end %>
     <% end %>
 

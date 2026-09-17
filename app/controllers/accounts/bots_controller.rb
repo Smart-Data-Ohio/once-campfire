@@ -1,6 +1,8 @@
 class Accounts::BotsController < ApplicationController
-  before_action :ensure_can_administer
+  before_action :ensure_can_administer, only: %i[ index new create destroy ]
   before_action :set_bot, only: %i[ edit update destroy ]
+  before_action :ensure_can_manage_bot, only: %i[ edit update ]
+  before_action :set_agent, only: %i[ edit update ]
 
   def index
     @bots = User.active_bots.ordered.includes(agent: :owner)
@@ -20,8 +22,15 @@ class Accounts::BotsController < ApplicationController
   end
 
   def update
-    @bot.update_bot! bot_params
-    redirect_to account_bots_url
+    @agent&.assign_attributes(agent_params)
+
+    if @agent&.invalid?
+      render :edit, status: :unprocessable_entity
+    else
+      @bot.update_bot! bot_params
+      @agent&.save!
+      redirect_to account_bots_url
+    end
   end
 
   def destroy
@@ -34,7 +43,21 @@ class Accounts::BotsController < ApplicationController
       @bot = User.active_bots.find(params[:id])
     end
 
+    def ensure_can_manage_bot
+      head :forbidden unless Current.user.administrator? || @bot.agent&.owner == Current.user
+    end
+
+    # A legacy bot without an agent row stays that way: reading or editing
+    # its page must not silently convert it into an agent.
+    def set_agent
+      @agent = @bot.agent
+    end
+
     def bot_params
       params.require(:user).permit(:name, :avatar, :webhook_url)
+    end
+
+    def agent_params
+      params.permit(agent: %i[ provider runtime description ])[:agent] || {}
     end
 end

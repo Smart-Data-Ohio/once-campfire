@@ -87,4 +87,12 @@ class MembershipTest < ActiveSupport::TestCase
 
     @membership.destroy
   end
+
+  test "a failed removal broadcast still resets the user's connections" do
+    @membership.stubs(:broadcast_remove_to).raises(RuntimeError, "cable down")
+    @membership.user.expects :reset_remote_connections
+
+    assert_nothing_raised { @membership.destroy }
+    assert @membership.destroyed?
+  end
 end

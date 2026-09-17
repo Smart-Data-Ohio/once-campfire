@@ -14,7 +14,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 
 - Responsive channel workspace, light/dark themes, member presence, and Markdown composition.
 - Message context menus, quick/grouped reactions, normal-composer editing, replies with notification choice, forwarding, and channel threads.
-- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels and Stage channels remain future work.
+- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels with visible participants, join/leave controls, and text chat are live. Stage channels remain future work.
 - Personal activity inbox and human-owned work threads with status, change history, and a workspace-wide work list.
 - Open Roles feed and existing bot API. These do not yet provide the agent identity model described below.
 - Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md), now automated end to end by the image-publish and deploy workflows in [deploy/gcp/README.md](deploy/gcp/README.md).
@@ -25,7 +25,7 @@ The first activity inbox, human-owned work threads, one-to-one DM Huddles, and n
 
 The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events, plus native event invitations, updates, cancellations, and reminders; agent and GitHub sources follow their integrations.
 
-The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`read_messages`, `post_messages`, and `react` enforced; the rest stored for later) with immediate cascade revocation, and event delivery with an activity ledger, polling, rate limits, and loop prevention. See [AI agents](docs/agents.md). Approvals follow separately.
+The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`read_messages`, `post_messages`, and `react` enforced; the rest stored for later) with immediate cascade revocation, and event delivery with an activity ledger, polling, rate limits, and loop prevention, plus agent profiles, an agent directory, and self-reported live status. See [AI agents](docs/agents.md). Approvals follow separately.
 
 GitHub's first read-only slice is live: messages linking a pull request URL render a PR card (repository, title, author, state, branches, review decision, checks, updated time) that refreshes via background fetch and webhook with redelivery deduplication, and subscribed rooms now receive selected PR events as GitHub bot messages with review requests in the linked reviewer's inbox. Cards use the workspace-level token and are visible to everyone in the room the link was posted in; per-user GitHub identity and write actions remain planned. See [GitHub pull request cards](docs/github.md).
 
@@ -43,7 +43,7 @@ Done when a contributor can clone the default branch, run the app and checks, an
 
 ### 2. Channel types and richer real-time spaces
 
-The one-to-one DM audio/screen-sharing/camera slice is live, including invitations, ringing, and missed-call notifications.
+The one-to-one DM audio/screen-sharing/camera slice is live, including invitations, ringing, and missed-call notifications. The persistent voice-channel slice is live as well: discoverable voice channels with visible participants, join/leave controls, text chat, and enforced access removal (see [voice channels](docs/voice-channels.md)).
 
 - One-to-one Huddles directly inside a DM, with a discoverable start/join control, a way to notify the other participant, audio, screen sharing, and camera video, reconnect, and leave/end behavior. Only the two DM participants can access the call or its activity; invitation, missed-call, and notification behavior is defined in the feature design.
 - Persistent voice channels with visible participants, join/leave controls, and reconnect behavior.
@@ -52,9 +52,9 @@ The one-to-one DM audio/screen-sharing/camera slice is live, including invitatio
 - Streaming with explicit presenter/viewer behavior and quality controls, building on existing screen sharing where practical.
 - Agent message boards/channels for ongoing work, readable results, and human participation.
 
-Follow the live one-to-one DM Huddles slice with one persistent voice-channel experience before Stage and streaming expansion. Reuse the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
+The live one-to-one DM Huddles slice was followed by one persistent voice-channel experience before Stage and streaming expansion. It reuses the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
 
-Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. The next slice adds a discoverable persistent voice channel and its text chat, with access removal enforced throughout.
+Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. Done for the next slice when members find a persistent voice channel, see who is in it, join and leave with working text chat, and lose the call along with the room when removed.
 
 ### 3. AI agents as first-class participants
 

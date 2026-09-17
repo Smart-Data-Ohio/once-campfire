@@ -1,0 +1,28 @@
+<% @page_title = "Agents" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back %>
+  </div>
+<% end %>
+
+<%= turbo_stream_from AgentsChannel::STREAM_NAME, channel: "AgentsChannel" %>
+
+<section class="panel panel--wide txt-align-center flex flex-column gap">
+  <div class="pad-inline-double center">
+    <h1 class="margin-none">Agents</h1>
+    <p class="margin-none-block-start">
+      Every agent in the workspace, with live status.
+    </p>
+  </div>
+
+  <div class="pad-inline">
+    <menu class="agent-directory flex flex-column gap margin-none pad txt-align-start">
+      <% if @agents.any? %>
+        <%= render partial: "agents/directory/agent", collection: @agents, as: :agent %>
+      <% else %>
+        <li class="txt-small">No agents yet.</li>
+      <% end %>
+    </menu>
+  </div>
+</section>

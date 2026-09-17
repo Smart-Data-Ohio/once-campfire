@@ -36,6 +36,10 @@
           <%= image_tag "check.svg", size: 20, aria: { hidden: "true" }, class: "colorize--black" %>
           <span class="sidebar-item__label">Work threads</span>
         <% end %>
+        <%= link_to agents_path, class: "sidebar-item btn", data: { workspace_destination: agents_path } do %>
+          <%= image_tag "bot.svg", size: 20, aria: { hidden: "true" }, class: "colorize--black" %>
+          <span class="sidebar-item__label">Agents</span>
+        <% end %>
       </nav>
 
       <section class="sidebar-section sidebar-section--channels rooms" aria-labelledby="channels-heading">
@@ -51,6 +55,23 @@
         <div id="shared_rooms" class="sidebar-list" data-controller="sorted-list">
           <% @other_memberships.each do |membership| %>
             <%= render "users/sidebars/rooms/shared", room: membership.room, unread: membership.unread? %>
+          <% end %>
+        </div>
+      </section>
+
+      <section class="sidebar-section sidebar-section--voice rooms" aria-labelledby="voice-heading">
+        <header class="sidebar-section__header">
+          <h2 id="voice-heading">Voice</h2>
+          <% if Current.user.administrator? || !Current.account.settings.restrict_room_creation_to_administrators? %>
+            <%= link_to new_rooms_voice_path, class: "btn sidebar-section__add", aria: { label: "New voice channel" }, title: "New voice channel" do %>
+              <%= image_tag "add.svg", size: 16, aria: { hidden: "true" } %>
+            <% end %>
+          <% end %>
+        </header>
+
+        <div id="voice_rooms" class="sidebar-list" data-controller="sorted-list">
+          <% @voice_memberships.each do |membership| %>
+            <%= render "users/sidebars/rooms/voice", room: membership.room, unread: membership.unread? %>
           <% end %>
         </div>
       </section>

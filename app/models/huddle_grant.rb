@@ -19,6 +19,8 @@ class HuddleGrant < ApplicationRecord
   validates :identity, :room_name, presence: true
   validates :identity, uniqueness: true
 
+  after_update_commit :broadcast_voice_presence, if: :saved_change_to_revoked_at?
+
   class << self
     def issue!(session:, membership:)
       attempts = 0
@@ -84,6 +86,13 @@ class HuddleGrant < ApplicationRecord
       end
     end
 
+    # Who is currently in the room's huddle: distinct users with an active
+    # grant the gateway has seen within the in-call window, ordered by name.
+    def participants_for(room)
+      active.in_call.where(room_id: room.id).includes(:user).filter_map(&:user).uniq
+        .sort_by { |user| user.name.downcase }
+    end
+
     private
       def revoke_scope!(scope, create_cleanup: true)
         scope.find_each { |grant| grant.revoke!(create_cleanup: create_cleanup) }
@@ -130,7 +139,9 @@ class HuddleGrant < ApplicationRecord
   def record_seen!
     return if last_seen_at.present? && last_seen_at > SEEN_TOUCH_INTERVAL.ago
 
+    first_seen = !in_call?
     update_columns(last_seen_at: Time.current)
+    broadcast_voice_presence if first_seen
   end
 
   # Post-commit work for every issuance, created or reused: obtaining a grant
@@ -139,6 +150,7 @@ class HuddleGrant < ApplicationRecord
   def after_issued!
     clear_open_invitations!
     invite_direct_participant
+    broadcast_voice_presence
   end
 
   def authorization_payload
@@ -163,7 +175,30 @@ class HuddleGrant < ApplicationRecord
     # (created or reused) drives the ring and the dedup window guards it: any
     # invitation or missed item from the last two minutes, handled or not,
     # keeps reconnects and rejoins silent.
+    # Refresh the voice presence stacks in the room members' sidebars and in
+    # the room header. Non-voice rooms have no stacks, so they stay silent.
+    def broadcast_voice_presence
+      voice_room = Room.find_by(id: room_id)
+      return unless voice_room.is_a?(Rooms::Voice)
+
+      voice_room.memberships.includes(:user).find_each do |membership|
+        broadcast_replace_to membership.user, :rooms,
+          target: [ voice_room, :sidebar_voice_participants ],
+          partial: "rooms/huddles/participants",
+          locals: { room: voice_room, placement: :sidebar }
+      end
+
+      broadcast_replace_to voice_room, :messages,
+        target: [ voice_room, :header_voice_participants ],
+        partial: "rooms/huddles/participants",
+        locals: { room: voice_room, placement: :header }
+    end
+
     def invite_direct_participant
+      # Voice channels are standing calls that members join at will: nobody is
+      # ever invited, rung, or marked as missing the call.
+      return if room.is_a?(Rooms::Voice)
+
       recipient = direct_huddle_recipient
       return unless recipient
       return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?

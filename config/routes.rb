@@ -63,7 +63,9 @@ Rails.application.routes.draw do
     resources :icons, only: :index
   end
 
+  get "agents", to: "agents/directory#index"
   get "agents/me", to: "agents#me", defaults: { format: :json }
+  patch "agents/me", to: "agents#update", defaults: { format: :json }
   get "agents/events", to: "agents/events#index", defaults: { format: :json }
   post "agents/events/:id/ack", to: "agents/events#ack", defaults: { format: :json }, as: :ack_agents_event
   get "agents/:id/events", to: "agents/events#ledger", as: :agent_events
@@ -110,7 +112,9 @@ Rails.application.routes.draw do
         patch :cancel, on: :member
         resource :attendance, only: :update, controller: "events/attendances"
       end
-      resource :huddle, only: %i[ show create ]
+      resource :huddle, only: %i[ show create ] do
+        get :participants
+      end
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
@@ -124,6 +128,7 @@ Rails.application.routes.draw do
     resources :opens
     resources :closeds
     resources :directs
+    resources :voices
   end
 
   resources :messages do

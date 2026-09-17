@@ -64,6 +64,16 @@ module RoomsHelper
     end
   end
 
+  def room_kind_label(room)
+    if room.direct?
+      "Direct message"
+    elsif room.voice?
+      "Voice channel"
+    else
+      "Channel"
+    end
+  end
+
   private
     def composer_data_options(room, thread: nil)
       message_area_id = thread ? dom_id(thread, :message_area) : "message-area"
