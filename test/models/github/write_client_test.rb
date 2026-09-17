@@ -80,20 +80,24 @@ class Github::WriteClientTest < ActiveSupport::TestCase
   test "network errors raise Error without logging the token" do
     stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments").to_timeout
 
-    error = assert_raises(Github::WriteClient::Error) do
-      with_captured_logs { @client.create_issue_comment(@pull_request, body: "hi") }
+    log = StringIO.new
+    with_swapped_logger(log) do
+      error = assert_raises(Github::WriteClient::Error) do
+        @client.create_issue_comment(@pull_request, body: "hi")
+      end
+      assert_match(/Could not reach GitHub/, error.message)
     end
 
-    assert_match(/Could not reach GitHub/, error.message)
+    assert_includes log.string, "Github::WriteClient request failed"
+    assert_not_includes log.string, "user-token-123"
   end
 
   private
-    def with_captured_logs(&block)
-      log = StringIO.new
+    def with_swapped_logger(io)
+      capture = ActiveSupport::TaggedLogging.new(Logger.new(io))
       original_logger = Rails.logger
-      Rails.logger = Logger.new(log)
-      block.call
-      assert_no_includes log.string, "user-token-123"
+      Rails.logger = capture
+      yield
     ensure
       Rails.logger = original_logger
     end

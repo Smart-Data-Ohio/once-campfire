@@ -180,6 +180,7 @@ Rails.application.routes.draw do
 
   namespace :github do
     post "webhooks", to: "webhooks#create"
+    resource :connection, only: %i[ create destroy ], controller: "connections"
   end
 
   namespace :google do
