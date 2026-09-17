@@ -17,13 +17,13 @@ class Github::PullRequestTest < ActiveSupport::TestCase
   end
 
   test "repository names are stored downcased so links in any case share one row" do
-    first = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Once-Campfire", number: 5)
+    first = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Smartfire", number: 5)
     assert_equal "smart-data-ohio", first.owner
-    assert_equal "once-campfire", first.repo
+    assert_equal "smartfire", first.repo
 
     message = @room.messages.create!(
       creator: @creator,
-      markdown_source: "see https://github.com/smart-data-ohio/once-campfire/pull/5",
+      markdown_source: "see https://github.com/smart-data-ohio/smartfire/pull/5",
       client_message_id: "pr-case-reuse"
     )
 
@@ -32,21 +32,21 @@ class Github::PullRequestTest < ActiveSupport::TestCase
   end
 
   test "display_full_name keeps the fetched repository name case" do
-    pull_request = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Once-Campfire", number: 5)
-    assert_equal "smart-data-ohio/once-campfire", pull_request.display_full_name
+    pull_request = Github::PullRequest.for_reference(owner: "Smart-Data-Ohio", repo: "Smartfire", number: 5)
+    assert_equal "smart-data-ohio/smartfire", pull_request.display_full_name
 
-    pull_request.update!(html_url: "https://github.com/Smart-Data-Ohio/Once-Campfire/pull/5")
-    assert_equal "Smart-Data-Ohio/Once-Campfire", pull_request.display_full_name
+    pull_request.update!(html_url: "https://github.com/Smart-Data-Ohio/Smartfire/pull/5")
+    assert_equal "Smart-Data-Ohio/Smartfire", pull_request.display_full_name
 
-    pull_request.update!(payload: { "base" => { "repo" => { "full_name" => "Smart-Data-Ohio/Once-Campfire" } } })
-    assert_equal "Smart-Data-Ohio/Once-Campfire", pull_request.display_full_name
+    pull_request.update!(payload: { "base" => { "repo" => { "full_name" => "Smart-Data-Ohio/Smartfire" } } })
+    assert_equal "Smart-Data-Ohio/Smartfire", pull_request.display_full_name
   end
 
   test "display_full_name falls back to the stored names" do
-    pull_request = Github::PullRequest.for_reference(owner: "smart-data-ohio", repo: "once-campfire", number: 5)
+    pull_request = Github::PullRequest.for_reference(owner: "smart-data-ohio", repo: "smartfire", number: 5)
     pull_request.update!(payload: { "base" => { "repo" => { "full_name" => "not a name" } } }, html_url: nil)
 
-    assert_equal "smart-data-ohio/once-campfire", pull_request.display_full_name
+    assert_equal "smart-data-ohio/smartfire", pull_request.display_full_name
   end
 
   test "collapse_case_duplicates! merges case variants onto the lowest id and repoints links and threads" do

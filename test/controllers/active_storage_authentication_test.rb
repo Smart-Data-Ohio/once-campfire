@@ -2,7 +2,7 @@ require "test_helper"
 
 class ActiveStorageAuthenticationTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
   end
 
   test "direct upload metadata endpoint rejects anonymous callers" do
@@ -33,7 +33,7 @@ class ActiveStorageAuthenticationTest < ActionDispatch::IntegrationTest
     upload_path = URI.parse(response.parsed_body.dig("direct_upload", "url")).request_uri
 
     anonymous = open_session
-    anonymous.host! "once.campfire.test"
+    anonymous.host! "smartfire.test"
     anonymous.put upload_path,
       params: attachment_bytes,
       headers: { "Content-Type" => "application/octet-stream" }
@@ -42,13 +42,13 @@ class ActiveStorageAuthenticationTest < ActionDispatch::IntegrationTest
   end
 
   test "disk service download endpoint stays public" do
-    ActiveStorage::Current.url_options = { host: "once.campfire.test", protocol: "https" }
+    ActiveStorage::Current.url_options = { host: "smartfire.test", protocol: "https" }
     blob = ActiveStorage::Blob.create_and_upload! \
       io: StringIO.new(attachment_bytes), filename: "hi.txt", content_type: "text/plain"
     download_path = URI.parse(blob.url).request_uri
 
     anonymous = open_session
-    anonymous.host! "once.campfire.test"
+    anonymous.host! "smartfire.test"
     anonymous.get download_path
 
     assert_equal 200, anonymous.status

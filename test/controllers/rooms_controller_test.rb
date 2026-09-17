@@ -35,7 +35,7 @@ class RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_match "Free cookies", response.body
   end
 
-  test "show renders a link preview written by hand without its image pointed at this Campfire" do
+  test "show renders a link preview written by hand without its image pointed at this Smartfire" do
     room = rooms(:watercooler)
     own_url = room_url(room, host: "www.example.com")
     post room_messages_url(room, format: :turbo_stream), params: { message: {

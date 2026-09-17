@@ -5,12 +5,12 @@ require "timeout"
 class StageTest < ApplicationSystemTestCase
   self.use_transactional_tests = false
 
-  CAMPFIRE_PORT = 3001
+  SMARTFIRE_PORT = 3001
   GATEWAY_PORT = 7884
 
   # Same fixed port as the huddle suite, only for LiveKit-backed runs. See
   # test/system/huddles_test.rb.
-  Capybara.server_port = CAMPFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
+  Capybara.server_port = SMARTFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
 
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1000 ], options: { name: :stage_chrome } do |options|
     options.add_argument "--use-fake-device-for-media-stream"
@@ -574,7 +574,7 @@ class StageTest < ApplicationSystemTestCase
       gateway_log_path = Rails.root.join("tmp/livekit-gateway-stage-test.log")
       @gateway_log = File.open(gateway_log_path, "w")
       environment = {
-        "GATEWAY_CAMPFIRE_URL" => "http://127.0.0.1:#{CAMPFIRE_PORT}",
+        "GATEWAY_CAMPFIRE_URL" => "http://127.0.0.1:#{SMARTFIRE_PORT}",
         "LIVEKIT_GATEWAY_PORT" => GATEWAY_PORT.to_s
       }
       @gateway_pid = Process.spawn(

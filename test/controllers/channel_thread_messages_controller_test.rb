@@ -2,7 +2,7 @@ require "test_helper"
 
 class ChannelThreadMessagesControllerTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
     @room = rooms(:designers)
     @thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Thread messages")
     ThreadMembership.join!(@thread, users(:jz))

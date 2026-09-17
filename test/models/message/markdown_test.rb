@@ -61,7 +61,7 @@ class Message::MarkdownTest < ActiveSupport::TestCase
     assert_match %r{<pre><code class="language-html">&lt;img src=x onerror="alert\(1\)"&gt;}, html
   end
 
-  test "safe links open outside Campfire with opener protections" do
+  test "safe links open outside Smartfire with opener protections" do
     html = create_markdown_message("[Docs](https://example.com/docs \"Read\")").body.body.to_html
 
     assert_match %r{<a href="https://example.com/docs" title="Read" target="_blank" rel="nofollow noopener noreferrer">Docs</a>}, html

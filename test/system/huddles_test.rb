@@ -6,13 +6,13 @@ require "uri"
 class HuddlesTest < ApplicationSystemTestCase
   self.use_transactional_tests = false
 
-  CAMPFIRE_PORT = 3001
+  SMARTFIRE_PORT = 3001
   GATEWAY_PORT = 7884
 
   # The gateway spawned below calls back into this fixture server, so the port
   # is fixed only for LiveKit-backed runs. Every other system test file loads
   # this class too, and a fixed port would make parallel workers collide.
-  Capybara.server_port = CAMPFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
+  Capybara.server_port = SMARTFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
 
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1000 ], options: { name: :huddle_chrome } do |options|
     options.add_argument "--use-fake-device-for-media-stream"
@@ -905,7 +905,7 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_media_received "audio"
 
     # Exercise the real server API without relying on the client's access poll
-    # or a Campfire navigation to end the connection.
+    # or a Smartfire navigation to end the connection.
     Huddle::RoomService.new.remove_participant(room_name: Huddle.room_name(rooms(:designers).id), identity: identity)
 
     assert_selector "#channel-huddle[data-state='failed']", wait: 10
@@ -1137,7 +1137,7 @@ class HuddlesTest < ApplicationSystemTestCase
             context.fillRect(0, 0, 640, 360);
             context.fillStyle = 'white';
             context.font = '32px sans-serif';
-            context.fillText('Campfire screen-share test', 40, 180);
+            context.fillText('Smartfire screen-share test', 40, 180);
           };
           draw();
           const stream = canvas.captureStream(10);
@@ -1515,7 +1515,7 @@ class HuddlesTest < ApplicationSystemTestCase
       gateway_log_path = Rails.root.join("tmp/livekit-gateway-system-test.log")
       @gateway_log = File.open(gateway_log_path, "w")
       environment = {
-        "GATEWAY_CAMPFIRE_URL" => "http://127.0.0.1:#{CAMPFIRE_PORT}",
+        "GATEWAY_CAMPFIRE_URL" => "http://127.0.0.1:#{SMARTFIRE_PORT}",
         "LIVEKIT_GATEWAY_PORT" => GATEWAY_PORT.to_s
       }
       @gateway_pid = Process.spawn(

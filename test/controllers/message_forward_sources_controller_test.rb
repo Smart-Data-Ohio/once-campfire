@@ -2,7 +2,7 @@ require "test_helper"
 
 class MessageForwardSourcesControllerTest < ActionDispatch::IntegrationTest
   setup do
-    host! "once.campfire.test"
+    host! "smartfire.test"
     @private_room = Rooms::Closed.create_for({ name: "Private source", creator: users(:david) }, users: [ users(:david) ])
     @source = @private_room.root_messages.create!(creator: users(:david), markdown_source: "Private message", client_message_id: "private-forward-source")
     @forwarded = Messages::Forwarder.call(

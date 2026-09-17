@@ -5,7 +5,7 @@ class GithubPullRequestsHelperTest < ActionView::TestCase
 
   test "cache key changes when a referenced pull request is updated" do
     message = messages(:first)
-    pull_request = Github::PullRequest.create!(owner: "smart-data-ohio", repo: "once-campfire", number: 42)
+    pull_request = Github::PullRequest.create!(owner: "smart-data-ohio", repo: "smartfire", number: 42)
     Github::PullRequestReference.create!(message:, pull_request:)
     message.reload
 
