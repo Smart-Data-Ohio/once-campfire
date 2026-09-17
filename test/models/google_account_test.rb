@@ -23,6 +23,20 @@ class GoogleAccountTest < ActiveSupport::TestCase
     assert_equal "refresh-token-#{users(:david).id}", account.reload.refresh_token
   end
 
+  test "drive? reflects the stored scopes" do
+    account = connect_google!(users(:david))
+
+    assert_not_predicate account, :drive?
+
+    account.update!(scopes: "openid email https://www.googleapis.com/auth/calendar.events")
+
+    assert_not_predicate account, :drive?
+
+    account.update!(scopes: "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.metadata.readonly")
+
+    assert_predicate account, :drive?
+  end
+
   test "connected, usable, and expiry predicates" do
     account = connect_google!(users(:david))
 

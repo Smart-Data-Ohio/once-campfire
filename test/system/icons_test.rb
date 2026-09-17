@@ -52,7 +52,39 @@ class IconsTest < ApplicationSystemTestCase
     assert_equal "invert(1)", icon_filter(message)
   end
 
+  test "lobehub brand icons render visibly in both themes" do
+    editor = find_field("Write a message")
+    editor.set "Ship :xai: and :microsoft: today"
+    click_on "Send Message"
+    assert_selector ".message img.icon--brand"
+
+    message = Message.find_by!(markdown_source: "Ship :xai: and :microsoft: today")
+    within_message(message) { assert_selector "img.icon--brand", count: 2 }
+    assert_icon_rendered message, ":xai:"
+    assert_icon_rendered message, ":microsoft:"
+    assert_equal "none", icon_filter(message)
+
+    emulate_theme "dark"
+    assert page.evaluate_script("matchMedia('(prefers-color-scheme: dark)').matches")
+    within_message(message) { assert_selector "img.icon--brand", count: 2, visible: true }
+    assert_icon_rendered message, ":xai:"
+    assert_icon_rendered message, ":microsoft:"
+    assert_equal "invert(1)", icon_filter(message)
+  end
+
   private
+    def assert_icon_rendered(message, alt)
+      width, height = page.evaluate_script(<<~JS, dom_id(message), alt)
+        ((id, alt) => {
+          const rect = document.querySelector(`#${id} img.icon--brand[alt="${alt}"]`).getBoundingClientRect();
+          return [ rect.width, rect.height ];
+        })(arguments[0], arguments[1])
+      JS
+
+      assert_operator width, :>, 0, "expected #{alt} to render with non-zero width"
+      assert_operator height, :>, 0, "expected #{alt} to render with non-zero height"
+    end
+
     def emulate_theme(theme)
       page.driver.browser.execute_cdp "Emulation.setEmulatedMedia", features: [ { name: "prefers-color-scheme", value: theme } ]
     end

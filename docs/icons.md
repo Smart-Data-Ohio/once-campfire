@@ -8,14 +8,15 @@ search keep working on the typed text.
 
 ## The set
 
-The workspace ships 27 built-in brand icons, registered in `config/icons.yml`
+The workspace ships 33 built-in brand icons, registered in `config/icons.yml`
 with a `name`, `file`, `title`, and optional `aliases` (for example `gpt` for
 `openai`, `gemini` for `googlegemini`, `hf` for `huggingface`):
 
 `anthropic`, `apple`, `claude`, `cloudflare`, `cursor`, `discord`, `docker`,
 `figma`, `github`, `githubcopilot`, `googlegemini`, `google`, `huggingface`,
 `kubernetes`, `linear`, `linux`, `meta`, `mistralai`, `notion`, `nvidia`,
-`ollama`, `openai`, `perplexity`, `slack`, `stripe`, `vercel`, `x`.
+`ollama`, `openai`, `perplexity`, `slack`, `stripe`, `vercel`, `x`,
+`microsoft`, `azure`, `aws`, `xai`, `grok`, `deepseek`.
 
 Brand names win over gemoji aliases on conflict: `:x:` and `:apple:` render
 the company logos, not ❌ and 🍎. Shortcodes expand after Markdown renders,
@@ -109,10 +110,16 @@ brand and workspace icons alike.
 
 ## License
 
-The SVGs are from [Simple Icons](https://github.com/simple-icons/simple-icons),
-vendored from version **15.22.0** of the `simple-icons` npm package under the
+The SVGs come from two sources; see
+`app/assets/images/icons/brands/LICENSE.md` for provenance. Twenty-seven are
+from [Simple Icons](https://github.com/simple-icons/simple-icons), vendored
+from version **15.22.0** of the `simple-icons` npm package under the
 [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)
-dedication; see `app/assets/images/icons/brands/LICENSE.md`. That version was
-the newest release still shipping `openai.svg`; `microsoft`, `amazon`,
-`amazonaws`, `xai`, and `deepseek` are absent from it and were skipped. The
-depicted logos remain trademarks of their respective owners.
+dedication; that version was the newest release still shipping `openai.svg`.
+The other six (`microsoft`, `azure`, `aws`, `xai`, `grok`, `deepseek`) are the
+monochrome files from version **1.95.0** of the `@lobehub/icons-static-svg`
+npm package, published under the
+[MIT license](https://github.com/lobehub/lobe-icons) by LobeHub; see
+`app/assets/images/icons/brands/LICENSE-lobehub.md`. Amazon (retail) exists in
+neither source and has no icon. The depicted logos remain trademarks of their
+respective owners.

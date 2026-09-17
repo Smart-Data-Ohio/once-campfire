@@ -8,7 +8,8 @@ module Google
     def connect
       raw_state = SecureRandom.hex(16)
       session[:google_oauth_state] = raw_state
-      redirect_to Google::Client.authorize_url(redirect_uri: google_callback_url, state: state_verifier.generate(raw_state)),
+      redirect_to Google::Client.authorize_url(redirect_uri: google_callback_url, state: state_verifier.generate(raw_state),
+          drive: drive_requested?),
         allow_other_host: true
     end
 
@@ -32,6 +33,7 @@ module Google
         disconnected_reason: nil
       )
       account.refresh_token = tokens["refresh_token"] if tokens["refresh_token"].present?
+      account.scopes = tokens["scope"] if tokens["scope"].present?
       account.email = Google::Client.email_from_id_token(tokens["id_token"])
       account.save!
 
@@ -65,6 +67,10 @@ module Google
     private
       def ensure_configured
         head :not_found unless Google::Client.configured?
+      end
+
+      def drive_requested?
+        params[:features].is_a?(Array) && params[:features].include?("drive")
       end
 
       def state_verifier

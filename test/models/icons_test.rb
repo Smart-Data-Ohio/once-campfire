@@ -36,6 +36,7 @@ class IconsTest < ActiveSupport::TestCase
 
   test "find returns nil for unknown names" do
     assert_nil Icons.find("nope_not_real")
+    assert_nil Icons.find("amazon")
     assert_nil Icons.find("")
     assert_nil Icons.find(nil)
   end
@@ -95,6 +96,32 @@ class IconsTest < ActiveSupport::TestCase
 
     assert_includes Icons.client_icon_names, "acme"
     assert_includes Icons.client_icon_names, "openai"
+  end
+
+  test "find resolves the lobehub brands and their aliases" do
+    {
+      "microsoft" => "Microsoft",
+      "azure" => "Microsoft Azure",
+      "aws" => "Amazon Web Services",
+      "xai" => "xAI",
+      "grok" => "Grok",
+      "deepseek" => "DeepSeek"
+    }.each do |name, title|
+      brand = Icons.find(name)
+
+      assert_instance_of Icons::Brand, brand
+      assert_equal title, brand.title
+    end
+
+    assert_same Icons.find("microsoft"), Icons.find("msft")
+    assert_same Icons.find("aws"), Icons.find("amazonaws")
+  end
+
+  test "brand count matches the number documented in docs/icons.md" do
+    documented = Rails.root.join("docs/icons.md").read[/ships (\d+) built-in brand icons/, 1].to_i
+
+    assert_operator documented, :>, 0
+    assert_equal documented, Icons.brands.size
   end
 
   test "shortcode pattern fires only on standalone shortcodes" do

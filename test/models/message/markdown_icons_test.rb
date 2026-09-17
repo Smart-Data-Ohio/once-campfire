@@ -15,6 +15,28 @@ class Message::MarkdownIconsTest < ActiveSupport::TestCase
     assert_equal "Ship it with :openai: today", message.markdown_source
   end
 
+  test "renders lobehub brand shortcodes as icon images" do
+    message = create_markdown_message("Ship :microsoft: and :grok: today")
+
+    icons = Nokogiri::HTML5.fragment(message.body.body.to_html).css("img.icon--brand")
+
+    assert_equal 2, icons.size
+    assert_equal "icon icon--brand", icons[0]["class"]
+    assert_match %r{\A/assets/icons/brands/microsoft-[a-z0-9]+\.svg\z}, icons[0]["src"]
+    assert_equal ":microsoft:", icons[0]["alt"]
+    assert_equal "Microsoft", icons[0]["title"]
+    assert_match %r{\A/assets/icons/brands/grok-[a-z0-9]+\.svg\z}, icons[1]["src"]
+    assert_equal ":grok:", icons[1]["alt"]
+    assert_equal "Grok", icons[1]["title"]
+  end
+
+  test "leaves the amazon retail shortcode literal" do
+    message = create_markdown_message("Hello :amazon: friend")
+
+    assert_empty Nokogiri::HTML5.fragment(message.body.body.to_html).css("img")
+    assert_equal "Hello :amazon: friend", message.plain_text_body
+  end
+
   test "leaves shortcodes literal inside inline code fenced blocks and link labels" do
     source = <<~'MARKDOWN'
       `:openai:`

@@ -100,6 +100,8 @@ Done for the calendar slice when an opted-in attendee receives a calendar entry 
 
 Done for the first slice when one Drive workflow and one selected Smart App workflow work end to end without exposing private source content to unauthorized channel members.
 
+**Status:** the first Drive workflow is live: Drive links in messages render as preview chips (file name, type, modified time, owner) resolved at view time with the viewer's own Google credentials, so members who cannot open the file keep seeing the plain link; see [Google Drive link previews](docs/google-drive.md). Still open: file discovery, attachments, and the first selected Smart App workflow.
+
 ### 7. Unified activity inbox
 
 The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Other agent and GitHub sources follow their integrations.
@@ -133,7 +135,7 @@ Done for the first slice when members can turn a channel thread into work, assig
 
 Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
 
-**Status:** first slice shipped. Twenty-seven brand icons (Simple Icons, CC0) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Administrator-uploaded workspace icons shipped as well: SVG/PNG uploads from the Icons page under Account, served from `/icons/:name` and usable as `:name:` in messages, reactions, and autocomplete. Still open: Microsoft, Amazon, AWS, xAI, and DeepSeek are not in the vendored set and need another source, and room or agent avatars drawn from the icon set.
+**Status:** first slice shipped and the listed companies are covered. Thirty-three brand icons from two sources (Simple Icons, CC0; LobeHub `@lobehub/icons-static-svg`, MIT) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Amazon (retail) has no usable icon in either source. Administrator-uploaded workspace icons shipped as well: SVG/PNG uploads from the Icons page under Account, served from `/icons/:name` and usable as `:name:` in messages, reactions, and autocomplete. Still open: room or agent avatars drawn from the icon set.
 
 ## Proposed additions
 

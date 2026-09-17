@@ -307,6 +307,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.string "disconnected_reason"
     t.string "email", null: false
     t.string "refresh_token"
+    t.string "scopes"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["user_id"], name: "index_google_accounts_on_user_id", unique: true

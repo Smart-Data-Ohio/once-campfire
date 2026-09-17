@@ -21,6 +21,9 @@ shows "Added to your Google Calendar" while a copy exists for the viewer.
    The `openid email` part is only used to read the account email from
    the `id_token` returned by the token endpoint (issuer, audience, and
    expiry are verified); the app makes no extra API call to learn it.
+   Members who opt into [Drive link previews](google-drive.md) grant the
+   additional `https://www.googleapis.com/auth/drive.metadata.readonly`
+   scope through the same connect flow.
 4. Set the client credentials on the app host:
    `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 

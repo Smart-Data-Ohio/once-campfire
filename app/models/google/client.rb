@@ -13,6 +13,7 @@ module Google
     API_HOST = "www.googleapis.com"
     TIMEOUT = 10
     SCOPE = "openid email https://www.googleapis.com/auth/calendar.events"
+    DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.metadata.readonly"
     ID_TOKEN_ISSUERS = %w[ https://accounts.google.com accounts.google.com ].freeze
 
     class Error < StandardError; end
@@ -42,12 +43,15 @@ module Google
         ENV["GOOGLE_CLIENT_SECRET"].presence
       end
 
-      def authorize_url(redirect_uri:, state:)
+      def authorize_url(redirect_uri:, state:, drive: false)
         uri = URI::HTTPS.build(host: AUTHORIZE_HOST, path: "/o/oauth2/v2/auth")
-        uri.query = URI.encode_www_form(
+        params = {
           client_id: client_id, redirect_uri:, response_type: "code",
-          scope: SCOPE, access_type: "offline", prompt: "consent", state:
-        )
+          scope: drive ? "#{SCOPE} #{DRIVE_SCOPE}" : SCOPE,
+          access_type: "offline", prompt: "consent", state:
+        }
+        params[:include_granted_scopes] = "true" if drive
+        uri.query = URI.encode_www_form(params)
         uri.to_s
       end
 
@@ -131,6 +135,17 @@ module Google
       api_request(:delete, "/calendar/v3/calendars/primary/events/#{google_event_id}")
     end
 
+    DRIVE_FILE_FIELDS = "id,name,mimeType,modifiedTime,owners(displayName),webViewLink,iconLink"
+
+    # Viewer-side Drive metadata for link previews. A 403 means the viewer
+    # cannot open the file, so it maps to NotFound just like a 404: callers
+    # must not distinguish "no access" from "does not exist".
+    def drive_file(file_id)
+      api_request(:get, "/drive/v3/files/#{file_id}", nil,
+        query: URI.encode_www_form(fields: DRIVE_FILE_FIELDS, supportsAllDrives: true),
+        forbidden: :not_found, service_name: "Drive")
+    end
+
     def refresh_access_token!
       response = self.class.post_token_form(
         client_id: self.class.client_id, client_secret: self.class.client_secret,
@@ -156,13 +171,13 @@ module Google
     end
 
     private
-      def api_request(method, path, payload = nil)
+      def api_request(method, path, payload = nil, query: nil, forbidden: :error, service_name: "Calendar")
         refresh_access_token! if @account.access_token_expired?
 
-        response = send_api_request(method, path, payload)
+        response = send_api_request(method, path, payload, query)
         if response.code == "401"
           refresh_access_token!
-          response = send_api_request(method, path, payload)
+          response = send_api_request(method, path, payload, query)
         end
 
         case response
@@ -171,18 +186,24 @@ module Google
         when Net::HTTPUnauthorized
           raise Unauthorized, "Google rejected the request (401)"
         when Net::HTTPNotFound
-          raise NotFound, "Google calendar entry not found"
+          raise NotFound, "Google #{service_name.downcase} entry not found"
+        when Net::HTTPForbidden
+          if forbidden == :not_found
+            raise NotFound, "Google #{service_name.downcase} entry not found"
+          else
+            raise Error, "Google Calendar request failed (403)"
+          end
         when Net::HTTPConflict
           raise Conflict, "Google calendar entry already exists"
         else
-          raise Error, "Google Calendar request failed (#{response.code})"
+          raise Error, "Google #{service_name} request failed (#{response.code})"
         end
       rescue *TRANSPORT_ERRORS => error
-        raise Unavailable, "Google Calendar request failed (#{error.class})"
+        raise Unavailable, "Google #{service_name} request failed (#{error.class})"
       end
 
-      def send_api_request(method, path, payload)
-        uri = URI::HTTPS.build(host: API_HOST, path:)
+      def send_api_request(method, path, payload, query = nil)
+        uri = URI::HTTPS.build(host: API_HOST, path:, query:)
         Net::HTTP.start(uri.host, uri.port, use_ssl: true,
             open_timeout: TIMEOUT, read_timeout: TIMEOUT, write_timeout: TIMEOUT) do |http|
           if method.in?(%i[ get delete ])

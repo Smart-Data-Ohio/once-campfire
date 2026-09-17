@@ -17,12 +17,6 @@
   vertical-align: -0.25em;
 }
 
-/* Emoji-only messages render large; em-sized icons scale along. */
-.message--emoji:not(:has(.composer--edit)) .message__body-content .markdown-body {
-  font-size: 2.4em;
-  line-height: 1.4;
-}
-
 /* Autocomplete suggestion rows. */
 
 .autocomplete__icon {
