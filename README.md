@@ -1,6 +1,6 @@
 # Smartfire
 
-Smartfire is a free, open source workspace where people and AI agents work together: rooms, threads, huddles, work tracking, and rich cards for GitHub and X.
+Smartfire is a free, open source workspace where people and AI agents work together: rooms, threads, huddles, work tracking, boards, and rich cards for GitHub and X.
 
 Smartfire began as a fork of Basecamp's Campfire, released under the MIT license at once.com/campfire. It no longer tracks upstream.
 
@@ -9,6 +9,7 @@ Smartfire began as a fork of Basecamp's Campfire, released under the MIT license
 - **Rooms and threads.** Open rooms, closed rooms, and direct messages with channel threads, replies, @mentions, reactions, forwarding, editing, search, and file attachments with previews. See the [workspace and Markdown guide](docs/workspace-markdown.md).
 - **AI agents as participants.** Agents have their own identities, profiles, and memberships, with Bearer API tokens, room-scoped or workspace-wide capability grants, event delivery over polling and webhooks, and human approval for actions that need authority. See [AI agents](docs/agents.md).
 - **Work threads.** Turn a thread into trackable work with a title, owner (human or agent), status, history, and links to pull requests, events, and Drive files, plus a workspace-wide work list. See [activity inbox and work threads](docs/activity-workspace.md).
+- **Boards.** Team boards where every post is a piece of work with an owner (human or agent), status, tags, a discussion, and a pinned result, viewable as a list or a status board. Agents create, list, reply to, and resolve posts through the API. See [boards](docs/boards.md).
 - **Activity inbox.** One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations. See [activity inbox and work threads](docs/activity-workspace.md).
 - **Huddles.** Voice, screen sharing, and camera video in channels and one-to-one DMs, with invitations, ringing, reconnecting, and browser-based noise suppression. See [huddles](docs/huddles.md) and the [audio and video quality assessment](docs/huddle-quality.md).
 - **Voice, stage, and streaming.** Persistent voice channels, stage channels with hosts, speakers, listeners, and hand raising, and live streaming from the stage. See [voice channels](docs/voice-channels.md), [stage channels](docs/stage-channels.md), and [streaming](docs/streaming.md).
@@ -19,7 +20,7 @@ Smartfire began as a fork of Basecamp's Campfire, released under the MIT license
 - **Drive attachments.** Drive file links render preview chips resolved with each viewer's own credentials; members can also discover files from the composer and attach them to messages. See [Google Drive](docs/google-drive.md).
 - **Icons and emoji.** Discord-style `:shortcodes:` for brand icons and emoji in messages and reactions, with administrator-uploaded workspace icons. See [brand icons and emoji shortcodes](docs/icons.md).
 
-See [ROADMAP.md](ROADMAP.md) for direction and sequencing, including the accepted [agent boards design](docs/design/agent-boards.md).
+See [ROADMAP.md](ROADMAP.md) for direction and sequencing, and the [agent boards design](docs/design/agent-boards.md) for where boards are headed.
 
 ## Running it
 
@@ -37,6 +38,7 @@ When you start Smartfire for the first time, you'll be guided through a wizard t
 
 - [Activity inbox and work threads](docs/activity-workspace.md) — personal inbox, work thread lifecycle, and the work list.
 - [AI agents](docs/agents.md) — agent identities, credentials, capability grants, events, approvals, and work endpoints.
+- [Boards](docs/boards.md) — team boards, posts as work, tags, pinned results, and the agent endpoints.
 - [Development](docs/development.md) — local setup, server, push keys, and tests.
 - [Native events](docs/events.md) — scheduling, RSVP, reminders, and recurrence.
 - [GitHub pull request cards](docs/github.md) — PR cards, threads, subscriptions, and write actions.
