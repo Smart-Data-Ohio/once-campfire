@@ -353,6 +353,52 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_json_error :not_found, "Room not found or inaccessible"
   end
 
+  test "a stage listener's token cannot publish anything" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    sign_in :jason
+
+    post room_huddle_url(room)
+
+    assert_response :success
+    grant = decode_video_grant(response.parsed_body.fetch("token"))
+
+    assert_equal false, grant.fetch("canPublish")
+    assert_equal [], grant.fetch("canPublishSources")
+    assert_equal true, grant.fetch("canSubscribe")
+    assert_equal false, grant.fetch("canPublishData")
+    assert_equal "listener", HuddleGrant.find(response.parsed_body.fetch("grant_id")).stage_role
+  end
+
+  test "stage speakers and hosts publish like any other participant" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    room.memberships.find_by!(user: users(:jason)).change_stage_role!("speaker")
+
+    sign_in :jason
+    post room_huddle_url(room)
+    assert_response :success
+    assert_equal true, decode_video_grant(response.parsed_body.fetch("token")).fetch("canPublish")
+
+    sign_in :david
+    post room_huddle_url(room)
+    assert_response :success
+    speaker_grant = decode_video_grant(response.parsed_body.fetch("token"))
+    assert_equal true, speaker_grant.fetch("canPublish")
+    assert_equal %w[ microphone screen_share screen_share_audio camera ], speaker_grant.fetch("canPublishSources")
+  end
+
+  test "voice and direct room tokens still publish" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    sign_in :david
+
+    post room_huddle_url(voice)
+    assert_response :success
+    assert_equal true, decode_video_grant(response.parsed_body.fetch("token")).fetch("canPublish")
+
+    post room_huddle_url(rooms(:david_and_jason))
+    assert_response :success
+    assert_equal true, decode_video_grant(response.parsed_body.fetch("token")).fetch("canPublish")
+  end
+
   test "a public URL pointing directly at the internal LiveKit address is rejected" do
     sign_in :david
     ENV["LIVEKIT_URL"] = "wss://livekit.example.test:7880/client/path"
@@ -368,5 +414,9 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
       assert_response status
       assert_equal({ "error" => message }, response.parsed_body)
       assert_equal "no-store", response.headers["Cache-Control"]
+    end
+
+    def decode_video_grant(token)
+      JWT.decode(token, "test-api-secret", true, algorithm: "HS256").first.fetch("video")
     end
 end
