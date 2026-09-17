@@ -240,7 +240,7 @@ class StageTest < ApplicationSystemTestCase
       click_button "Lower hand"
     end
 
-    within jason_row, wait: 10 do
+    within jason_row, wait: BROADCAST_WAIT do
       assert_no_selector ".stage-panel__hand-badge", wait: BROADCAST_WAIT
     end
     within "[aria-label='Listeners']" do

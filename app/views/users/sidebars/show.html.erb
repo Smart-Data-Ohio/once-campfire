@@ -1,7 +1,4 @@
 <%= sidebar_turbo_frame_tag do %>
-  <%= turbo_stream_from :rooms %>
-  <%= turbo_stream_from Current.user, :rooms %>
-
   <div class="sidebar__container"
       data-controller="badge-dot"
       data-badge-dot-unread-class="unread"
