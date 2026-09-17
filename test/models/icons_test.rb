@@ -41,6 +41,16 @@ class IconsTest < ActiveSupport::TestCase
     assert_nil Icons.find(nil)
   end
 
+  test "normalize_name strips colons and case for storage" do
+    assert_equal "openai", Icons.normalize_name(":openai:")
+    assert_equal "openai", Icons.normalize_name("  :OpenAI: ")
+    assert_equal "openai", Icons.normalize_name("openai")
+    assert_nil Icons.normalize_name(nil)
+    assert_nil Icons.normalize_name("")
+    assert_nil Icons.normalize_name("   ")
+    assert_nil Icons.normalize_name("::")
+  end
+
   test "find resolves workspace icons between brands and gemoji" do
     create_workspace_icon(name: "acme")
     create_workspace_icon(name: "tada")

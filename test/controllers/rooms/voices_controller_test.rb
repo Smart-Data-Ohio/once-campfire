@@ -51,6 +51,38 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "update with an icon normalizes the shortcode" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    put rooms_voice_url(room), params: {
+      room: { name: "Lounge", icon_name: ":fire:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "fire", room.reload.icon_name
+  end
+
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_voices_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ] }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
+  test "update with an unknown icon re-renders the edit form" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    put rooms_voice_url(room), params: {
+      room: { name: "Lounge", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil room.reload.icon_name
+  end
+
   test "update with membership revisions" do
     room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason), users(:jz) ])
 
@@ -82,7 +114,11 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     ], removed_streams.map { |stream| stream["target"] }
 
     remaining_streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
-    assert_equal [ "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [ "replace", "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [
+      ActionView::RecordIdentifier.dom_id(room, :list),
+      ActionView::RecordIdentifier.dom_id(room, :header)
+    ], remaining_streams.map { |stream| stream["target"] }
   end
 
   test "a non-administrator creator can manage members of their own voice room" do

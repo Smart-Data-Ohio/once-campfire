@@ -52,6 +52,39 @@ class IconsTest < ApplicationSystemTestCase
     assert_equal "invert(1)", icon_filter(message)
   end
 
+  test "room icon picker sets an icon that shows in the sidebar and header" do
+    using_session("Admin") do
+      sign_in "david@37signals.com"
+      visit edit_rooms_open_path(rooms(:pets))
+
+      fill_in "Icon", with: ":open"
+      assert_selector "suggestion-option", text: "OpenAI"
+      find("suggestion-option", text: "OpenAI").click
+      assert_field "Icon", with: ":openai: "
+      assert_selector "[data-icon-field-target='preview'] img.icon-avatar"
+
+      find("button.btn--reversed").click
+      assert_selector ".room-header__name", text: "All Pets"
+      assert_selector ".room-header__identity img.icon-avatar"
+      assert_selector "##{dom_id(rooms(:pets), :list)} .sidebar-item__icon--custom img.icon-avatar"
+      assert_equal "none", sidebar_marker_content(rooms(:pets))
+      assert_equal '"#"', sidebar_marker_content(rooms(:hq))
+    end
+  end
+
+  test "icon rooms suppress the search arrow marker" do
+    rooms(:designers).update!(icon_name: "openai")
+    rooms(:designers).messages.create!(body: "Cartography atlas rendezvous", creator: users(:david), client_message_id: "icon-search-room")
+    rooms(:hq).messages.create!(body: "Cartography ledger rendezvous", creator: users(:david), client_message_id: "plain-search-room")
+
+    visit searches_path(q: "Cartography rendezvous")
+
+    assert_selector "#search-results .message__room--custom img.icon-avatar"
+    assert_selector "#search-results .message__room:not(.message__room--custom)"
+    assert_equal "none", search_marker_content(".message__room--custom")
+    assert_equal '"→"', search_marker_content(".message__room:not(.message__room--custom)")
+  end
+
   test "lobehub brand icons render visibly in both themes" do
     editor = find_field("Write a message")
     editor.set "Ship :xai: and :microsoft: today"
@@ -92,6 +125,18 @@ class IconsTest < ApplicationSystemTestCase
     def icon_filter(message)
       page.evaluate_script(<<~JS, dom_id(message))
         getComputedStyle(document.querySelector(`#${arguments[0]} img.icon--brand`)).filter
+      JS
+    end
+
+    def sidebar_marker_content(room)
+      page.evaluate_script(<<~JS, dom_id(room, :list))
+        getComputedStyle(document.querySelector(`#${arguments[0]} .sidebar-item__icon`), "::before").content
+      JS
+    end
+
+    def search_marker_content(selector)
+      page.evaluate_script(<<~JS, selector)
+        getComputedStyle(document.querySelector(`#search-results ${arguments[0]}`), "::before").content
       JS
     end
 end

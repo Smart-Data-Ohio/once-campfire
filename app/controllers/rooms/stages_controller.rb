@@ -20,6 +20,10 @@ class Rooms::StagesController < RoomsController
 
     broadcast_create_room(room)
     redirect_to room_url(room)
+  rescue ActiveRecord::RecordInvalid => error
+    @room = error.record
+    @users = User.active.ordered
+    render :new, status: :unprocessable_entity
   end
 
   def edit
@@ -33,21 +37,32 @@ class Rooms::StagesController < RoomsController
     # transaction mode serializes writers, so the transaction plus a re-read
     # inside it is sufficient.
     removed_sole_host = nil
+    saved = false
 
     Room.transaction do
       @room.lock!
       removed_sole_host = sole_host_removed_by_update
 
       unless removed_sole_host
-        @room.update! room_params
-        @room.memberships.revise(granted: grantees, revoked: revokees)
-        @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
+        saved = @room.update(room_params)
+
+        if saved
+          @room.memberships.revise(granted: grantees, revoked: revokees)
+          @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
+        else
+          raise ActiveRecord::Rollback
+        end
       end
     end
 
     if removed_sole_host
       set_member_lists
       @room.errors.add(:base, "Promote another host before removing #{removed_sole_host.user.name}")
+      return render :edit, status: :unprocessable_entity
+    end
+
+    unless saved
+      set_member_lists
       return render :edit, status: :unprocessable_entity
     end
 
@@ -96,20 +111,23 @@ class Rooms::StagesController < RoomsController
     end
 
     def broadcast_create_room(room)
-      each_user_and_html_for(room) do |user, html|
+      each_user_and_html_for(room, "users/sidebars/rooms/stage") do |user, html|
         broadcast_prepend_to user, :rooms, target: :voice_rooms, html: html
       end
     end
 
     def broadcast_update_room
-      each_user_and_html_for(@room) do |user, html|
+      each_user_and_html_for(@room, "users/sidebars/rooms/stage") do |user, html|
         broadcast_replace_to user, :rooms, target: [ @room, :list ], html: html
+      end
+      each_user_and_html_for(@room, "rooms/show/header_identity") do |user, html|
+        broadcast_replace_to user, :rooms, target: [ @room, :header ], html: html
       end
     end
 
-    def each_user_and_html_for(room)
+    def each_user_and_html_for(room, partial)
       # Optimization to avoid rendering the same partial for every user
-      html = render_to_string(partial: "users/sidebars/rooms/stage", locals: { room: room })
+      html = render_to_string(partial:, locals: { room: room })
 
       room.users.each { |user| yield user, html }
     end

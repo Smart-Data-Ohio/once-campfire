@@ -29,10 +29,19 @@ module User::Bot
   end
 
   def update_bot!(attributes)
+    update_bot(attributes) || raise(ActiveRecord::RecordInvalid, self)
+  end
+
+  def update_bot(attributes)
+    success = false
+
     transaction do
       update_webhook_url!(attributes.delete(:webhook_url))
-      update!(attributes)
+      success = update(attributes)
+      raise ActiveRecord::Rollback unless success
     end
+
+    success
   end
 
 

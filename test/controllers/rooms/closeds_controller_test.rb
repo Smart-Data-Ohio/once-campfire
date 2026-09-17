@@ -66,6 +66,53 @@ class Rooms::ClosedsControllerTest < ActionDispatch::IntegrationTest
     assert rooms(:designers).reload.name, "Designers"
   end
 
+  test "updating the icon replaces sidebar rows and headers for members only" do
+    room = rooms(:designers)
+
+    put rooms_closed_url(room), params: {
+      room: { name: room.name, icon_name: ":openai:" }, user_ids: room.user_ids
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "openai", room.reload.icon_name
+
+    icon_src = Icons.brand_image_urls.fetch("openai")
+    room.users.each do |member|
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :list ] do
+        assert_select ".sidebar-item__icon--custom img.icon-avatar[src='#{icon_src}']"
+      end
+      assert_rendered_turbo_stream_broadcast member, :rooms, action: "replace", target: [ room, :header ] do
+        assert_select "img.icon-avatar[src='#{icon_src}']"
+      end
+    end
+
+    assert_empty capture_turbo_stream_broadcasts([ users(:bender), :rooms ])
+  end
+
+  test "create with an unknown icon re-renders the new form" do
+    assert_no_difference -> { Room.count } do
+      post rooms_closeds_url, params: { room: { name: "Iconic", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ] }
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+  end
+
+  test "update with an unknown icon re-renders the edit form without revising members" do
+    room = rooms(:designers)
+    user_ids_before = room.user_ids.sort
+
+    put rooms_closed_url(room), params: {
+      room: { name: "New Name", icon_name: ":notanicon:" }, user_ids: [ users(:david).id ]
+    }
+
+    assert_response :unprocessable_entity
+    assert_match "Icon name is not a known icon", response.body
+    assert_nil room.reload.icon_name
+    assert_equal "Designers", room.name
+    assert_equal user_ids_before, room.user_ids.sort
+  end
+
   test "a direct room can't be converted to closed and have its participants revised" do
     sign_in :kevin
     direct = rooms(:bender_and_kevin)
