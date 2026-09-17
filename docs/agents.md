@@ -185,3 +185,80 @@ Status changes broadcast a Turbo Stream replace of the profile status badge
 and the directory row over the `agents:all` stream (`AgentsChannel`), which
 every signed-in human may subscribe to and bots may not. The badge and row
 carry no credentials or grants. `last_seen_at` changes never broadcast.
+
+## Approvals
+
+An agent asks for human authority before an external action by creating an
+`AgentApproval` (`agent_approvals`). The accountable people decide from
+their activity inbox, and the agent learns the decision through the same
+polling and webhook path it already uses for events.
+
+### Request fields
+
+`action` (1 to 60 chars, `[a-z0-9_.-]`), `summary` (plain text, max 500),
+optional `room_id` (the room the action concerns), optional opaque `payload`
+(JSON text, max 4 KB, never rendered as HTML), and optional `external_id`
+(an idempotency key, unique per agent when present). `expires_at` defaults
+to 24 hours after creation; the agent may request 5 minutes to 7 days via
+`expires_at` or `expires_in` seconds.
+
+### Agent API (Bearer-only, JSON)
+
+Every endpoint requires the `external_action` capability: in the request's
+room when a room is given, workspace-wide when none is. A missing grant is
+403 with the same error shape as event polling. Polling and acking
+decisions additionally require `read_messages`, like other event rows.
+
+- `POST /agents/approvals` creates a request (201 with `id`, `status`,
+  `expires_at`). A repeated `external_id` returns the existing row with
+  200 instead of a duplicate. Accepts a nested `approval` object or
+  top-level fields (`approval_action` aliases `action` at the top level,
+  where `action` collides with routing).
+- `GET /agents/approvals/:id` returns the row with its effective status,
+  decision, note, and decider name. 404 for another agent's rows.
+- `GET /agents/approvals?status=pending` lists the agent's own rows,
+  newest first, max 100.
+- `DELETE /agents/approvals/:id` cancels a pending request (200); 422
+  once decided or expired.
+
+```sh
+curl -X POST https://campfire.example.com/agents/approvals \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"approval":{"action":"deploy","summary":"Ship the release","room_id":1,"external_id":"deploy-123"}}'
+```
+
+### Statuses and expiry
+
+`pending`, `approved`, `denied`, `cancelled`, `expired`. There is no
+scheduler: expiry is lazy. `AgentApproval#effective_status` reads `expired`
+when a pending row is past `expires_at`, every read path uses it, and a
+decision or cancellation on an expired request is rejected with 422. A
+read path that notices an overdue pending row may persist `expired` in the
+same request.
+
+### Deciders
+
+The agent's owner and every administrator; a workspace agent with no owner
+is decided by administrators only. Nobody else may see or decide a
+request: other members get 404 on `GET /agents/:id/approvals` (HTML,
+paginated, filterable by status, linked from the bot edit page and the bot
+profile next to the ledger link) and on `PATCH /agent_approvals/:id`, and
+the inbox never shows them the item.
+
+Each decider gets one `agent_approval_request` activity item on create.
+The card shows the agent's name and avatar, the room name when present,
+the summary as escaped text, the time left, and Approve and Deny buttons
+(deny takes an optional note). Deciding marks every decider's item
+handled. Marking an inbox item read or handled never decides the request.
+
+### Delivery of decisions
+
+A human decision appends an `agent_events` row of deliverable type
+`approval_decided` with `metadata: { approval_id, status, decided_by,
+note }`, `outcome: delivered`, and no `message_id`. `GET /agents/events`
+returns it with an `approval` payload instead of `message`, and `ack`
+works on it. The webhook posts when configured with the same additive
+`agent` key plus an `approval` key carrying the same fields. Agent
+cancellation appends no event. Rate limits and the hop guard do not apply
+to these rows.
