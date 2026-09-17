@@ -13,7 +13,7 @@ New mentions, opted-in replies, followed-thread activity, and relevant work chan
 
 Handling an inbox item does not complete a work thread or approve an external action. Access follows the source conversation: removing a member's access also removes that conversation's items from their inbox. Deleted sources are not shown.
 
-Agent approvals, GitHub review requests, and event invitations will become additional sources as those integrations are implemented.
+Event invitations, updates, cancellations, and reminders are additional sources; see [Native events](events.md). Agent approvals and GitHub review requests will follow as those integrations are implemented.
 
 ## Work threads
 

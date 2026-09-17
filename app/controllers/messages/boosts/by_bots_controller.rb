@@ -1,8 +1,9 @@
 class Messages::Boosts::ByBotsController < Messages::BoostsController
-  include RawRequestBody
+  include AgentAuthorization, RawRequestBody
 
   allow_bot_access only: %i[ create destroy ]
 
+  require_agent_capability :react, only: %i[ create destroy ]
   before_action :ensure_content_present, only: :create
 
   def create
