@@ -88,6 +88,12 @@ class Agents::ApprovalsController < ApplicationController
     else
       render json: { error: approval.errors.full_messages.to_sentence }, status: :unprocessable_entity
     end
+  rescue ActiveRecord::RecordNotUnique
+    # Two identical requests raced past the replay lookup; the loser
+    # answers with the winner's row exactly like a replay.
+    existing = AgentApproval.find_by!(agent_id: agent.id, external_id: fields["external_id"])
+    existing.expire_if_due!
+    render json: approval_created_payload(existing), status: :ok
   rescue ArgumentError => error
     render json: { error: error.message }, status: :unprocessable_entity
   end

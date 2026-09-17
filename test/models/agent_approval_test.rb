@@ -163,4 +163,41 @@ class AgentApprovalTest < ActiveSupport::TestCase
       bot = User.create_bot!(name: "Approval Test Bot #{SecureRandom.hex(4)}")
       bot.create_agent!(kind: :workspace, owner: owner)
     end
+
+  test "decision webhook is posted after the transaction commits" do
+    approval = AgentApproval.create!(agent: agents(:bender_agent), room: rooms(:designers), action: "deploy", summary: "Ship it")
+    baseline = ActiveRecord::Base.connection.open_transactions
+    depth_at_post = nil
+
+    Agent::Delivery.expects(:post_approval_webhook!).with do |*|
+      depth_at_post = ActiveRecord::Base.connection.open_transactions
+      true
+    end
+    approval.decide!(decision: "approved", by: users(:david))
+
+    assert_equal baseline, depth_at_post, "webhook must be posted after the decision transaction commits"
+  end
+
+  test "a second decision on an already decided request appends no second event" do
+    approval = AgentApproval.create!(agent: agents(:bender_agent), room: rooms(:designers), action: "deploy", summary: "Ship it")
+    stale = AgentApproval.find(approval.id)
+    approval.decide!(decision: "approved", by: users(:david))
+    assert_equal "pending", stale.status, "the second decider still holds the pre-decision row"
+
+    assert_no_difference -> { approval.agent.agent_events.where(event_type: "approval_decided").count } do
+      assert_raises(ActiveRecord::RecordInvalid) { stale.decide!(decision: "denied", by: users(:david)) }
+    end
+    assert_equal "approved", approval.reload.status
+  end
+
+  test "cancelling and expiring mark decider inbox items handled" do
+    approval = AgentApproval.create!(agent: agents(:bender_agent), room: rooms(:designers), action: "deploy", summary: "Ship it")
+    approval.cancel_by_agent!
+    assert approval.activity_items.all? { |item| item.handled_at.present? }
+
+    expiring = AgentApproval.create!(agent: agents(:bender_agent), room: rooms(:designers), action: "deploy", summary: "Later", expires_at: 1.hour.from_now)
+    travel 2.hours
+    assert expiring.expire_if_due!
+    assert expiring.activity_items.reload.all? { |item| item.handled_at.present? }
+  end
 end

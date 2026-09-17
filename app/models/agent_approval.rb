@@ -49,23 +49,26 @@ class AgentApproval < ApplicationRecord
   def expire_if_due!
     return false unless status == "pending" && expires_at.present? && expires_at <= Time.current
 
-    update!(status: "expired")
+    transaction do
+      update!(status: "expired")
+      mark_inbox_items_handled!
+    end
     true
   end
 
   # Human decision. Raises ActiveRecord::RecordInvalid when the request is
-  # already decided, cancelled, or expired.
+  # already decided, cancelled, or expired. The pending check, the status
+  # write, and the ledger row share one locked transaction so two
+  # concurrent decisions cannot both pass the guard; the webhook is posted
+  # only after that transaction commits so a slow webhook host never holds
+  # the database write lock.
   def decide!(decision:, by:, note: nil)
     decision = decision.to_s
     raise ArgumentError, "Unknown decision: #{decision}" unless DECISIONS.include?(decision)
 
     expire_if_due!
-    unless status == "pending"
-      errors.add(:base, already_settled_message)
-      raise ActiveRecord::RecordInvalid.new(self)
-    end
-
-    transaction do
+    event = with_lock do
+      ensure_pending!
       update!(
         status: decision,
         decided_by: by,
@@ -76,6 +79,7 @@ class AgentApproval < ApplicationRecord
       record_decision_event!
     end
 
+    post_decision_webhook!(event)
     self
   end
 
@@ -84,12 +88,13 @@ class AgentApproval < ApplicationRecord
   # agent already knows it cancelled.
   def cancel_by_agent!
     expire_if_due!
-    unless status == "pending"
-      errors.add(:base, already_settled_message)
-      raise ActiveRecord::RecordInvalid.new(self)
+    with_lock do
+      ensure_pending!
+      update!(status: "cancelled")
+      mark_inbox_items_handled!
     end
 
-    update!(status: "cancelled")
+    self
   end
 
   def decidable_by?(user)
@@ -112,6 +117,17 @@ class AgentApproval < ApplicationRecord
   end
 
   private
+    # Runs inside the caller's locked transaction, on the reloaded row. A
+    # deadline that passed since the caller's own expire_if_due! reads as
+    # expired without being persisted here, because raising would roll the
+    # write back anyway; the next reader persists it.
+    def ensure_pending!
+      return if pending_effective?
+
+      errors.add(:base, already_settled_message)
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
     def normalize_external_id
       self.external_id = external_id.presence
     end
@@ -178,7 +194,6 @@ class AgentApproval < ApplicationRecord
           "note" => decision_note
         }
       )
-      post_decision_webhook!(event)
       event
     end
 
