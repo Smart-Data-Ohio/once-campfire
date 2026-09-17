@@ -55,7 +55,10 @@
   display: inline-flex;
 }
 
-.sidebar-item__icon--custom::before {
+/* icons.css loads before workspace.css and stage.css alphabetically, so the
+   suppression needs strictly higher specificity than their markers. */
+.sidebar-item__icon.sidebar-item__icon--custom::before,
+.stage-room .sidebar-item__icon.sidebar-item__icon--custom::before {
   content: none;
 }
 
@@ -70,7 +73,9 @@
   gap: 0.4ch;
 }
 
-.message--formatted .message__room--custom::before {
+/* The search arrow nests under .searches in sidebar.css, so this needs the
+   same scope plus the doubled class to win. */
+.searches .message--formatted .message__room.message__room--custom::before {
   content: none;
 }
 

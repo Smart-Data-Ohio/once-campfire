@@ -67,7 +67,22 @@ class IconsTest < ApplicationSystemTestCase
       assert_selector ".room-header__name", text: "All Pets"
       assert_selector ".room-header__identity img.icon-avatar"
       assert_selector "##{dom_id(rooms(:pets), :list)} .sidebar-item__icon--custom img.icon-avatar"
+      assert_equal "none", sidebar_marker_content(rooms(:pets))
+      assert_equal '"#"', sidebar_marker_content(rooms(:hq))
     end
+  end
+
+  test "icon rooms suppress the search arrow marker" do
+    rooms(:designers).update!(icon_name: "openai")
+    rooms(:designers).messages.create!(body: "Cartography atlas rendezvous", creator: users(:david), client_message_id: "icon-search-room")
+    rooms(:hq).messages.create!(body: "Cartography ledger rendezvous", creator: users(:david), client_message_id: "plain-search-room")
+
+    visit searches_path(q: "Cartography rendezvous")
+
+    assert_selector "#search-results .message__room--custom img.icon-avatar"
+    assert_selector "#search-results .message__room:not(.message__room--custom)"
+    assert_equal "none", search_marker_content(".message__room--custom")
+    assert_equal '"→"', search_marker_content(".message__room:not(.message__room--custom)")
   end
 
   test "lobehub brand icons render visibly in both themes" do
@@ -110,6 +125,18 @@ class IconsTest < ApplicationSystemTestCase
     def icon_filter(message)
       page.evaluate_script(<<~JS, dom_id(message))
         getComputedStyle(document.querySelector(`#${arguments[0]} img.icon--brand`)).filter
+      JS
+    end
+
+    def sidebar_marker_content(room)
+      page.evaluate_script(<<~JS, dom_id(room, :list))
+        getComputedStyle(document.querySelector(`#${arguments[0]} .sidebar-item__icon`), "::before").content
+      JS
+    end
+
+    def search_marker_content(selector)
+      page.evaluate_script(<<~JS, selector)
+        getComputedStyle(document.querySelector(`#search-results ${arguments[0]}`), "::before").content
       JS
     end
 end
