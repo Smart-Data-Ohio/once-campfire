@@ -300,6 +300,44 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_equal "**alice** opened pull request #12: Fix login\nhttps://github.com/rails/rails/pull/12", reply.markdown_source
   end
 
+  test "subscription events find the PR thread regardless of payload case" do
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-case")
+    payload = pull_request_payload(action: "opened")
+    payload["repository"]["full_name"] = "Rails/Rails"
+    payload["pull_request"]["base"]["repo"]["full_name"] = "Rails/Rails"
+
+    assert_difference -> { thread.messages.count }, 1 do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", payload)
+    end
+
+    bot = User.active_bots.find_by!(name: "GitHub")
+    assert_empty @room.root_messages.where(creator: bot)
+  end
+
+  test "failed checks use the stored title regardless of payload case" do
+    pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 12)
+    pull_request.update!(title: "Fix login")
+    payload = check_run_payload(name: "ci / test")
+    payload["repository"]["full_name"] = "Rails/Rails"
+
+    Github::DeliverSubscriptionEventJob.perform_now("check_run", payload)
+
+    message = @room.messages.order(:created_at).last
+    assert_equal "Checks failed on #12: Fix login (`ci / test`)\nhttps://github.com/Rails/Rails/pull/12", message.markdown_source
+  end
+
+  test "failed status matches stored PRs regardless of payload case" do
+    pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 12)
+    pull_request.update!(head_branch: "shiny", title: "Fix login", html_url: "https://github.com/rails/rails/pull/12")
+    payload = status_payload(state: "failure")
+    payload["repository"]["full_name"] = "Rails/Rails"
+
+    Github::DeliverSubscriptionEventJob.perform_now("status", payload)
+
+    message = @room.messages.order(:created_at).last
+    assert_equal "Checks failed on #12: Fix login (`ci / test`)\nhttps://github.com/rails/rails/pull/12", message.markdown_source
+  end
+
   test "thread updates broadcast to the thread stream" do
     thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-broadcast")
     stream = thread_messages_stream_name(thread)

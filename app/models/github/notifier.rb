@@ -93,13 +93,11 @@ module Github
           room.root_messages.create_with_attachment!(creator: bot, markdown_source: "#{post.line}\n#{post.url}").tap(&:broadcast_create)
         end
 
-        # The room's discussion thread for the posted PR, if one exists. The
-        # post carries the subscription's downcased names while stored PRs
-        # keep the link's case, so the lookup is case-insensitive.
+        # The room's discussion thread for the posted PR, if one exists.
+        # Stored PR names are downcased, as are the post's names, so this
+        # is a plain equality lookup.
         def pull_request_thread_for(room, post)
-          pull_request = Github::PullRequest
-            .where("LOWER(owner) = ? AND LOWER(repo) = ?", post.owner, post.repo)
-            .find_by(number: post.number)
+          pull_request = Github::PullRequest.find_by(owner: post.owner, repo: post.repo, number: post.number)
           return unless pull_request
 
           Github::PullRequestThread.find_by(github_pull_request_id: pull_request.id, room_id: room.id)&.channel_thread
@@ -226,8 +224,7 @@ module Github
           return [] if branches.empty? || payload["sha"].blank?
 
           full_name = payload.dig("repository", "full_name")
-          cased_owner, cased_repo = repository_name_parts(payload)
-          Github::PullRequest.where(owner: cased_owner, repo: cased_repo, head_branch: branches).map do |pr|
+          Github::PullRequest.where(owner: owner, repo: repo, head_branch: branches).map do |pr|
             Post.new(event_key: "checks_failed", owner:, repo:, number: pr.number, title: pr.title,
               url: pr.html_url.presence || "https://github.com/#{full_name}/pull/#{pr.number}",
               line: checks_failed_line(pr.number, pr.title, payload["context"]),
@@ -246,8 +243,9 @@ module Github
 
         # Best effort: the message posts whether or not the PR was fetched
         # yet; the title is filled in when a stored row already has one.
+        # The payload's names arrive in any case; stored names are downcased.
         def stored_pr_title(owner, repo, number)
-          Github::PullRequest.find_by(owner:, repo:, number:)&.title
+          Github::PullRequest.find_by(owner: owner.to_s.downcase, repo: repo.to_s.downcase, number:)&.title
         end
 
         def checks_failed_line(number, title, name)

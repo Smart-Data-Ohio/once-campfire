@@ -1,6 +1,6 @@
 <article class="github-pr-card github-pr-card--<%= pull_request.state || "unknown" %>" data-github-pr="<%= pull_request.full_name %>#<%= pull_request.number %>">
   <header class="github-pr-card__header">
-    <span class="github-pr-card__repo"><%= pull_request.full_name %></span>
+    <span class="github-pr-card__repo"><%= pull_request.display_full_name %></span>
     <span class="github-pr-card__number">#<%= pull_request.number %></span>
     <span class="github-pr-card__state"><%= github_pr_state_label(pull_request) %></span>
   </header>

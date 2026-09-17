@@ -82,7 +82,10 @@ control: when the room already has a thread for that PR it links there,
 otherwise it creates a thread with the card's message as its parent,
 records the mapping, and redirects to it. Creation follows the normal
 thread path — any room member may start one — and concurrent creations
-reuse the single mapping row.
+reuse the single mapping row. Repository identity is case-insensitive:
+links and webhook payloads in any case resolve to the same pull request
+row, which stores its owner and repo lowercased while the card keeps the
+fetched repository name's case.
 
 When a subscription event arrives for a PR the room already discusses,
 the GitHub bot posts into that thread instead of starting a new room
