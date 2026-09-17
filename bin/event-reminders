@@ -16,3 +16,4 @@ until stopping
   ensure
     sleep interval unless stopping
   end
+end
