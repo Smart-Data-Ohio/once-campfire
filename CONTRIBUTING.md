@@ -1,9 +1,9 @@
-# How to contribute to Campfire
+# How to contribute to Smartfire
 
-Campfire uses GitHub
-[discussions](https://github.com/basecamp/once-campfire/discussions) to track
+Smartfire uses GitHub
+[discussions](https://github.com/Smart-Data-Ohio/smartfire/discussions) to track
 feature requests and questions, rather than [the issue
-tracker](https://github.com/basecamp/once-campfire/issues). If you're considering
+tracker](https://github.com/Smart-Data-Ohio/smartfire/issues). If you're considering
 opening an issue or pull request, please open a discussion instead.
 
 Whenever a discussion leads to an actionable and well-understood task, we'll
@@ -46,4 +46,3 @@ something to work on if you'd like to do so.
 
 Hopefully this process makes it easier for everyone to be involved. Thanks for
 helping! ❤️
-
