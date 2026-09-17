@@ -28,6 +28,9 @@ class User < ApplicationRecord
 
   validates :github_login, uniqueness: { case_sensitive: false, message: "is already linked to another user" }, allow_nil: true
 
+  normalizes :icon_name, with: ->(name) { Icons.normalize_name(name) }
+  validate :icon_name_must_resolve
+
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
   before_update -> { AgentGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
@@ -78,6 +81,12 @@ class User < ApplicationRecord
   end
 
   private
+    def icon_name_must_resolve
+      if icon_name.present? && Icons.find(icon_name).nil?
+        errors.add :icon_name, "is not a known icon"
+      end
+    end
+
     def grant_membership_to_open_rooms
       Membership.insert_all(Rooms::Open.pluck(:id).collect { |room_id| { room_id: room_id, user_id: id } })
     end

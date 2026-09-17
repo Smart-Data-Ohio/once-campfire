@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022902) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -403,6 +403,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
   create_table "rooms", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "creator_id", null: false
+    t.string "icon_name"
     t.string "name"
     t.string "type", null: false
     t.datetime "updated_at", null: false
@@ -447,6 +448,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.datetime "created_at", null: false
     t.string "email_address"
     t.string "github_login"
+    t.string "icon_name"
     t.string "name", null: false
     t.string "password_digest"
     t.integer "role", default: 0, null: false
