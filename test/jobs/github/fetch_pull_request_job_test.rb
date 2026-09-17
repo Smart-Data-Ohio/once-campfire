@@ -36,6 +36,39 @@ class Github::FetchPullRequestJobTest < ActiveSupport::TestCase
     assert_nil @pull_request.fetch_error
   end
 
+  test "fetch stores the repository privacy from base.repo.private" do
+    stub_pull_request(base: { "ref" => "main", "repo" => { "private" => true } })
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    assert_equal true, @pull_request.reload.private
+  end
+
+  test "fetch stores a public repository as not private" do
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    assert_equal false, @pull_request.reload.private
+  end
+
+  test "fetch leaves privacy unknown when the payload omits base.repo.private" do
+    stub_pull_request(base: { "ref" => "main" })
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    assert_nil @pull_request.reload.private
+  end
+
   test "merged, closed, and draft states map to card states" do
     stub_pull_request(state: "closed", merged_at: "2026-09-01T00:00:00Z")
     stub_reviews([])
@@ -336,7 +369,7 @@ class Github::FetchPullRequestJobTest < ActiveSupport::TestCase
         "html_url" => "https://github.com/rails/rails/pull/123",
         "updated_at" => "2026-09-15T12:00:00Z",
         "user" => { "login" => "dhh", "avatar_url" => "https://avatars.example/dhh" },
-        "base" => { "ref" => "main" },
+        "base" => { "ref" => "main", "repo" => { "private" => false } },
         "head" => { "ref" => "shiny", "sha" => "abc123" }
       }.merge(overrides.stringify_keys)
 

@@ -60,12 +60,13 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
     assert_select ".github-pr-card", count: 0
   end
 
-  test "an unfetched PR renders a loading card" do
-    @room.messages.create!(
+  test "an unfetched public PR renders a loading card" do
+    message = @room.messages.create!(
       creator: users(:david),
       markdown_source: "https://github.com/rails/rails/pull/124",
       client_message_id: "card-render-loading"
     )
+    message.github_pull_requests.first.update!(private: false)
 
     get room_url(@room)
 
@@ -79,12 +80,48 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
       markdown_source: "https://github.com/rails/rails/pull/125",
       client_message_id: "card-render-error"
     )
-    message.github_pull_requests.first.update!(fetched_at: Time.current, fetch_error: "Pull request not found on GitHub")
+    message.github_pull_requests.first.update!(
+      private: false, fetched_at: Time.current, fetch_error: "Pull request not found on GitHub")
 
     get room_url(@room)
 
     assert_response :success
     assert_select ".github-pr-card__error", text: /couldn.t load/i
+  end
+
+  test "a private PR renders only the empty lazy frame in the message HTML" do
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "please review https://github.com/acme/secret/pull/123",
+      client_message_id: "card-render-private"
+    )
+    pull_request = message.github_pull_requests.first
+    fill_card(pull_request, is_private: true)
+
+    get room_url(@room)
+
+    assert_response :success
+    assert_select ".github-pr-card", count: 0
+    assert_select "turbo-frame.github-pr-card-frame[loading=lazy][src=?]",
+      room_github_pull_request_card_path(@room, pull_request, message_id: message.id), count: 1
+    assert_not_includes response.body, "Add shiny things"
+  end
+
+  test "a PR with unknown privacy is treated as private" do
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "please review https://github.com/acme/secret/pull/124",
+      client_message_id: "card-render-unknown"
+    )
+    pull_request = message.github_pull_requests.first
+    fill_card(pull_request, is_private: nil)
+
+    get room_url(@room)
+
+    assert_response :success
+    assert_select ".github-pr-card", count: 0
+    assert_select "turbo-frame.github-pr-card-frame[loading=lazy]", count: 1
+    assert_not_includes response.body, "Add shiny things"
   end
 
   test "rendering a stale card enqueues a refresh" do
@@ -224,8 +261,9 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
   end
 
   private
-    def fill_card(pull_request, fetched_at: Time.current, check_status: "passing")
+    def fill_card(pull_request, fetched_at: Time.current, check_status: "passing", is_private: false)
       pull_request.update!(
+        private: is_private,
         title: "Add shiny things", author_login: "dhh",
         author_avatar_url: "https://avatars.example/dhh",
         state: "open", base_branch: "main", head_branch: "shiny", head_sha: "abc123",
