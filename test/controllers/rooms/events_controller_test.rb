@@ -250,6 +250,41 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_predicate occurrence.reload, :cancelled?
   end
 
+  test "an administrator who is not the organizer can use this and following, but an ordinary member cannot" do
+    starts_at = 2.days.from_now
+    head = @room.events.create!(
+      organizer: users(:jz), title: "Weekly planning", starts_at:, ends_at: starts_at + 1.hour, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+    occurrence = occurrences.second
+
+    sign_in :jason
+    patch room_event_url(@room, occurrence), params: {
+      update_scope: "this_and_following",
+      event: {
+        title: "Renamed",
+        starts_at: occurrence.starts_at.strftime("%Y-%m-%dT%H:%M"),
+        ends_at: occurrence.ends_at.strftime("%Y-%m-%dT%H:%M"),
+        time_zone: "UTC"
+      }
+    }
+
+    assert_redirected_to room_event_path(@room, occurrence)
+    assert_equal "Weekly planning", occurrences.first.reload.title
+    assert_equal "Renamed", occurrence.reload.title
+    assert_equal "Renamed", occurrences.third.reload.title
+
+    sign_in :kevin
+    patch room_event_url(@room, occurrence), params: {
+      update_scope: "this_and_following",
+      event: { title: "Hijacked" }
+    }
+
+    assert_response :forbidden
+    assert_equal "Renamed", occurrence.reload.title
+  end
+
   test "cancelling this and following cancels later occurrences with one item per attendee" do
     head = @room.events.create!(
       organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
@@ -282,6 +317,72 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_predicate occurrences.first.reload, :cancelled?
     assert_predicate occurrences.second.reload, :cancelled?
     assert_not_predicate occurrences.third.reload, :cancelled?
+  end
+
+  test "cancelling this event explicitly cancels only that occurrence" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+
+    patch cancel_room_event_url(@room, occurrences.second), params: { cancel_scope: "this_event" }
+
+    assert_redirected_to room_event_path(@room, occurrences.second)
+    assert_not_predicate occurrences.first.reload, :cancelled?
+    assert_predicate occurrences.second.reload, :cancelled?
+    assert_not_predicate occurrences.third.reload, :cancelled?
+  end
+
+  test "show renders cancel scopes for series occurrences and a single cancel for single events" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+
+    get room_event_url(@room, head.series_events.second)
+
+    assert_response :success
+    assert_select "input[name=cancel_scope][value=this_event]", count: 1
+    assert_select "input[name=cancel_scope][value=this_and_following]", count: 1
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "input[name=cancel_scope]", count: 0
+    assert_includes response.body, "Cancel event"
+  end
+
+  test "index issues a bounded number of queries regardless of occurrence count" do
+    heads = 2.times.map do
+      @room.events.create!(
+        organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+        recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+      )
+    end
+    assert_equal 3, heads.first.series_events.count
+
+    get room_events_url(@room)
+    assert_response :success
+
+    small = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    heads.each do |head|
+      head.update_with_scope!(
+        { recurrence_until: Date.current + 2 + 49 }, scope: "this_and_following", actor: users(:david)
+      )
+    end
+    assert_equal 8, heads.first.reload.series_events.count
+
+    large = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    assert_equal small, large
   end
 
   test "create renders errors for invalid events" do
@@ -431,4 +532,16 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
 
     assert_not_includes response.body, "Added to your Google Calendar"
   end
+
+  private
+    def count_sql_queries(&block)
+      queries = 0
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+        queries += 1 unless payload[:name] == "SCHEMA"
+      end
+      block.call
+      queries
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
 end

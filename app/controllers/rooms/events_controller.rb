@@ -9,12 +9,15 @@ class Rooms::EventsController < ApplicationController
   before_action :ensure_event_canceller, only: :cancel
 
   def index
-    upcoming = @room.events.upcoming.soonest_first.includes(:organizer, :attendances).to_a
-    @series_counts = upcoming.select(&:series?).group_by(&:series_id).to_h do |series_id, occurrences|
-      representative = occurrences.min_by { |occurrence| [ occurrence.starts_at, occurrence.id ] }
-      [ representative.id, occurrences.size ]
+    upcoming_scope = @room.events.upcoming
+    remaining_by_series = upcoming_scope.where.not(series_id: nil).group(:series_id).count
+    representative_ids = remaining_by_series.keys.filter_map do |series_id|
+      upcoming_scope.where(series_id:).soonest_first.pick(:id)
     end
-    @upcoming_events = upcoming.select { |event| !event.series? || @series_counts.key?(event.id) }
+    representatives = @room.events.where(id: representative_ids).includes(:organizer, :attendances).to_a
+    @series_counts = representatives.to_h { |event| [ event.id, remaining_by_series.fetch(event.series_id) ] }
+    singles = @room.events.upcoming.where(series_id: nil).soonest_first.includes(:organizer, :attendances).to_a
+    @upcoming_events = (singles + representatives).sort_by { |event| [ event.starts_at, event.id ] }
     @past_events = @room.events.past.ordered.includes(:organizer, :attendances)
     @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances)
   end
