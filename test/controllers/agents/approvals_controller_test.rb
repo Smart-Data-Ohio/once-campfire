@@ -121,6 +121,20 @@ class Agents::ApprovalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "First", AgentApproval.find(first_id).summary
   end
 
+  test "create refuses github.* actions, which only the pull request actions endpoint may create" do
+    grant!(capability: "external_action", room: @room)
+
+    assert_no_difference -> { AgentApproval.count } do
+      post agents_approvals_url,
+        params: { approval: { action: "github.comment", summary: "Comment on rails/rails#1: hi", room_id: @room.id,
+          payload: { pull_request_id: 1, kind: "approve" }.to_json } }.to_json,
+        headers: bearer_headers
+    end
+
+    assert_response :unprocessable_entity
+    assert_match "pull_request_actions", response.parsed_body["error"]
+  end
+
   test "create validates the approval fields" do
     grant!(capability: "external_action", room: @room)
 

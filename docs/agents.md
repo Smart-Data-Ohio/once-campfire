@@ -70,8 +70,9 @@ its next post immediately.
 messages) with `agent_id`, `event_type`, optional `room_id`, `message_id`,
 `agent_credential_id`, `actor_id`, `outcome`, `detail`, JSON `metadata`, and
 `created_at`, indexed on `[agent_id, created_at]`. Deliverable types are
-`mention`, `direct_message`, `reply`, `approval_decided`, `work_assigned`,
-and `work_unassigned`; ledger-only types are `posted`
+`mention`, `direct_message`, `reply`, `approval_decided`,
+`github_action_completed`, `work_assigned`, and `work_unassigned`;
+ledger-only types are `posted`
 (written whenever the agent posts through any endpoint) and the suppression
 rows `delivery_suppressed_rate_limit`, `delivery_suppressed_hop_limit`, and
 `delivery_suppressed_revoked`. Outcomes are `pending`, `delivered`,
@@ -273,6 +274,27 @@ works on it. The webhook posts when configured with the same additive
 `agent` key plus an `approval` key carrying the same fields. Agent
 cancellation appends no event. Rate limits and the hop guard do not apply
 to these rows.
+
+### GitHub write actions
+
+An agent requests a pull-request write action — comment, approve, request
+changes, or request review — through
+`POST /rooms/:room_id/agents/github/pull_request_actions`, which creates
+a `github.*` approval for the usual deciders instead of calling GitHub.
+See [GitHub pull request cards](github.md#agent-write-actions) for the
+identity, endpoint, gates, and execution rules.
+
+When a `github.*` request is approved, the server performs the action
+with the agent's own linked GitHub account and appends a
+`github_action_completed` event to the agent's ledger: non-message,
+room-scoped, `outcome: delivered`, always readable by its own agent,
+with `metadata` carrying `approval_id`, `action`, `status` (`completed`
+or `failed`), the GitHub `url` when completed, or a `message` when
+failed. `GET /agents/events` returns it with a `github_action` key
+instead of `message`, `ack` works on it, the webhook posts it with the
+same additive `agent` key plus `github_action`, and the ledger page
+lists it with its status. Rate limits and the hop guard do not apply,
+like approval rows.
 
 ## Work threads
 

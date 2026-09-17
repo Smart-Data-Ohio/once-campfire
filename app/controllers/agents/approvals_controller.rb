@@ -72,6 +72,15 @@ class Agents::ApprovalsController < ApplicationController
       end
     end
 
+    # github.* approvals carry an executable payload the server built and
+    # bound to the summary the decider sees; they are only created through
+    # the pull-request actions endpoint, never with agent-supplied payloads.
+    if fields["action"].to_s.start_with?("github.")
+      render json: { error: "github.* actions are requested through /rooms/:room_id/agents/github/pull_request_actions" },
+        status: :unprocessable_entity
+      return
+    end
+
     approval = AgentApproval.new(
       agent: agent,
       room: room,

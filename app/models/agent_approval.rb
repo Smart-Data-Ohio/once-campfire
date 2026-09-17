@@ -79,6 +79,10 @@ class AgentApproval < ApplicationRecord
       record_decision_event!
     end
 
+    if decision == "approved" && github_action?
+      Github::PerformAgentActionJob.perform_later(id)
+    end
+
     post_decision_webhook!(event)
     self
   end
@@ -95,6 +99,10 @@ class AgentApproval < ApplicationRecord
     end
 
     self
+  end
+
+  def github_action?
+    action.to_s.start_with?("github.")
   end
 
   def decidable_by?(user)

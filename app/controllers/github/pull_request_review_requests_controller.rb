@@ -7,13 +7,11 @@
 class Github::PullRequestReviewRequestsController < ApplicationController
   include GithubWriteAction
 
-  LOGIN_PATTERN = /\A[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\z/i
-  MAX_REVIEWERS = 15
-  INVALID_REVIEWERS_MESSAGE = "Enter GitHub usernames separated by commas.".freeze
+  INVALID_REVIEWERS_MESSAGE = Github::ReviewLogins::INVALID_MESSAGE
 
   def create
     submitted = params[:reviewers].to_s
-    logins = normalize_logins(submitted)
+    logins = Github::ReviewLogins.normalize(submitted)
 
     if logins.blank?
       return render_write_result(alert: INVALID_REVIEWERS_MESSAGE, status: :unprocessable_content, reviewers_body: submitted)
@@ -32,18 +30,4 @@ class Github::PullRequestReviewRequestsController < ApplicationController
   rescue Github::WriteClient::Refused, Github::WriteClient::Error => error
     render_write_result(alert: error.message, status: :unprocessable_content, reviewers_body: submitted)
   end
-
-  private
-    # Splits on commas or whitespace, strips one leading @, downcases for
-    # comparison, and dedupes. Returns nil when any login is invalid or
-    # there are more than MAX_REVIEWERS unique logins.
-    def normalize_logins(submitted)
-      logins = submitted.split(/[\s,]+/).reject(&:empty?).map { |token| token.sub(/\A@/, "").downcase }
-      return nil if logins.any? { |login| !LOGIN_PATTERN.match?(login) }
-
-      logins = logins.uniq
-      return nil if logins.size > MAX_REVIEWERS
-
-      logins
-    end
 end

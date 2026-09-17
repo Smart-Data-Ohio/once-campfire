@@ -1,7 +1,10 @@
 class AgentEvent < ApplicationRecord
   MESSAGE_DELIVERABLE_TYPES = %w[ mention direct_message reply ].freeze
   WORK_DELIVERABLE_TYPES = %w[ work_assigned work_unassigned ].freeze
-  DELIVERABLE_TYPES = (MESSAGE_DELIVERABLE_TYPES + %w[ approval_decided ] + WORK_DELIVERABLE_TYPES).freeze
+  # Decision-adjacent rows with no message that are always readable by their
+  # own agent: approval decisions and completed GitHub write actions.
+  ALWAYS_READABLE_TYPES = %w[ approval_decided github_action_completed ].freeze
+  DELIVERABLE_TYPES = (MESSAGE_DELIVERABLE_TYPES + ALWAYS_READABLE_TYPES + WORK_DELIVERABLE_TYPES).freeze
   SUPPRESSED_TYPES = %w[
     delivery_suppressed_rate_limit
     delivery_suppressed_hop_limit
@@ -32,8 +35,9 @@ class AgentEvent < ApplicationRecord
     # covering that room (legacy agents keep read everywhere). Work rows
     # carry no message and are readable under the same rule applied to
     # their own room_id, so threads the agent can no longer read drop out
-    # like revoked message rows. Approval decision rows carry no message
-    # and are always readable by their own agent. Expressed as joins, the
+    # like revoked message rows. Approval decision and GitHub completion
+    # rows carry no message and are always readable by their own agent.
+    # Expressed as joins, the
     # way ActivityItem.accessible_to does it, so callers limit after
     # filtering and revoked rows can never hide newer readable rows.
     def readable_by(agent)
@@ -53,9 +57,9 @@ class AgentEvent < ApplicationRecord
       if agent.legacy_capabilities?
         scope.where(
           "(agent_events.event_type IN (?) AND event_messages.id IS NOT NULL AND event_memberships.id IS NOT NULL) " \
-            "OR agent_events.event_type = ? " \
+            "OR agent_events.event_type IN (?) " \
             "OR (agent_events.event_type IN (?) AND event_room_memberships.id IS NOT NULL)",
-          MESSAGE_DELIVERABLE_TYPES, "approval_decided", WORK_DELIVERABLE_TYPES
+          MESSAGE_DELIVERABLE_TYPES, ALWAYS_READABLE_TYPES, WORK_DELIVERABLE_TYPES
         ).distinct
       else
         scope = scope.joins(<<~SQL.squish)
@@ -75,9 +79,9 @@ class AgentEvent < ApplicationRecord
 
         scope.where(
           "(agent_events.event_type IN (?) AND event_messages.id IS NOT NULL AND event_memberships.id IS NOT NULL AND event_grants.id IS NOT NULL) " \
-            "OR agent_events.event_type = ? " \
+            "OR agent_events.event_type IN (?) " \
             "OR (agent_events.event_type IN (?) AND event_room_memberships.id IS NOT NULL AND event_room_grants.id IS NOT NULL)",
-          MESSAGE_DELIVERABLE_TYPES, "approval_decided", WORK_DELIVERABLE_TYPES
+          MESSAGE_DELIVERABLE_TYPES, ALWAYS_READABLE_TYPES, WORK_DELIVERABLE_TYPES
         ).distinct
       end
     end
