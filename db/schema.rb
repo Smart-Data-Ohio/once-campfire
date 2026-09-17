@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -69,6 +69,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
     t.string "source_type", null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["event_type", "created_at"], name: "index_activity_items_on_event_type_and_created_at"
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
@@ -88,6 +89,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
     t.datetime "updated_at", null: false
     t.index ["agent_id", "revoked_at"], name: "index_agent_credentials_on_agent_id_and_revoked_at"
     t.index ["token_digest"], name: "index_agent_credentials_on_token_digest", unique: true
+  end
+
+  create_table "agent_grants", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.string "capability", null: false
+    t.datetime "created_at", null: false
+    t.integer "granted_by_id", null: false
+    t.datetime "revoked_at"
+    t.integer "room_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "capability"], name: "index_agent_grants_on_agent_capability_active_workspace", unique: true, where: "revoked_at IS NULL AND room_id IS NULL"
+    t.index ["agent_id", "revoked_at"], name: "index_agent_grants_on_agent_id_and_revoked_at"
+    t.index ["agent_id", "room_id", "capability"], name: "index_agent_grants_on_agent_room_capability_active", unique: true, where: "revoked_at IS NULL AND room_id IS NOT NULL"
   end
 
   create_table "agents", force: :cascade do |t|
@@ -144,6 +158,48 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
     t.index ["work_owner_id"], name: "index_channel_threads_on_work_owner_id"
   end
 
+  create_table "github_pull_request_references", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "github_pull_request_id", null: false
+    t.integer "message_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_pull_request_id"], name: "index_github_pull_request_references_on_github_pull_request_id"
+    t.index ["message_id", "github_pull_request_id"], name: "index_gh_pr_refs_on_message_and_pr", unique: true
+    t.index ["message_id"], name: "index_github_pull_request_references_on_message_id"
+  end
+
+  create_table "github_pull_requests", force: :cascade do |t|
+    t.string "author_avatar_url"
+    t.string "author_login"
+    t.string "base_branch"
+    t.string "check_status"
+    t.datetime "created_at", null: false
+    t.string "fetch_error"
+    t.datetime "fetch_requested_at"
+    t.datetime "fetched_at"
+    t.datetime "github_updated_at"
+    t.string "head_branch"
+    t.string "head_sha"
+    t.string "html_url"
+    t.integer "number", null: false
+    t.string "owner", null: false
+    t.json "payload"
+    t.string "repo", null: false
+    t.string "review_decision"
+    t.string "state"
+    t.string "title"
+    t.datetime "updated_at", null: false
+    t.index ["owner", "repo", "number"], name: "index_github_pull_requests_on_owner_repo_number", unique: true
+  end
+
+  create_table "github_webhook_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_guid", null: false
+    t.string "event"
+    t.datetime "updated_at", null: false
+    t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
+  end
+
   create_table "huddle_cleanups", force: :cascade do |t|
     t.integer "attempts", default: 0, null: false
     t.datetime "completed_at"
@@ -165,6 +221,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
   create_table "huddle_grants", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "identity", null: false
+    t.datetime "last_issued_at"
+    t.datetime "last_seen_at"
     t.integer "membership_id", null: false
     t.datetime "revoked_at"
     t.integer "room_id", null: false
@@ -174,6 +232,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
     t.integer "user_id", null: false
     t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
     t.index ["membership_id"], name: "index_huddle_grants_on_membership_id"
+    t.index ["room_id", "last_seen_at"], name: "index_huddle_grants_on_room_and_last_seen_at"
     t.index ["room_id"], name: "index_huddle_grants_on_room_id"
     t.index ["session_id", "membership_id"], name: "index_active_huddle_grants_on_session_and_membership", unique: true, where: "revoked_at IS NULL"
     t.index ["session_id"], name: "index_huddle_grants_on_session_id"
@@ -332,6 +391,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_010000) do
   add_foreign_key "channel_threads", "rooms"
   add_foreign_key "channel_threads", "users", column: "creator_id"
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
+  add_foreign_key "github_pull_request_references", "github_pull_requests"
+  add_foreign_key "github_pull_request_references", "messages"
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify

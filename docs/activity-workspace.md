@@ -42,7 +42,15 @@ This first version supports human ownership and progress. Agent assignment and r
 
 Open a one-to-one DM and choose **Join huddle**. The other person joins from the same DM. Audio, screen sharing, camera video, mute, reconnect, and leaving use the existing Huddles controls; moving to another channel keeps the call connected.
 
-This first version uses a shared join control. Ringing, call invitations, and missed-call notifications are a separate follow-up. Group DMs do not expose this one-to-one control.
+Group DMs do not expose this one-to-one control.
+
+## Huddle invitations
+
+When someone starts a huddle in a one-to-one DM, the other participant gets an incoming-huddle banner naming the caller, with **Join** and **Dismiss**. Join opens the DM first when needed and then joins the call; Dismiss marks the invitation read. Someone away from the app gets a "<name> started a huddle" push notification that opens the DM instead, following their existing notification settings.
+
+Every invitation also lands in the activity inbox. Answering the call marks it handled automatically. An invitation left unanswered for 45 seconds, or one whose starter left first, becomes a missed-huddle item that stays unread until opened or handled. Starting the call again rings again unless an invitation or missed-huddle item from the last two minutes already exists, so reconnects and rejoins do not ring twice.
+
+There is no audible ringtone in this version, and the invitation ignores the recipient's `involvement` setting: only push delivery respects notification settings. Both stay out of scope. As with other inbox sources, losing access to the DM removes its huddle items.
 
 ## Appearance
 

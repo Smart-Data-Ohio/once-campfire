@@ -42,7 +42,7 @@ source .bundle/livekit/env
 LIVEKIT_SYSTEM_TESTS=1 PARALLEL_WORKERS=1 bin/rails test test/system/huddles_test.rb
 ```
 
-The test suite starts its own gateway on port 7884. The `start` and `gateway` commands run the private server or gateway separately for that kind of controlled test and for diagnosis. They are not safe substitutes for `serve` in normal operation because a separately launched LiveKit process can outlive gateway enforcement.
+The test suite starts its own gateway on port 7884 and pins the Rails fixture server to port 3001 only when `LIVEKIT_SYSTEM_TESTS=1` is set, so ordinary parallel `bin/rails test:system` runs keep using random ports. The `start` and `gateway` commands run the private server or gateway separately for that kind of controlled test and for diagnosis. They are not safe substitutes for `serve` in normal operation because a separately launched LiveKit process can outlive gateway enforcement.
 
 The same suite can opt into a remote production-shaped media stack while keeping Rails, fixtures, and application data local. Point `LIVEKIT_INTERNAL_URL` through a local SSH forward to remote port 7880 (for example, `http://127.0.0.1:7880`). Use a separate reverse forward from remote `127.0.0.1:3301` to the local fixture Rails server on port 3001, and set the remote gateway's `GATEWAY_CAMPFIRE_URL=http://127.0.0.1:3301`. Then run:
 
@@ -100,3 +100,13 @@ See LiveKit's official [ports and firewall reference](https://docs.livekit.io/tr
 The checked-in [production media-host package](../deploy/huddles/README.md) supplies the separate-host container, fail-closed supervisor, TLS routing, exact network boundary, and operator checks for `chat.smartdata.net`.
 
 The [audio and video quality assessment](huddle-quality.md) records the next pilot and product decisions.
+
+## Invitations and missed huddles
+
+Starting a huddle in a one-to-one DM rings the other participant. A huddle "starts" when a `HuddleGrant` is issued for a `Rooms::Direct` room with exactly two human users while the other participant is not in the call; channel huddles send no invitations. The starter's grant becomes the source of a `huddle_started` activity item for the recipient, visible only while they can access the room. No second invitation is created for the room while any `huddle_started` or `huddle_missed` item from the last two minutes exists, handled or not, so reconnects and rejoins stay silent. After that window a new start rings again by resetting the same inbox row in place, so the recipient's existing links keep working.
+
+"In the call" is a liveness signal, not grant existence: grants persist per session, but every gateway authorization check records `last_seen_at` on the grant (at most once per 10 seconds), and a participant counts as in the call when seen within the last 20 seconds. Issuing a grant also marks the issuer's own open invitations for the room handled, so joining late clears even a missed item.
+
+The recipient's banner arrives over the same per-user `ActivityChannel` broadcast as other activity, with an invitation payload naming the caller and room. Join marks the item handled immediately and dispatches the same `huddle:join` window event with `{ roomId, roomName }` that the room header's join control uses, navigating to the DM first when the recipient is elsewhere; Dismiss marks the item read. The banner stays hidden while the huddle panel is already connected or connecting to that room. Disconnected recipients also get a Web Push "<name> started a huddle" notification linking to the DM, limited to opted-in memberships like message push.
+
+Forty-five seconds after the start, `Huddle::InvitationResolver` resolves the invitation: a recipient who obtained a grant since the start, or is in the call, has the item marked handled automatically, while an unanswered invitation, including one whose starter already left, becomes an unread `huddle_missed` item. Resolution runs in the `huddle_reconciler` process loop alongside cleanup reconciliation, so missed-huddle resolution depends on the reconciler process the same way huddle cleanup does; the activity inbox also resolves the current user's overdue invitations lazily on load, so it is never stale when the reconciler is down. Both event types appear in the activity inbox with a link to the DM. There is no audible ringtone in this version.

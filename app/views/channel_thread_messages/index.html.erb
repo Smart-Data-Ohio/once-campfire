@@ -1,1 +1,1 @@
-<%= render partial: "messages/message", collection: @messages, cached: true %>
+<%= render partial: "messages/message", collection: @messages, cached: ->(message) { message_with_pr_cards_cache_key(message) } %>

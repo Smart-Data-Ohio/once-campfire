@@ -22,6 +22,7 @@ Rails.application.routes.draw do
         scope module: "bots" do
           resource :key, only: :update
           resources :credentials, only: %i[ index create destroy ]
+          resources :grants, only: %i[ index create destroy ]
         end
       end
 
@@ -62,6 +63,7 @@ Rails.application.routes.draw do
   end
 
   get "agents/me", to: "agents#me", defaults: { format: :json }
+  post "rooms/:room_id/agents/messages", to: "agents/messages#create", defaults: { format: :json }, as: :room_agent_messages
 
   direct :fresh_user_avatar do |user, options|
     route_for :user_avatar, user.avatar_token, v: user.updated_at.to_fs(:number)
@@ -139,6 +141,10 @@ Rails.application.routes.draw do
   resources :work_threads, path: "work", only: :index
 
   resource :unfurl_link, only: :create
+
+  namespace :github do
+    post "webhooks", to: "webhooks#create"
+  end
 
   get "webmanifest"    => "pwa#manifest"
   get "service-worker" => "pwa#service_worker"
