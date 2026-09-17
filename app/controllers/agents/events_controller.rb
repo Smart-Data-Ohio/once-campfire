@@ -15,7 +15,8 @@ class Agents::EventsController < ApplicationController
   # agent's own deliverable rows ordered by id. Readability (message exists,
   # membership, read grant) filters in SQL before the limit applies, so
   # revoked rows can never hide newer readable rows. Approval decision rows
-  # carry no message and render an approval payload instead; work rows
+  # carry no message and render an approval payload instead; GitHub
+  # completion rows render a github_action payload instead, and work rows
   # render a work payload instead.
   def index
     no_store_response!
@@ -87,11 +88,11 @@ class Agents::EventsController < ApplicationController
         return
       end
 
-      # Approval decisions and work assignments carry no message and are
-      # always ackable by their own agent. Clearing the room forces the
-      # capability check below to the workspace-wide form, matching the
-      # polling endpoint.
-      if @agent_event.event_type == "approval_decided" || AgentEvent::WORK_DELIVERABLE_TYPES.include?(@agent_event.event_type)
+      # Approval decisions, GitHub completions, and work assignments carry
+      # no message and are always ackable by their own agent. Clearing the
+      # room forces the capability check below to the workspace-wide form,
+      # matching the polling endpoint.
+      if AgentEvent::ALWAYS_READABLE_TYPES.include?(@agent_event.event_type) || AgentEvent::WORK_DELIVERABLE_TYPES.include?(@agent_event.event_type)
         @room = nil
         @message = nil
         return
@@ -113,6 +114,10 @@ class Agents::EventsController < ApplicationController
     end
 
     def poll_payload(agent, event)
+      if event.event_type == "github_action_completed"
+        return github_action_poll_payload(event)
+      end
+
       if event.event_type == "approval_decided" || event.message_id.nil? && event.metadata.is_a?(Hash) && event.metadata["approval_id"]
         return approval_poll_payload(event)
       end
@@ -157,6 +162,26 @@ class Agents::EventsController < ApplicationController
         room: { id: room.id, name: room.name },
         actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
         work: Agent::Delivery.work_payload(thread, assigned_by: metadata["assigned_by"])
+      }.compact
+    end
+
+    def github_action_poll_payload(event)
+      metadata = event.metadata.is_a?(Hash) ? event.metadata : {}
+      room = event.room
+      {
+        id: event.id,
+        event_type: event.event_type,
+        outcome: event.outcome,
+        created_at: event.created_at&.utc,
+        room: room ? { id: room.id, name: room.name } : nil,
+        actor: event.actor ? { id: event.actor.id, name: event.actor.name } : nil,
+        github_action: {
+          approval_id: metadata["approval_id"],
+          action: metadata["action"],
+          status: metadata["status"],
+          url: metadata["url"],
+          message: metadata["message"]
+        }.compact
       }.compact
     end
 

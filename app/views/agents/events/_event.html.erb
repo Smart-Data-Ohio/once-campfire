@@ -12,6 +12,9 @@
       <% if event.detail.present? %>
         <div class="txt-small"><%= event.detail %></div>
       <% end %>
+      <% if event.event_type == "github_action_completed" && event.metadata.is_a?(Hash) %>
+        <div class="txt-small">GitHub <%= event.metadata["action"] %>: <%= event.metadata["status"] %><% if event.metadata["message"].present? %> — <%= event.metadata["message"] %><% end %></div>
+      <% end %>
       <% if agent_event_content_visible?(@agent, event, Current.user) %>
         <div class="txt-small overflow-ellipsis"><%= truncate(event.message.plain_text_body, length: 140) %></div>
       <% else %>
