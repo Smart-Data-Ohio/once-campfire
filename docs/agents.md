@@ -104,11 +104,12 @@ At most 20 deliveries per agent per room per minute, counted from
 `agent_events`; excess writes `delivery_suppressed_rate_limit` and is
 dropped, not queued. Agent-to-agent chains carry `metadata.hop`: human
 messages start at 0, and an agent's message carries its trigger's hop plus
-one, where the trigger is the agent's most recent `delivered` or
-`acknowledged` event in that room within the last five minutes.
-Suppression and pending rows are never triggers, and neither the request
-body nor the reply target influences the hop; a message with no recent
-trigger is a new root at 0. A chain reaching hop 3 writes
+one, where the trigger is the most recent mention, direct message, or
+reply `delivered` to or `acknowledged` by the agent in that room within the
+last five minutes. The agent's own `posted` rows, suppression rows, and
+pending rows are never triggers, and neither the request body nor the reply
+target influences the hop; a message with no recent trigger is a new root
+at 0. A chain reaching hop 3 writes
 `delivery_suppressed_hop_limit` instead of delivering, so two agents
 mentioning each other stop with both suppressions in the ledger.
 

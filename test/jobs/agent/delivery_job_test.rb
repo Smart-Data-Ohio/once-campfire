@@ -379,7 +379,7 @@ class Agent::DeliveryJobTest < ActiveSupport::TestCase
     assert_equal 0, agent_b.agent_events.deliverable.last.hop
   end
 
-  test "consecutive posts without new deliveries chain off the latest row" do
+  test "an agent's own posts are not hop triggers" do
     agent_b = create_agent_in(@room, name: "Chain Bot B")
 
     @room.messages.create!(
@@ -388,11 +388,13 @@ class Agent::DeliveryJobTest < ActiveSupport::TestCase
     )
     assert_equal 0, agent_b.agent_events.deliverable.last.hop
 
+    # Nothing was delivered to the sender in between, so its next unprompted
+    # post is a new root rather than a continuation of its own post.
     @room.messages.create!(
       creator: @bot, markdown_source: "Hey @[#{agent_b.user.name}] two",
       client_message_id: "chain-two"
     )
-    assert_equal 1, agent_b.agent_events.deliverable.last.hop
+    assert_equal 0, agent_b.agent_events.deliverable.last.hop
   end
 
   private

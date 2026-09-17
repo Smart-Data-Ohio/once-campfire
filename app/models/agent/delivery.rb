@@ -146,15 +146,17 @@ class Agent::Delivery
       end
 
       # Human messages start a chain at hop 0. An agent's message continues
-      # the chain of its server-authorized trigger: the agent's most recent
-      # delivered or acknowledged event in the room within the trigger
-      # window. Suppression rows and pending rows are never triggers, and
+      # the chain of its server-authorized trigger: the most recent event
+      # delivered to (or acknowledged by) the agent in the room within the
+      # trigger window. The agent's own posted rows, suppression rows, and
+      # pending rows are never triggers, so an agent posting several
+      # unprompted messages does not escalate its own hop count, and
       # neither the request body nor the reply target influences the hop. A
       # message with no recent trigger is a new root at hop 0.
       def message_hop_for(message, sender_agent)
         return 0 unless sender_agent
 
-        trigger = sender_agent.agent_events
+        trigger = sender_agent.agent_events.deliverable
           .where(room_id: message.room_id, outcome: %w[ delivered acknowledged ])
           .where("created_at >= ?", TRIGGER_WINDOW.ago)
           .order(id: :desc).first
