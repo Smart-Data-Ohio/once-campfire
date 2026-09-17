@@ -156,6 +156,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
   test "removing a member drops their sidebar row and header stack without errors" do
     visit room_path(@room)
     wait_for_cable_connection
+    observe_turbo_stream_renders
 
     # The room page refreshes itself over the HeartbeatChannel reconnect, and
     # for a revoked membership that refresh 404s. That is pre-existing
@@ -172,7 +173,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     JS
 
     david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
-    sleep 0.5
+    wait_for_issuance_broadcast
     david_grant.record_seen!
     within(".room-header__actions") { assert_selector ".voice-stack--live", wait: 10 }
 
@@ -183,11 +184,16 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     JS
 
     using_session("Admin") do
-      sign_in "david@37signals.com"
-      visit edit_rooms_voice_path(@room)
-      find("li[data-value='jason'] label.switch").click
-      find("button.btn--reversed").click
-      assert_selector ".room-header__name", text: "Lounge"
+      # The second session signs in and navigates while the first session's
+      # cable churns; give its async landings the same budget as the test's
+      # other waits instead of the 2s default.
+      using_wait_time(10) do
+        sign_in "david@37signals.com"
+        visit edit_rooms_voice_path(@room)
+        find("li[data-value='jason'] label.switch").click
+        find("button.btn--reversed").click
+        assert_selector ".room-header__name", text: "Lounge"
+      end
     end
 
     # The sidebar row drops over the broadcast, or (when the test adapter
@@ -197,7 +203,10 @@ class VoiceChannelsTest < ApplicationSystemTestCase
 
     # The header stack usually drops over the same broadcast. If this run's
     # delivery reordered it behind the reset, drive the revoked poll instead:
-    # the 404 clears the same stack in place. Either way no live stack shows.
+    # the 404 clears the same stack in place. That refresh can be served a
+    # still-live cached response from a poll just before the removal, so wait
+    # for the stable end state (element gone, or controller revoked so no
+    # later poll can re-render it) rather than one live-free instant.
     unless page.has_no_css?(".room-header__actions .voice-stack", wait: 5)
       page.evaluate_async_script(<<~JS)
         const done = arguments[arguments.length - 1]
@@ -207,6 +216,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
         else done("gone")
       JS
     end
+    wait_for_stable_header_stack_removal
     assert_no_selector ".room-header__actions .voice-stack--live", wait: 10
 
     # Let the post-removal cable reconnect play out: the room message stream
@@ -380,6 +390,49 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       Timeout.timeout(25) do
         sleep 0.2 until page.evaluate_script(
           "document.querySelectorAll('turbo-cable-stream-source[connected]').length") == count
+      end
+    end
+
+    # Records every Turbo Stream render as "action:target" so the test can
+    # wait for a specific broadcast to land instead of sleeping a fixed time.
+    def observe_turbo_stream_renders
+      page.execute_script(<<~JS)
+        window.voiceRemovalStreams = []
+        document.addEventListener("turbo:before-stream-render", event => {
+          window.voiceRemovalStreams.push(`${event.detail.newStream.action}:${event.detail.newStream.target}`)
+        })
+      JS
+    end
+
+    # The test cable adapter delivers over a thread pool, so back-to-back
+    # presence broadcasts can arrive out of order and the issuance render
+    # (nobody in voice yet) would win over the sighting render. Wait for the
+    # issuance render to arrive before recording the sighting. Only the
+    # header render is waited for: it travels the room stream on the main
+    # page, while the sidebar render travels a user stream whose
+    # subscription has a legitimate gap during the sidebar's initial
+    # reload (rooms-list reconnects once on every page load).
+    def wait_for_issuance_broadcast
+      expected = "replace:#{dom_id(@room, :header_voice_participants)}"
+      Timeout.timeout(10) do
+        sleep 0.05 until page.evaluate_script("window.voiceRemovalStreams").include?(expected)
+      end
+    end
+
+    # The header stack is stably clear once its element is gone (removal
+    # broadcast) or its controller is revoked (participants 404): until then
+    # an interval poll served from the shared cache can re-render it live. A
+    # warm cache holds at most one poll cycle, so two cycles plus slack.
+    def wait_for_stable_header_stack_removal
+      Timeout.timeout(40) do
+        sleep 0.1 until page.evaluate_script(<<~JS)
+          (() => {
+            const element = document.querySelector(".room-header__actions .voice-stack")
+            if (!element) return true
+            const controller = window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-participants")
+            return !!controller && !!controller.revoked
+          })()
+        JS
       end
     end
 
