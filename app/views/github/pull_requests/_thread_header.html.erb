@@ -2,4 +2,9 @@
   <%= turbo_stream_from thread, :messages, channel: "RoomMessagesChannel" %>
   <%= render "github/pull_requests/card", pull_request: pull_request %>
   <%= render "github/pull_requests/files_summary", pull_request: pull_request %>
+  <%= turbo_frame_tag dom_id(thread, :github_write_actions),
+        src: room_github_pull_request_write_action_path(thread.room_id, pull_request),
+        class: "github-pr-write" do %>
+    <p class="github-pr-write__loading">Loading GitHub actions…</p>
+  <% end %>
 </div>

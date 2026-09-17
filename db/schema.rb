@@ -241,6 +241,16 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
     t.index ["venue_room_id"], name: "index_events_on_venue_room_id"
   end
 
+  create_table "github_connected_accounts", force: :cascade do |t|
+    t.string "access_token", null: false
+    t.datetime "created_at", null: false
+    t.string "disconnected_reason"
+    t.string "github_login", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_github_connected_accounts_on_user_id", unique: true
+  end
+
   create_table "github_notifications", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "dedupe_key", null: false
@@ -580,6 +590,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
   add_foreign_key "event_calendar_entries", "events"
   add_foreign_key "event_calendar_entries", "users"
+  add_foreign_key "github_connected_accounts", "users"
   add_foreign_key "github_notifications", "github_repository_subscriptions", column: "subscription_id", on_delete: :cascade
   add_foreign_key "github_notifications", "messages", on_delete: :nullify
   add_foreign_key "github_pull_request_references", "github_pull_requests"

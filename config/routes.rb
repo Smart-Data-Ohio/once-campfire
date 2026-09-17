@@ -141,6 +141,9 @@ Rails.application.routes.draw do
 
     namespace :github do
       resources :pull_request_threads, only: :create
+      resources :pull_request_comments, only: :create
+      resources :pull_request_reviews, only: :create
+      resources :pull_request_write_actions, only: :show
     end
 
     get "@:message_id", to: "rooms#show", as: :at_message
@@ -185,6 +188,7 @@ Rails.application.routes.draw do
 
   namespace :github do
     post "webhooks", to: "webhooks#create"
+    resource :connection, only: %i[ create destroy ], controller: "connections"
   end
 
   namespace :google do

@@ -1,7 +1,9 @@
 # GitHub pull request cards
 
-Read-only first slice of [roadmap section 4](../ROADMAP.md) ("GitHub work inside
-conversations"). No write actions, no per-user GitHub login.
+First slices of [roadmap section 4](../ROADMAP.md) ("GitHub work inside
+conversations"): read-only PR cards, subscriptions, and review requests, plus
+per-user write actions (comments, approve, request changes) from PR threads.
+Re-requesting review and agent write actions are not in this slice.
 
 ## What it does
 
@@ -21,10 +23,10 @@ is created or its Markdown source is edited.
   concurrently, and records failures as `fetch_error` instead of retrying
   forever.
 - `POST /github/webhooks` handles `pull_request`, `pull_request_review`,
-  `check_suite`, `check_run`, and `status` events for PRs the workspace
-  references and ignores everything else. `X-GitHub-Delivery` ids are
-  stored (`github_webhook_deliveries`, 7-day retention) so redeliveries are
-  received once.
+  `issue_comment`, `check_suite`, `check_run`, and `status` events for PRs
+  the workspace references and ignores everything else. `X-GitHub-Delivery`
+  ids are stored (`github_webhook_deliveries`, 7-day retention) so
+  redeliveries are received once.
 - After a record changes, the card partial is broadcast via Turbo Stream
   replace to each room (or thread) with a referencing message, over the
   existing membership-gated room stream.
@@ -113,6 +115,53 @@ agents](agents.md) for the payload shape.
 Visibility follows the same boundary as cards: room membership. A PR
 thread is a normal thread and respects the normal thread rules.
 
+## Connect your GitHub account
+
+PR write actions run as the member's own GitHub user through a per-user
+fine-grained personal access token — never the workspace token, and
+administrators get no special powers. Linking happens on the profile page:
+paste a token, the app validates it with `GET /user`, and stores the
+returned login with the encrypted token. The token is never logged or
+shown again; unlinking deletes it.
+
+Create the token at GitHub Settings → Developer settings → Personal access
+tokens → Fine-grained tokens, with repository access to the repositories
+you want to act on and these permissions:
+
+- **Pull requests: Read and write** (submit reviews)
+- **Issues: Read and write** (post PR comments, which use the issues API)
+- **Metadata: Read** (included automatically)
+
+Linking also fills in the profile's GitHub username when it is blank, so
+review requests land in the inbox. When the profile already has a username
+it is left alone, and a mismatch with the token's login is called out in
+the confirmation. If GitHub later rejects the token (401), the account is
+marked disconnected with a reason and the profile offers a reconnect
+instead of a first-time connect.
+
+## Commenting and reviewing from a PR thread
+
+A room member with a linked token sees a "Comment on GitHub" composer plus
+**Approve** and **Request changes** buttons in the PR thread header.
+(Requesting changes requires a note; GitHub rejects an empty
+request-changes review.) Members without a linked token see a "Connect
+GitHub" prompt in place of the controls.
+
+Each action posts to GitHub as the member's own user and shows a brief
+inline confirmation; the thread itself gets no local message. GitHub's own
+authorization is the real gate: a 403 or 404 renders inline as "GitHub
+refused: \<message\>" with no retry, and a 401 marks the account
+disconnected and shows the reconnect prompt.
+
+The member's own comment or review round-trips through the existing
+webhook: comments refresh the card via the `issue_comment` event, reviews
+flow through `pull_request_review` with the usual dedupe, and the bot's
+echo post in the PR thread ("NAME approved …") stays as the confirmation.
+
+Out of scope for this slice: re-requesting review, agent write actions and
+approval binding (agents keep read-only PR context), and a local audit
+ledger — GitHub itself shows who posted what.
+
 ## Configuration
 
 ### API token (optional, workspace-level)
@@ -146,9 +195,11 @@ stale; the webhook only makes updates arrive live.
    - Payload URL: `https://<your-host>/github/webhooks`
    - Content type: `application/json`
    - Secret: the value of `GITHUB_WEBHOOK_SECRET`
-   - Events: **Pull requests**, **Pull request reviews**, **Check suites**,
-     **Check runs**, **Commit statuses** ("Let me select individual
-     events"). The `ping` event is acknowledged.
+   - Events: **Pull requests**, **Pull request reviews**, **Issue
+     comments**, **Check suites**, **Check runs**, **Commit statuses**
+     ("Let me select individual events"). The `ping` event is
+     acknowledged. Issue comments are what refresh the card after a
+     comment posted from a PR thread.
 3. The endpoint verifies `X-Hub-Signature-256` with constant-time
    comparison and answers 401 when the signature is missing or mismatched.
 
@@ -161,4 +212,6 @@ boundary for this slice. Posting a private-repo link to a room shares its
 card (title, author, branches, review and check state) with the whole room.
 Likewise, subscribing a room to a private repository makes its PR titles
 visible to the whole room through the posted messages. Per-user GitHub
-identity and per-user visibility are a later slice.
+identity exists for write actions only (each member's posts act as
+themselves); card visibility stays room-wide and per-user visibility is a
+later slice.

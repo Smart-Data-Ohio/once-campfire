@@ -1,0 +1,39 @@
+<%= turbo_frame_tag dom_id(thread, :github_write_actions), class: "github-pr-write" do %>
+  <% if notice.present? %>
+    <p class="github-pr-write__notice" role="status"><%= notice %></p>
+  <% end %>
+  <% if alert.present? %>
+    <p class="github-pr-write__error" role="alert"><%= alert %></p>
+  <% end %>
+
+  <% account = Current.user.github_connected_account %>
+
+  <% if account&.usable? %>
+    <%= form_with url: room_github_pull_request_comments_path(thread.room_id), class: "github-pr-write__comment" do |form| %>
+      <%= hidden_field_tag :pull_request_id, pull_request.id %>
+      <%= form.text_area :body, rows: 2, required: true, class: "input",
+            placeholder: "Comment on GitHub as @#{account.github_login}…",
+            aria: { label: "Comment on GitHub" } %>
+      <%= form.submit "Comment on GitHub", class: "btn" %>
+    <% end %>
+
+    <%= form_with url: room_github_pull_request_reviews_path(thread.room_id), class: "github-pr-write__review" do |form| %>
+      <%= hidden_field_tag :pull_request_id, pull_request.id %>
+      <%= form.text_area :body, rows: 2, class: "input",
+            placeholder: "Review note (required to request changes)",
+            aria: { label: "Review note" } %>
+      <div class="github-pr-write__review-buttons">
+        <%= form.button "Approve", name: "event", value: "APPROVE", class: "btn" %>
+        <%= form.button "Request changes", name: "event", value: "REQUEST_CHANGES", class: "btn btn--negative" %>
+      </div>
+    <% end %>
+  <% elsif account %>
+    <p class="github-pr-write__connect">
+      GitHub rejected your token. <%= link_to "Reconnect GitHub", user_profile_path, data: { turbo_frame: "_top" } %> to comment and review from here.
+    </p>
+  <% else %>
+    <p class="github-pr-write__connect">
+      <%= link_to "Connect GitHub", user_profile_path, data: { turbo_frame: "_top" } %> to comment and review from here as yourself.
+    </p>
+  <% end %>
+<% end %>

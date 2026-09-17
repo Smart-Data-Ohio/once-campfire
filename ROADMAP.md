@@ -83,7 +83,7 @@ T3 Code is the user's interaction reference, not a verified feature specificatio
 
 Done for the first slice when a linked PR renders current context, receives relevant updates once, and remains visible only to authorized viewers.
 
-**Status:** PR threads shipped: each room gets one discussion thread per pull request from the card's Discuss control, subscription updates land in that thread, the thread header shows the live card with a Files changed summary, and agents mentioned there receive the PR context in their delivery payload; see [GitHub pull request cards](docs/github.md#pull-request-threads). Still open: authorized write actions and per-user GitHub identity.
+**Status:** PR threads shipped: each room gets one discussion thread per pull request from the card's Discuss control, subscription updates land in that thread, the thread header shows the live card with a Files changed summary, and agents mentioned there receive the PR context in their delivery payload; see [GitHub pull request cards](docs/github.md#pull-request-threads). Write actions slice 1 shipped as well: members link their own fine-grained token on the profile page and can comment, approve, or request changes from a PR thread as their own GitHub user. Still open: re-requesting review, agent write actions, and per-user card visibility.
 
 ### 5. Events and Google Calendar
 
