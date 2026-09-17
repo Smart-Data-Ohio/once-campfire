@@ -161,8 +161,42 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_predicate item.reload, :read?
   end
 
+  test "index resolves the current user's overdue invitations but no one else's" do
+    overdue_item = travel_to 1.minute.ago do
+      start_dm_huddle_for(users(:david))
+    end
+    # Created directly: issuing through issue! would handle the recipient's
+    # own open invitation for the room as a join.
+    other_item = travel_to 1.minute.ago do
+      other_grant = HuddleGrant.create!(
+        identity: "campfire-participant-#{SecureRandom.hex(32)}",
+        room_name: Huddle.room_name(rooms(:david_and_jason).id),
+        session: Session.create!(user_id: users(:david).id, user_agent: "huddle test", ip_address: "127.0.0.2"),
+        user: users(:david),
+        membership: memberships(:david_david_and_jason),
+        room: rooms(:david_and_jason)
+      )
+      ActivityItems::Recorder.record!(recipient: users(:jason), source: other_grant, event_type: "huddle_started")
+    end
+
+    get activity_items_url, as: :json
+
+    assert_response :success
+    assert_equal "huddle_missed", overdue_item.reload.event_type
+    assert_equal "huddle_started", other_item.reload.event_type
+    payload = response.parsed_body.fetch("activity_items").find { |entry| entry.fetch("id") == overdue_item.id }
+    assert_equal "huddle_missed", payload.fetch("event_type")
+
+    overdue_item.mark_handled!
+    fresh_item = start_dm_huddle_for(users(:david))
+    get activity_items_url, as: :json
+    assert_equal "huddle_started", fresh_item.reload.event_type
+  end
+
   test "started and missed huddles render their copy in the inbox" do
-    missed_item = start_dm_huddle_for(users(:david))
+    # The missed item is outside the dedup window so the second ring proceeds;
+    # a fresh missed item would suppress it.
+    missed_item = travel_to(3.minutes.ago) { start_dm_huddle_for(users(:david)) }
     missed_item.update!(event_type: "huddle_missed")
     started_item = start_dm_huddle_for(users(:david))
 

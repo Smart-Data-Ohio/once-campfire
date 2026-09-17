@@ -85,10 +85,8 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
   test "starting a one-to-one DM huddle invites only the other participant" do
     sign_in :david
 
-    assert_enqueued_with(job: Huddle::MissedHuddleJob) do
-      assert_enqueued_with(job: Huddle::PushInvitationJob) do
-        post room_huddle_url(rooms(:david_and_jason))
-      end
+    assert_enqueued_with(job: Huddle::PushInvitationJob) do
+      post room_huddle_url(rooms(:david_and_jason))
     end
 
     assert_response :success

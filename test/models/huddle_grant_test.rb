@@ -55,4 +55,55 @@ class HuddleGrantTest < ActiveSupport::TestCase
       HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
     end
   end
+
+  test "issuance stamps last_issued_at on create and on reuse" do
+    membership = memberships(:david_watercooler)
+    session = sessions(:david_safari)
+
+    grant = nil
+    travel_to 1.hour.ago do
+      grant = HuddleGrant.issue!(session:, membership:)
+      assert_equal Time.current, grant.last_issued_at
+    end
+
+    travel_to 30.minutes.ago do
+      assert_equal grant, HuddleGrant.issue!(session:, membership:)
+      assert_equal Time.current, grant.reload.last_issued_at
+    end
+  end
+
+  test "in_call reflects gateway liveness within twenty seconds" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    assert_not_predicate grant, :in_call?
+
+    grant.update_columns(last_seen_at: 19.seconds.ago)
+    assert_predicate grant.reload, :in_call?
+    assert_includes HuddleGrant.in_call, grant
+
+    grant.update_columns(last_seen_at: 21.seconds.ago)
+    assert_not_predicate grant.reload, :in_call?
+    assert_not_includes HuddleGrant.in_call, grant
+  end
+
+  test "record_seen! persists liveness at most once per ten seconds" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    freeze_time do
+      grant.record_seen!
+      assert_equal Time.current, grant.reload.last_seen_at
+    end
+
+    travel 9.seconds do
+      assert_no_changes -> { grant.reload.last_seen_at } do
+        grant.record_seen!
+      end
+    end
+
+    travel 11.seconds do
+      assert_changes -> { grant.reload.last_seen_at } do
+        grant.record_seen!
+      end
+    end
+  end
 end

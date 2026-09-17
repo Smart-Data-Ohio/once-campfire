@@ -16,10 +16,8 @@ class HuddleInvitationTest < ActiveSupport::TestCase
   end
 
   test "issuing a grant in a one-to-one DM invites only the other participant" do
-    assert_enqueued_with(job: Huddle::MissedHuddleJob) do
-      assert_enqueued_with(job: Huddle::PushInvitationJob) do
-        HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
-      end
+    assert_enqueued_with(job: Huddle::PushInvitationJob) do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
     end
 
     item = ActivityItem.find_by!(user: users(:jason), event_type: "huddle_started")
@@ -30,12 +28,15 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: users(:david), event_type: "huddle_started")
   end
 
-  test "the missed follow-up waits 45 seconds" do
-    freeze_time do
-      assert_enqueued_with(job: Huddle::MissedHuddleJob, at: 45.seconds.from_now) do
-        HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
-      end
-    end
+  test "issuing a grant never schedules a delayed job" do
+    # Production runs the :resque adapter without resque-scheduler, whose
+    # enqueue_at raises NotImplementedError. Invitations must only enqueue
+    # immediate jobs; overdue resolution runs in the reconciler loop instead.
+    ActiveJob::Base.queue_adapter.stubs(:enqueue_at).raises(NotImplementedError)
+
+    HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+
+    assert ActivityItem.exists?(user: users(:jason), event_type: "huddle_started")
   end
 
   test "channel huddles create no invitation" do
@@ -46,9 +47,9 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     end
   end
 
-  test "no invitation when the other participant already holds an active grant" do
-    HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
-    assert_equal 1, ActivityItem.where(user: users(:david), event_type: "huddle_started").count
+  test "no invitation while the other participant is in the call" do
+    recipient_grant = HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
+    recipient_grant.update_columns(last_seen_at: Time.current)
 
     assert_no_difference -> { ActivityItem.where(user: users(:jason)).count } do
       assert_no_enqueued_jobs do
@@ -57,11 +58,49 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     end
   end
 
+  test "an invitation fires when the other participant's grant went quiet" do
+    recipient_grant = HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
+    recipient_grant.update_columns(last_seen_at: 21.seconds.ago)
+
+    assert_difference -> { ActivityItem.where(user: users(:jason), event_type: "huddle_started").count }, 1 do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    end
+  end
+
+  test "reusing the same grant rings again once the dedup window has passed" do
+    grant = HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    first_item = ActivityItem.find_by!(user: users(:jason), source: grant)
+
+    travel 3.minutes do
+      assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+        assert_enqueued_with(job: Huddle::PushInvitationJob) do
+          assert_equal grant, HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+        end
+      end
+    end
+
+    assert_not ActivityItem.exists?(first_item.id)
+    second_item = ActivityItem.find_by!(user: users(:jason), source: grant)
+    assert_equal "huddle_started", second_item.event_type
+    assert_predicate second_item, :unread?
+  end
+
   test "a second grant for the same starter does not ring again inside two minutes" do
     HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
     assert_equal 1, ActivityItem.where(user: users(:jason), event_type: "huddle_started").count
 
     assert_no_difference -> { ActivityItem.where(user: users(:jason), event_type: "huddle_started").count } do
+      assert_no_enqueued_jobs do
+        HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+      end
+    end
+  end
+
+  test "no ring inside the two-minute window after a missed invitation" do
+    HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    ActivityItem.find_by!(user: users(:jason)).update!(event_type: "huddle_missed")
+
+    assert_no_difference -> { ActivityItem.where(user: users(:jason)).count } do
       assert_no_enqueued_jobs do
         HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
       end
@@ -86,6 +125,29 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     assert_difference -> { ActivityItem.where(user: users(:jason), event_type: "huddle_started").count }, 1 do
       HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
     end
+  end
+
+  test "obtaining a grant clears the recipient's open invitations for the room" do
+    HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    item = ActivityItem.find_by!(user: users(:jason), event_type: "huddle_started")
+
+    HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
+
+    assert_predicate item.reload, :handled?
+  end
+
+  test "joining late clears the missed item" do
+    HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    item = ActivityItem.find_by!(user: users(:jason))
+
+    travel 46.seconds do
+      Huddle::InvitationResolver.resolve_overdue!
+    end
+    assert_equal "huddle_missed", item.reload.event_type
+
+    HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
+
+    assert_predicate item.reload, :handled?
   end
 
   test "direct rooms without exactly two human users get no invitation" do
