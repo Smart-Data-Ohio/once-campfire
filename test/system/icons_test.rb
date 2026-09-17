@@ -17,6 +17,8 @@ class IconsTest < ApplicationSystemTestCase
   end
 
   test "colon autocomplete inserts a brand shortcode that renders in both themes" do
+    assert_selector "meta[name='brand-icon-names'][content*='openai']", visible: false
+
     editor = find_field("Write a message")
 
     editor.set "::"

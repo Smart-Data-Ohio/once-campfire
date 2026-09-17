@@ -57,8 +57,8 @@ class Message::Markdown
 
       fragment = Nokogiri::HTML5.fragment(safe)
       fragment.css("img").each do |img|
-        if (brand = brand_from_alt(img["alt"]))
-          img["src"] = Icons.brand_image_urls.fetch(brand.name)
+        if (brand = brand_from_alt(img["alt"])) && (url = Icons.brand_image_urls[brand.name])
+          img["src"] = url
         elsif !avatar_src?(img["src"])
           img.remove
         end
@@ -266,12 +266,18 @@ class Message::Markdown
     def icon_node(fragment, name)
       case (icon = Icons.find(name))
       when Icons::Brand
-        Nokogiri::XML::Node.new("img", fragment.document).tap do |img|
-          img["class"] = "icon icon--brand"
-          img["src"] = Icons.brand_image_urls.fetch(icon.name)
-          img["alt"] = ":#{icon.name}:"
-          img["title"] = icon.title
-          img["draggable"] = "false"
+        if (url = Icons.brand_image_urls[icon.name])
+          Nokogiri::XML::Node.new("img", fragment.document).tap do |img|
+            img["class"] = "icon icon--brand"
+            img["src"] = url
+            img["alt"] = ":#{icon.name}:"
+            img["title"] = icon.title
+            img["draggable"] = "false"
+          end
+        else
+          # The asset is missing (see Icons.brand_image_urls); leave the
+          # shortcode literal rather than emitting a broken image.
+          Nokogiri::XML::Text.new(":#{name}:", fragment.document)
         end
       when Icons::Emoji
         Nokogiri::XML::Text.new(icon.character, fragment.document)

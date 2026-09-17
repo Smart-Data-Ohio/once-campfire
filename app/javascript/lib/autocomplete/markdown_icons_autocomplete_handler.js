@@ -11,6 +11,10 @@ export default class MarkdownIconsAutocompleteHandler extends BaseAutocompleteHa
     return /^:([a-z0-9_]{2,})$/
   }
 
+  getSuggestionsIdentifier() {
+    return `${super.getSuggestionsIdentifier()}_icons`
+  }
+
   insertAutocompletable(autocompletable, range, terminator) {
     if (!autocompletable?.name) return
 
@@ -26,6 +30,7 @@ export default class MarkdownIconsAutocompleteHandler extends BaseAutocompleteHa
         this.setAutocompletables(icons)
         callback(this.#renderSuggestions(icons))
       })
+      .catch(() => callback(""))
   }
 
   didShowResults(selectElement) {

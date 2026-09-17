@@ -40,6 +40,17 @@ class IconsTest < ActiveSupport::TestCase
     assert_nil Icons.find(nil)
   end
 
+  test "shortcode pattern fires only on standalone shortcodes" do
+    assert_equal "openai", ":openai: ships".match(Icons::SHORTCODE_PATTERN)[:name]
+    assert_equal "openai", ":openai::fire:🔥".match(Icons::SHORTCODE_PATTERN)[:name]
+    assert_equal "fire", ":fire:🔥".match(Icons::SHORTCODE_PATTERN)[:name]
+    assert_equal "openai", "(:openai:)".match(Icons::SHORTCODE_PATTERN)[:name]
+
+    [ "score 12:100:30", "12:30", "http://example.com/docs", "::", "a:openai:", ":openai:b" ].each do |text|
+      assert_nil text.match(Icons::SHORTCODE_PATTERN), "expected no shortcode in #{text.inspect}"
+    end
+  end
+
   test "search orders prefix matches first with brands before emoji" do
     assert_equal "openai", Icons.search("open").first.name
     assert_equal "fire", Icons.search("fire").first.name
@@ -63,5 +74,20 @@ class IconsTest < ActiveSupport::TestCase
 
     assert_match %r{\A/assets/icons/brands/openai-[a-z0-9]+\.svg\z}, url
     assert_equal Icons.brands.size, Icons.brand_image_urls.size
+  end
+
+  test "brand image urls skip brands with missing assets and warn" do
+    ghost = Icons::Brand.new(name: "ghost", title: "Ghost", file: "ghost.svg")
+    brands_with_ghost = [ *Icons.brands, ghost ]
+    Icons.stubs(:brands).returns(brands_with_ghost)
+    Icons.remove_instance_variable(:@brand_image_urls) if Icons.instance_variable_defined?(:@brand_image_urls)
+    Rails.logger.expects(:warn).with(regexp_matches(/ghost\.svg/))
+
+    urls = Icons.brand_image_urls
+
+    assert_nil urls["ghost"]
+    assert_match %r{\A/assets/icons/brands/openai-[a-z0-9]+\.svg\z}, urls.fetch("openai")
+  ensure
+    Icons.remove_instance_variable(:@brand_image_urls) if Icons.instance_variable_defined?(:@brand_image_urls)
   end
 end

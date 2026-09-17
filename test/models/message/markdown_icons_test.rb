@@ -113,9 +113,27 @@ class Message::MarkdownIconsTest < ActiveSupport::TestCase
     assert_equal ":openai: shipped 🎉", message.plain_text_body
   end
 
+  test "renders a brand with an unresolvable asset as literal text" do
+    Icons.stubs(:brand_image_urls).returns({})
+
+    html = create_markdown_message("Hi :openai:").body.body.to_html
+
+    assert_includes html, "Hi :openai:"
+    assert_empty Nokogiri::HTML5.fragment(html).css("img")
+  end
+
+  test "presentation drops an icon whose asset cannot be resolved" do
+    Icons.stubs(:brand_image_urls).returns({})
+
+    stored = %(<p><img class="icon icon--brand" src="/assets/icons/brands/openai-old.svg" alt=":openai:"></p>)
+
+    assert_empty Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(stored)).css("img")
+  end
+
   test "shortcode-only messages get the large emoji treatment" do
     assert create_markdown_message(":openai::fire:🔥").plain_text_body.all_emoji?
     assert_not create_markdown_message("Hello :openai:").plain_text_body.all_emoji?
+    assert_not create_markdown_message(":nope_not_real:").plain_text_body.all_emoji?
   end
 
   private

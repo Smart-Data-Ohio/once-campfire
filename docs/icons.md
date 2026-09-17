@@ -23,11 +23,13 @@ only inside text nodes — never inside inline code, fenced blocks, link labels,
 or mention attachments. Unknown shortcodes such as `:nope_not_real:` stay
 literal.
 
-Reactions accept a brand shortcode as boost content (validated against the
-registry; unknown shortcodes are rejected) and render the same icon markup.
-An emoji shortcode such as `:thumbsup:` is stored as the character itself, so
-it behaves exactly like an emoji typed directly. The eight quick reactions are
-unchanged.
+Reactions accept a brand shortcode as boost content and render the same
+icon markup. An emoji shortcode such as `:thumbsup:` is stored as the
+character itself, so it behaves exactly like an emoji typed directly. A
+reaction whose shortcode the registry does not know is stored as the literal
+text, exactly as typed. Brand aliases are canonicalised on save, so `:gpt:`
+is stored as `:openai:` and shares its reaction chip. The eight quick
+reactions are unchanged.
 
 ## Adding an icon
 
@@ -54,8 +56,9 @@ The `.icon--brand` rule in `app/assets/stylesheets/icons.css` sizes it to
 `1.2em` inline, so icons scale with emoji-only messages. Simple Icons ship
 black, so the dark theme inverts them through the `--icon-filter` custom
 property defined in `app/assets/stylesheets/colors.css`. The presentation
-sanitizer keeps this markup and drops any icon image whose `src` is not one of
-the registry's digested asset URLs.
+sanitizer rewrites each icon's `src` from the `:name:` in its alt text, so
+stored bodies keep rendering across digest changes and asset host moves, and
+drops any image that is neither a known icon nor a mention avatar.
 
 `plain_text_body` yields the emoji character for emoji shortcodes and keeps
 the `:name:` text for brand icons, so search, notifications, exports, and bot

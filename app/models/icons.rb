@@ -4,7 +4,7 @@
 # Unicode emoji from every alias the gemoji gem knows. Custom icon names win
 # over gemoji aliases on conflict. Loaded once and memoized.
 module Icons
-  SHORTCODE_PATTERN = /:(?<name>[a-z0-9_]+):/
+  SHORTCODE_PATTERN = /(?<![\w:]):(?<name>[a-z0-9_]+):(?!\w)/
 
   class Brand
     attr_reader :name, :title, :file, :aliases
@@ -73,13 +73,20 @@ module Icons
       @brands ||= load_brands
     end
 
-    # Digested image URLs for every brand icon. The Markdown sanitizer keeps
-    # only icon images whose src is in this set, so a spoofed icon src cannot
-    # smuggle in an arbitrary image URL.
+    # Digested image URLs for every brand icon whose asset resolves. The
+    # Markdown renderer and presentation sanitizer rewrite icon sources from
+    # this map, so a spoofed icon src cannot smuggle in an arbitrary image
+    # URL. Entries with a missing SVG are skipped with a warning so one bad
+    # row cannot break message rendering.
     def brand_image_urls
-      @brand_image_urls ||= brands.to_h do |brand|
-        [ brand.name, ActionController::Base.helpers.image_path(brand.logical_asset_path) ]
-      end.freeze
+      @brand_image_urls ||= brands.filter_map do |brand|
+        begin
+          [ brand.name, ActionController::Base.helpers.image_path(brand.logical_asset_path) ]
+        rescue Propshaft::MissingAssetError
+          Rails.logger.warn("Icons: skipping :#{brand.name}:, missing asset #{brand.logical_asset_path}")
+          nil
+        end
+      end.to_h.freeze
     end
 
     private

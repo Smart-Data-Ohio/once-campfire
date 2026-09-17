@@ -1,6 +1,16 @@
 import { escapeHTML } from "helpers/string_helpers"
 
-const EMOJI_MATCHER = /^((\p{Emoji_Presentation}|\p{Extended_Pictographic}|\uFE0F)|(:[a-z0-9_]+:))+$/gu
+const EMOJI_CHAR_CLASS = "(\\p{Emoji_Presentation}|\\p{Extended_Pictographic}|\\uFE0F)"
+const PERMISSIVE_SHORTCODE = "(:[a-z0-9_]+:)"
+
+// Only brand shortcodes count toward the large emoji treatment, matching
+// String#all_emoji?. Brand names are [a-z0-9_]+, so they need no escaping.
+function emojiMatcher() {
+  const names = document.querySelector("meta[name='brand-icon-names']")?.content?.split(",").filter(Boolean)
+  const shortcode = names?.length ? `(:(${names.join("|")}):)` : PERMISSIVE_SHORTCODE
+
+  return new RegExp(`^(${EMOJI_CHAR_CLASS}|${shortcode})+$`, "gu")
+}
 
 const SOUND_NAMES = [ "56k", "ballmer", "bell", "bezos", "bueller", "butts", "clowntown", "cottoneyejoe", "crickets", "curb", "dadgummit", "dangerzone", "danielsan", "deeper", "donotwant", "drama", "flawless", "glados", "gogogo", "greatjob", "greyjoy", "guarantee", "heygirl", "honk", "horn", "horror", "inconceivable", "letitgo", "live", "loggins", "makeitso", "noooo", "nyan", "ohmy", "ohyeah", "pushit", "rimshot", "rollout", "rumble", "sax", "secret", "sexyback", "story", "tada", "tmyk", "totes", "trololo", "trombone", "unix", "vuvuzela", "what", "whoomp", "wups", "yay", "yeah", "yodel" ]
 
@@ -99,6 +109,6 @@ export default class ClientMessage {
   }
 
   #containsOnlyEmoji(text) {
-    return text?.match(EMOJI_MATCHER)
+    return text?.match(emojiMatcher())
   }
 }
