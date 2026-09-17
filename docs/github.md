@@ -3,7 +3,7 @@
 First slices of [roadmap section 4](../ROADMAP.md) ("GitHub work inside
 conversations"): read-only PR cards, subscriptions, and review requests, plus
 per-user write actions (comments, approve, request changes, requesting
-review) from PR threads. Agent write actions are not in this slice.
+review) from PR threads, and agent write actions through human approval.
 
 ## What it does
 
@@ -164,9 +164,81 @@ echo post in the PR thread ("NAME approved …") stays as the confirmation.
 A requested review round-trips through the `review_requested` event the
 same way, including the reviewer's inbox item when the login is linked.
 
-Out of scope for this slice: agent write actions and approval binding
-(agents keep read-only PR context), and a local audit ledger — GitHub
-itself shows who posted what.
+Out of scope for this slice: a local audit ledger for member actions —
+GitHub itself shows who posted what. Agent actions are tracked through
+their approval and its completion event, below.
+
+## Agent write actions
+
+An agent can request the same four actions — comment, approve, request
+changes, request review — on a pull request the room discusses, executed
+only after a human approves. Nothing reaches GitHub without a human
+decision.
+
+### Identity
+
+An agent acts as its own linked GitHub account: the bot edit page carries
+a "GitHub account" section where an administrator or the agent's owner
+pastes a fine-grained token for a machine user dedicated to the agent
+(validated with `GET /user`, never shown again). The token is never the
+workspace `GITHUB_TOKEN` and never a person's token. Deactivating the
+agent's bot disconnects the account, exactly like deactivating a human;
+unlinking deletes it.
+
+### Request
+
+`POST /rooms/:room_id/agents/github/pull_request_actions` (agent token
+only, JSON) takes `pull_request_id`, `kind` (`comment`, `approve`,
+`request_changes`, `request_review`), `body` (comment text or review
+note), `reviewers` (usernames separated by commas or whitespace, the same
+rules as the member control), and an optional idempotency `external_id`.
+The gates, in order: agent authentication (401), room membership (404), a
+PR-thread mapping for that pull request in that room (404), the
+`external_action` capability in the room (403), a usable linked account
+on the agent (422), and the same input rules as the member endpoints — a
+comment needs a body, request-changes needs a note, a review request
+needs 1 to 15 valid logins (422 with field errors). The endpoint never
+calls GitHub: it creates an approval (`github.<kind>`) and returns 202
+with its `id`, `status`, and `expires_at`; a repeated `external_id`
+returns the existing row with 200.
+
+```sh
+curl -X POST https://campfire.example.com/rooms/1/agents/github/pull_request_actions \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pull_request_id":7,"kind":"comment","body":"Nice work","external_id":"review-123"}'
+```
+
+### Approval and execution
+
+Deciders are the existing approval deciders — the agent's owner and
+every administrator — deciding from the activity inbox; there is no new
+inbox item type. When a `github.*` request is approved, the server
+re-checks everything (still approved, agent active, still a member,
+grant still held, thread still mapped, account still usable) and
+performs the action with the agent's token. Any failed re-check, and any
+GitHub refusal, records a failed completion without posting; a 401
+disconnects the agent's account exactly like the member path. The
+agent's comment or review round-trips through the existing webhook, and
+the bot's echo line names the agent's GitHub login. No local message is
+posted.
+
+### Result event
+
+Every outcome appends a `github_action_completed` event to the agent's
+ledger (`outcome: delivered`, room-scoped, always readable by its own
+agent), polled through `GET /agents/events` with a `github_action` key
+(`approval_id`, `action`, `status`, plus the GitHub `url` when completed
+or a `message` when failed), posted to the webhook the same way, and
+listed on the ledger page with its status. See [AI
+agents](agents.md#github-write-actions).
+
+### Disconnected or revoked agents
+
+Without a usable linked account the request endpoint answers 422; with
+the grant revoked it answers 403. Revocation between request and
+decision — or between decision and execution — stops the action, and the
+agent learns why through the failed completion event.
 
 ## Configuration
 
