@@ -142,7 +142,11 @@ module ActivityItemsHelper
 
     case item.event_type
     when "event_invitation"
-      "You are invited: #{start}."
+      if event.recurrence_rule.present? && event.recurrence_until.present?
+        "You are invited: #{start} (repeats #{Event::Recurrence.phrase(event.recurrence_rule)} until #{event.recurrence_until.strftime("%B %-d, %Y")})."
+      else
+        "You are invited: #{start}."
+      end
     when "event_update"
       "The time changed: #{start}."
     when "event_cancelled"

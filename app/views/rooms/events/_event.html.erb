@@ -17,4 +17,13 @@
     <%= pluralize(event.attendances.count { |attendance| attendance.response == "going" }, "going") %>,
     <%= pluralize(event.attendances.count { |attendance| attendance.response == "maybe" }, "maybe") %>
   </p>
+
+  <% if event.series? && event.recurrence_rule.present? %>
+    <p class="room-events__series-label">
+      <%= recurrence_label(event.recurrence_rule) %>
+      <% if (remaining = local_assigns[:series_counts]&.dig(event.id)) %>
+        · <%= pluralize(remaining, "occurrence") %> remaining
+      <% end %>
+    </p>
+  <% end %>
 </article>

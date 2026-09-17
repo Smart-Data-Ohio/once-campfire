@@ -41,7 +41,8 @@ Google's default reminders. No Google attendees are added.
 Publishing is reconciled by `Calendar::SyncEntryJob`, which recomputes the
 desired state from the database on every run: an entry exists exactly when
 the member is connected, is going or maybe, the event is not cancelled,
-and the member is still in the room. The job is enqueued when an RSVP is
+and the member is still in the room. Each occurrence of a recurring event
+is its own calendar entry. The job is enqueued when an RSVP is
 created or changes, when an event's time, title, or description changes,
 when an event is cancelled, when an account is connected (all upcoming
 going/maybe RSVPs), and when a membership ends.

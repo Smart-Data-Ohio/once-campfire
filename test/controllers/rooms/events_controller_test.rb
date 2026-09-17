@@ -48,6 +48,343 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "event_invitation", ActivityItem.find_by!(user: users(:jason), source: event).event_type
   end
 
+  test "a member can create a repeating event with one invitation per member" do
+    assert_difference -> { Event.count }, 3 do
+      post room_events_url(@room), params: {
+        event: {
+          title: "Weekly planning", starts_at: "2026-09-25T15:30", time_zone: "America/New_York",
+          recurrence_rule: "weekly", recurrence_until: "2026-10-09"
+        }
+      }
+    end
+
+    head = Event.where(title: "Weekly planning").order(:created_at).first
+    assert_redirected_to room_event_path(@room, head)
+    assert_equal head.id, head.series_id
+    occurrences = head.series_events.to_a
+    assert_equal 3, occurrences.size
+
+    %i[ jason jz kevin ].each do |name|
+      items = ActivityItem.where(user: users(name), source: occurrences)
+      assert_equal 1, items.count
+      assert_equal head.id, items.first.source_id
+    end
+  end
+
+  test "create rejects a series above the occurrence cap" do
+    assert_no_difference -> { Event.count } do
+      post room_events_url(@room), params: {
+        event: {
+          title: "Too long", starts_at: "2026-09-25T15:30", time_zone: "UTC",
+          recurrence_rule: "daily", recurrence_until: "2026-12-01"
+        }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "pick an earlier end date"
+  end
+
+  test "index shows a series once with its repeat label and remaining count" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 3, occurrences.size
+
+    get room_events_url(@room)
+
+    assert_response :success
+    upcoming = response.body.split("id=\"cancelled-events\"", 2).first.split("id=\"past-events\"", 2).first
+    assert_equal 2, upcoming.scan("room-events__item\"").size
+    assert_includes upcoming, "Weekly planning"
+    assert_includes upcoming, "Repeats weekly"
+    assert_includes upcoming, "3 occurrences remaining"
+    assert_includes upcoming, room_event_path(@room, occurrences.first)
+    assert_not_includes upcoming, room_event_path(@room, occurrences.second)
+    assert_not_includes upcoming, room_event_path(@room, occurrences.third)
+  end
+
+  test "index lists past occurrences individually" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Old planning", starts_at: 10.days.ago, time_zone: "UTC",
+      recurrence_rule: "daily", recurrence_until: Date.current - 8
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 3, occurrences.size
+
+    get room_events_url(@room)
+
+    assert_response :success
+    _upcoming, rest = response.body.split("id=\"past-events\"", 2)
+    occurrences.each do |occurrence|
+      assert_includes rest, room_event_path(@room, occurrence)
+    end
+  end
+
+  test "show renders the series banner with previous and next occurrence links" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+
+    get room_event_url(@room, occurrences.second)
+
+    assert_response :success
+    assert_includes response.body, "Part of a series: repeats weekly until #{head.recurrence_until.strftime("%B %-d, %Y")}"
+    assert_includes response.body, "Previous occurrence"
+    assert_includes response.body, "Next occurrence"
+    assert_includes response.body, room_event_path(@room, occurrences.first)
+    assert_includes response.body, room_event_path(@room, occurrences.third)
+
+    get room_event_url(@room, head)
+
+    assert_response :success
+    assert_includes response.body, "Part of a series"
+    assert_includes response.body, "Next occurrence"
+    assert_not_includes response.body, "Previous occurrence"
+  end
+
+  test "edit offers a scope on series occurrences and the rule only on the first event" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrence = head.series_events.second
+
+    get edit_room_event_url(@room, occurrence)
+
+    assert_response :success
+    assert_includes response.body, "This event"
+    assert_includes response.body, "This and following"
+    assert_not_includes response.body, "event[recurrence_rule]"
+
+    get edit_room_event_url(@room, head)
+
+    assert_response :success
+    assert_includes response.body, "This and following"
+    assert_includes response.body, "event[recurrence_rule]"
+    assert_includes response.body, "Repeat until"
+  end
+
+  test "updating this and following shifts later occurrences and notifies once per attendee" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning",
+      starts_at: ActiveSupport::TimeZone["UTC"].local(2026, 9, 25, 15, 30),
+      ends_at: ActiveSupport::TimeZone["UTC"].local(2026, 9, 25, 16, 30),
+      time_zone: "UTC", recurrence_rule: "weekly", recurrence_until: Date.new(2026, 10, 9)
+    )
+    occurrences = head.series_events.to_a
+    head.respond!(users(:jason), "going")
+
+    patch room_event_url(@room, head), params: {
+      update_scope: "this_and_following",
+      event: { title: "Weekly planning", starts_at: "2026-09-25T16:30", ends_at: "2026-09-25T17:30", time_zone: "UTC" }
+    }
+
+    assert_redirected_to room_event_path(@room, head)
+    assert_equal ActiveSupport::TimeZone["UTC"].local(2026, 10, 2, 16, 30), occurrences.second.reload.starts_at
+    assert_equal ActiveSupport::TimeZone["UTC"].local(2026, 10, 9, 16, 30), occurrences.third.reload.starts_at
+    items = ActivityItem.where(user: users(:jason), source: occurrences)
+    assert_equal 1, items.count
+    assert_equal "event_update", items.first.event_type
+    assert_equal head.id, items.first.source_id
+  end
+
+  test "updating without a scope leaves the rest of the series untouched" do
+    starts_at = 2.days.from_now
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at:, ends_at: starts_at + 1.hour, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+
+    patch room_event_url(@room, occurrences.second), params: {
+      event: {
+        title: "Renamed",
+        starts_at: (occurrences.second.starts_at + 1.hour).strftime("%Y-%m-%dT%H:%M"),
+        ends_at: (occurrences.second.ends_at + 1.hour).strftime("%Y-%m-%dT%H:%M"),
+        time_zone: "UTC"
+      }
+    }
+
+    assert_redirected_to room_event_path(@room, occurrences.second)
+    assert_equal "Weekly planning", occurrences.first.reload.title
+    assert_equal "Weekly planning", occurrences.third.reload.title
+  end
+
+  test "changing the rule away from the first event is rejected" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+
+    patch room_event_url(@room, head.series_events.second), params: {
+      update_scope: "this_and_following",
+      event: { title: "Weekly planning", recurrence_rule: "daily" }
+    }
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "first event"
+  end
+
+  test "non-organizers cannot edit or cancel series occurrences" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrence = head.series_events.second
+    sign_in :kevin
+
+    get edit_room_event_url(@room, occurrence)
+    assert_response :forbidden
+
+    patch room_event_url(@room, occurrence), params: { event: { title: "Hijacked" } }
+    assert_response :forbidden
+    assert_equal "Weekly planning", occurrence.reload.title
+
+    patch cancel_room_event_url(@room, occurrence), params: { cancel_scope: "this_and_following" }
+    assert_response :forbidden
+    assert_not_predicate occurrence.reload, :cancelled?
+  end
+
+  test "an administrator who is not the organizer can use this and following, but an ordinary member cannot" do
+    starts_at = 2.days.from_now
+    head = @room.events.create!(
+      organizer: users(:jz), title: "Weekly planning", starts_at:, ends_at: starts_at + 1.hour, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+    occurrence = occurrences.second
+
+    sign_in :jason
+    patch room_event_url(@room, occurrence), params: {
+      update_scope: "this_and_following",
+      event: {
+        title: "Renamed",
+        starts_at: occurrence.starts_at.strftime("%Y-%m-%dT%H:%M"),
+        ends_at: occurrence.ends_at.strftime("%Y-%m-%dT%H:%M"),
+        time_zone: "UTC"
+      }
+    }
+
+    assert_redirected_to room_event_path(@room, occurrence)
+    assert_equal "Weekly planning", occurrences.first.reload.title
+    assert_equal "Renamed", occurrence.reload.title
+    assert_equal "Renamed", occurrences.third.reload.title
+
+    sign_in :kevin
+    patch room_event_url(@room, occurrence), params: {
+      update_scope: "this_and_following",
+      event: { title: "Hijacked" }
+    }
+
+    assert_response :forbidden
+    assert_equal "Renamed", occurrence.reload.title
+  end
+
+  test "cancelling this and following cancels later occurrences with one item per attendee" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+    head.respond!(users(:jason), "going")
+
+    patch cancel_room_event_url(@room, occurrences.second), params: { cancel_scope: "this_and_following" }
+
+    assert_redirected_to room_event_path(@room, occurrences.second)
+    assert_not_predicate occurrences.first.reload, :cancelled?
+    assert_predicate occurrences.second.reload, :cancelled?
+    assert_predicate occurrences.third.reload, :cancelled?
+    items = ActivityItem.where(user: users(:jason), source: occurrences, event_type: "event_cancelled")
+    assert_equal 1, items.count
+    assert_equal occurrences.second.id, items.first.source_id
+  end
+
+  test "cancelling without a scope cancels only that occurrence" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+
+    patch cancel_room_event_url(@room, occurrences.second)
+
+    assert_redirected_to room_event_path(@room, occurrences.second)
+    assert_not_predicate occurrences.first.reload, :cancelled?
+    assert_predicate occurrences.second.reload, :cancelled?
+    assert_not_predicate occurrences.third.reload, :cancelled?
+  end
+
+  test "cancelling this event explicitly cancels only that occurrence" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+    occurrences = head.series_events.to_a
+
+    patch cancel_room_event_url(@room, occurrences.second), params: { cancel_scope: "this_event" }
+
+    assert_redirected_to room_event_path(@room, occurrences.second)
+    assert_not_predicate occurrences.first.reload, :cancelled?
+    assert_predicate occurrences.second.reload, :cancelled?
+    assert_not_predicate occurrences.third.reload, :cancelled?
+  end
+
+  test "show renders cancel scopes for series occurrences and a single cancel for single events" do
+    head = @room.events.create!(
+      organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+      recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+    )
+
+    get room_event_url(@room, head.series_events.second)
+
+    assert_response :success
+    assert_select "input[name=cancel_scope][value=this_event]", count: 1
+    assert_select "input[name=cancel_scope][value=this_and_following]", count: 1
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "input[name=cancel_scope]", count: 0
+    assert_includes response.body, "Cancel event"
+  end
+
+  test "index issues a bounded number of queries regardless of occurrence count" do
+    heads = 2.times.map do
+      @room.events.create!(
+        organizer: users(:david), title: "Weekly planning", starts_at: 2.days.from_now, time_zone: "UTC",
+        recurrence_rule: "weekly", recurrence_until: Date.current + 2 + 14
+      )
+    end
+    assert_equal 3, heads.first.series_events.count
+
+    get room_events_url(@room)
+    assert_response :success
+
+    small = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    heads.each do |head|
+      head.update_with_scope!(
+        { recurrence_until: Date.current + 2 + 49 }, scope: "this_and_following", actor: users(:david)
+      )
+    end
+    assert_equal 8, heads.first.reload.series_events.count
+
+    large = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    assert_equal small, large
+  end
+
   test "create renders errors for invalid events" do
     assert_no_difference -> { Event.count } do
       post room_events_url(@room), params: { event: { title: "", starts_at: "", time_zone: "UTC" } }
@@ -195,4 +532,16 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
 
     assert_not_includes response.body, "Added to your Google Calendar"
   end
+
+  private
+    def count_sql_queries(&block)
+      queries = 0
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+        queries += 1 unless payload[:name] == "SCHEMA"
+      end
+      block.call
+      queries
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
 end
