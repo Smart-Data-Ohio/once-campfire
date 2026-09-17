@@ -2,8 +2,9 @@ require "net/http"
 
 module Github
   # Authenticated GitHub REST API client backing PR write actions. Posts
-  # issue comments and pull-request reviews as the linked user's own GitHub
-  # identity, using their personal access token — never the workspace token.
+  # issue comments, pull-request reviews, and review requests as the linked
+  # user's own GitHub identity, using their personal access token — never
+  # the workspace token.
   #
   # Never raises for transport problems without mapping them: callers rescue
   # WriteClient::Error. Never logs tokens, headers, or bodies.
@@ -39,6 +40,11 @@ module Github
       payload = { event: event }
       payload[:body] = body if body.present?
       post(pull_request, "pulls/#{pull_request.number}/reviews", payload)
+    end
+
+    # POST /repos/{owner}/{repo}/pulls/{number}/requested_reviewers
+    def request_reviewers(pull_request, logins:)
+      post(pull_request, "pulls/#{pull_request.number}/requested_reviewers", { reviewers: logins })
     end
 
     def get_user
