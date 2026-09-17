@@ -100,7 +100,7 @@ Rails.application.routes.draw do
       get "forwards/destinations", to: "message_forwards#destinations", as: :forward_destinations
     end
 
-    resources :threads, controller: "channel_threads", only: %i[ index show create update destroy ] do
+    resources :threads, controller: "channel_threads", only: %i[ index show new create update destroy ] do
       get :content, on: :member
       resources :messages, controller: "channel_thread_messages", only: %i[ index show create update destroy ] do
         get :actions, on: :member
@@ -165,6 +165,7 @@ Rails.application.routes.draw do
     resources :directs
     resources :voices
     resources :stages
+    resources :boards
   end
 
   resources :messages do

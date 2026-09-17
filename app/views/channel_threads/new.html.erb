@@ -1,0 +1,70 @@
+<% @page_title = "New post in #{room_display_name(@room)}" %>
+<% @body_class = "sidebar board-post" %>
+
+<% content_for :nav do %>
+  <div class="flex-item-justify-start">
+    <%= link_back_to room_path(@room) %>
+  </div>
+<% end %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+
+<% humans, agents = @thread.work_owner_candidates %>
+
+<main class="board-post-form" aria-labelledby="new-post-title">
+  <p class="board-post-form__eyebrow">New post in <%= link_to room_display_name(@room), room_path(@room) %></p>
+  <h1 id="new-post-title">Start a post</h1>
+
+  <% if @post_error.present? %>
+    <p class="board-post-form__error" role="alert"><%= @post_error %></p>
+  <% elsif @thread.errors.any? %>
+    <p class="board-post-form__error" role="alert"><%= @thread.errors.full_messages.to_sentence %></p>
+  <% end %>
+
+  <%= form_with model: @thread, url: room_threads_path(@room), class: "board-post-form__form" do |form| %>
+    <label class="board-post-form__field">
+      <span>Title</span>
+      <%= form.text_field :name, required: true, maxlength: ChannelThread::NAME_LIMIT,
+            autofocus: true, autocomplete: "off", placeholder: "What needs doing?" %>
+    </label>
+
+    <label class="board-post-form__field">
+      <span>First message <small>(optional Markdown brief)</small></span>
+      <%= form.text_area :first_message, value: params.dig(:thread, :first_message), rows: 6,
+            maxlength: 50_000, placeholder: "Write the brief for whoever picks this up…" %>
+    </label>
+
+    <div class="board-post-form__row">
+      <label class="board-post-form__field">
+        <span>Status</span>
+        <%= form.select :work_status, options_for_select(
+              ChannelThread::WORK_STATUSES.map { |status| [ ChannelThread::WORK_STATUS_LABELS.fetch(status), status ] },
+              @thread.work_status.presence || "planned") %>
+      </label>
+
+      <label class="board-post-form__field">
+        <span>Owner</span>
+        <%= form.select :work_owner_id, grouped_options_for_select(
+              { "Members" => humans.map { |user| [ user.name, user.id ] },
+                "Agents" => agents.map { |user| [ user.name, user.id ] } },
+              @thread.work_owner_id.to_s), { prompt: "Unassigned" } %>
+      </label>
+    </div>
+
+    <label class="board-post-form__field">
+      <span>Tags <small>(optional, comma-separated, up to <%= ChannelThread::TAG_LIMIT %>)</small></span>
+      <%= form.text_field :tags, value: @thread.tag_names.join(", "), autocomplete: "off",
+            placeholder: "bug, api", list: "board-tag-suggestions" %>
+      <datalist id="board-tag-suggestions">
+        <% ChannelThread.board_tag_counts(@room).each_key do |name| %>
+          <option value="<%= name %>"></option>
+        <% end %>
+      </datalist>
+    </label>
+
+    <div class="board-post-form__actions">
+      <%= link_to "Cancel", room_path(@room), class: "btn" %>
+      <%= form.submit "Create post", class: "btn btn--reversed" %>
+    </div>
+  <% end %>
+</main>

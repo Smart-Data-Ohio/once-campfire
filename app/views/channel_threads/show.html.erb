@@ -1,3 +1,6 @@
+<% if @room.board? %>
+  <%= render "channel_threads/board_post" %>
+<% else %>
 <% @page_title = @thread.name %>
 
 <main class="thread" aria-labelledby="thread-title">
@@ -50,3 +53,4 @@
     <%= render partial: "messages/message", collection: @messages %>
   </section>
 </main>
+<% end %>

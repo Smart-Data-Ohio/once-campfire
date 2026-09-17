@@ -1,0 +1,93 @@
+<% @page_title = room_display_name(@room) %>
+<% @body_class = "sidebar room-workspace" %>
+<% content_for :head do %>
+  <%= turbo_exempts_page_from_preview %>
+  <meta name="current-room-id" content="<%= @room.id %>">
+<% end %>
+
+<%= render "rooms/boards/nav", room: @room %>
+
+<% content_for :sidebar, sidebar_turbo_frame_tag(src: user_sidebar_path) %>
+<% content_for :member_panel do %>
+  <%= render "rooms/show/member_panel", room: @room %>
+<% end %>
+
+<% board_view = params[:view].to_s == "board" ? "board" : "list" %>
+<% status_filter = params[:status].to_s.in?(%w[ open done all ]) ? params[:status].to_s : "open" %>
+<% owner_filter = params[:owner].to_s.presence || "anyone" %>
+<% tag_filter = params[:tag].to_s.strip %>
+<% effective_status = board_view == "board" ? "all" : status_filter %>
+<% posts = ChannelThread.board_posts_for(@room, status: effective_status, owner: owner_filter, tag: tag_filter, viewer: Current.user).to_a %>
+<% tag_counts = ChannelThread.board_tag_counts(@room) %>
+<% filter_params = { status: status_filter, owner: owner_filter, tag: tag_filter.presence }.compact %>
+
+<main class="board" aria-labelledby="board-title">
+  <header class="board__header">
+    <div>
+      <span class="board__eyebrow">Board</span>
+      <h1 id="board-title"><%= room_display_name(@room) %></h1>
+      <p>Work threads with a status, an owner, tags, and a pinned result. Open a post to discuss it and record its outcome.</p>
+    </div>
+
+    <nav class="board__views" aria-label="Board rendering">
+      <%= link_to "List", room_path(@room, view: "list", **filter_params), class: [ "btn", "board__view", "active": board_view == "list" ] %>
+      <%= link_to "Board", room_path(@room, view: "board", **filter_params.except(:status)), class: [ "btn", "board__view", "active": board_view == "board" ] %>
+    </nav>
+  </header>
+
+  <%= form_with url: room_path(@room), method: :get, class: "board__filters" do |form| %>
+    <%= form.hidden_field :view, value: board_view %>
+    <% if board_view == "list" %>
+      <label class="board__filter">
+        <span>Status</span>
+        <%= form.select :status, options_for_select([ [ "Open", "open" ], [ "Done", "done" ], [ "All", "all" ] ], status_filter) %>
+      </label>
+    <% end %>
+    <label class="board__filter">
+      <span>Owner</span>
+      <%= form.select :owner, options_for_select(
+            [ [ "Anyone", "anyone" ], [ "Me", "me" ], [ "Agents", "agents" ] ] +
+            @room.users.active.ordered.map { |user| [ user.bot? ? "#{user.name} (agent)" : user.name, user.id.to_s ] },
+            owner_filter) %>
+    </label>
+    <label class="board__filter">
+      <span>Tag</span>
+      <%= form.select :tag, options_for_select([ [ "Any tag", "" ] ] + tag_counts.map { |name, count| [ "#{name} (#{count})", name ] }, tag_filter) %>
+    </label>
+    <%= form.submit "Filter", class: "btn" %>
+    <% if status_filter != "open" || owner_filter != "anyone" || tag_filter.present? %>
+      <%= link_to "Clear", room_path(@room, view: board_view), class: "btn board__clear" %>
+    <% end %>
+  <% end %>
+
+  <% if posts.empty? %>
+    <p class="board__empty">
+      <% if @room.channel_threads.any? %>
+        No posts match these filters.
+      <% else %>
+        No posts yet. <%= link_to "Start the first one", new_room_thread_path(@room) %>.
+      <% end %>
+    </p>
+  <% elsif board_view == "board" %>
+    <div class="board__columns">
+      <% ChannelThread::WORK_STATUSES.each do |status| %>
+        <% column_posts = posts.select { |post| post.work_status == status } %>
+        <section class="board__column" aria-label="<%= ChannelThread::WORK_STATUS_LABELS.fetch(status) %>">
+          <h2 class="board__column-title">
+            <%= ChannelThread::WORK_STATUS_LABELS.fetch(status) %>
+            <span class="board__column-count"><%= column_posts.count %></span>
+          </h2>
+          <div class="board__column-list" role="list">
+            <%= render partial: "rooms/boards/row", collection: column_posts, as: :thread %>
+          </div>
+        </section>
+      <% end %>
+    </div>
+  <% else %>
+    <div id="board_posts" class="board__list" role="list">
+      <%= render partial: "rooms/boards/row", collection: posts, as: :thread %>
+    </div>
+  <% end %>
+
+  <%= turbo_stream_from @room, :messages, channel: "RoomMessagesChannel" %>
+</main>

@@ -1,0 +1,27 @@
+<%# locals: (thread:) -%>
+<% owner = thread.work_owner %>
+<% owner_label = owner.blank? ? "Unassigned" : thread.work_owner_active? ? owner.name : "Owner unavailable (#{owner.name})" %>
+<div id="<%= dom_id(thread, :board_row) %>" class="board-row" role="listitem">
+  <%= link_to room_thread_path(thread.room, thread), class: "board-row__link" do %>
+    <div class="board-row__heading">
+      <strong class="board-row__title"><%= thread.name %></strong>
+      <span class="board-row__status board-row__status--<%= thread.work_status %>"><%= thread.work_status_label %></span>
+      <% unless thread.active? %>
+        <span class="board-row__lifecycle"><%= thread.locked? ? "Locked" : "Closed" %></span>
+      <% end %>
+    </div>
+    <span class="board-row__owner"><%= owner_label %><% if owner&.bot? %><span class="agent-badge">agent</span><% end %></span>
+    <% if thread.tag_names.any? %>
+      <span class="board-row__tags">
+        <% thread.tag_names.each do |tag| %>
+          <span class="board-tag"><%= tag %></span>
+        <% end %>
+      </span>
+    <% end %>
+    <span class="board-row__meta">
+      <%= pluralize(thread.messages.count, "reply") %> ·
+      <%= pluralize(thread.work_thread_links.size, "linked object") %> ·
+      Updated <%= time_tag thread.last_activity_at, data: { local_time_target: "datetime" } %>
+    </span>
+  <% end %>
+</div>
