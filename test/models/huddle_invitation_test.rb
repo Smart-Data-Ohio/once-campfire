@@ -47,6 +47,16 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     end
   end
 
+  test "voice channel huddles create no invitation" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    assert_no_difference -> { ActivityItem.count } do
+      assert_no_enqueued_jobs do
+        HuddleGrant.issue!(session: @starter_session, membership: room.memberships.find_by!(user: users(:david)))
+      end
+    end
+  end
+
   test "no invitation while the other participant is in the call" do
     recipient_grant = HuddleGrant.issue!(session: second_session_for(users(:jason)), membership: memberships(:jason_david_and_jason))
     recipient_grant.update_columns(last_seen_at: Time.current)

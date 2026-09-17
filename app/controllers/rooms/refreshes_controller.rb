@@ -1,6 +1,12 @@
 class Rooms::RefreshesController < ApplicationController
   include RoomScoped
 
+  # A refresh fired by a reconnect after the member was removed is routine,
+  # not an error worth raising; the room UI is torn down by the broadcast.
+  rescue_from ActiveRecord::RecordNotFound do
+    head :not_found
+  end
+
   before_action :set_last_updated_at
 
   def show

@@ -39,6 +39,95 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href='#{account_bot_grants_path(users(:bender))}']", 0
   end
 
+  test "bot profile shows agent identity, status, rooms, and grants to a member" do
+    agents(:bender_agent).update!(
+      provider: "OpenAI", runtime: "Codex CLI 0.9", description: "Does things",
+      status: "working", status_note: "on it", status_changed_at: 2.hours.ago
+    )
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "h1", text: "Bender Bot"
+    assert_match "Workspace agent, managed by David", response.body
+    assert_match "OpenAI · Codex CLI 0.9", response.body
+    assert_match "Does things", response.body
+    assert_select ".agent-status-badge--working", text: "Working"
+    assert_select ".agent-status-note", text: "on it"
+    assert_match(/since .* ago/, response.body)
+    assert_match "never", response.body
+    assert_select "a[href='#{room_path(rooms(:bender_and_kevin))}']", 1
+    assert_select "a[href='#{room_path(rooms(:watercooler))}']", 0
+    assert_match "and 1 more", response.body
+    assert_match "legacy access (no grants recorded)", response.body
+  end
+
+  test "bot profile shows the 24-hour activity line to the owner" do
+    agent = agents(:bender_agent)
+    agent.update!(owner: users(:kevin))
+    message = rooms(:watercooler).messages.create!(creator: users(:david), body: "hey", client_message_id: "profile-activity")
+    agent.agent_events.create!(event_type: "mention", room: rooms(:watercooler), message: message, outcome: "delivered")
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_match "Last 24 hours: 1 delivered, 0 acknowledged, 0 posted, 0 suppressed", response.body
+  end
+
+  test "bot profile shows the 24-hour activity line to an admin" do
+    agents(:bender_agent).update!(owner: users(:kevin))
+    sign_in users(:david)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_match "Last 24 hours:", response.body
+  end
+
+  test "bot profile hides the 24-hour activity line from another member" do
+    sign_in users(:jz)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_no_match "Last 24 hours:", response.body
+  end
+
+  test "bot profile hides rooms the viewer is not a member of" do
+    sign_in users(:jz)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "a[href='#{room_path(rooms(:watercooler))}']", 0
+    assert_select "a[href='#{room_path(rooms(:bender_and_kevin))}']", 0
+    assert_match "and 2 more", response.body
+  end
+
+  test "suspended agent profile shows Suspended" do
+    agents(:bender_agent).suspend!
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select ".agent-status-badge--suspended", text: "Suspended"
+  end
+
+  test "bot without an agent keeps the minimal profile" do
+    agents(:bender_agent).delete
+    sign_in users(:kevin)
+
+    get user_url(users(:bender))
+
+    assert_response :ok
+    assert_select "h1", text: "Bender Bot"
+    assert_select ".agent-status", 0
+    assert_no_match "Workspace agent", response.body
+  end
+
   test "new" do
     get join_url(@join_code)
     assert_response :success

@@ -1,0 +1,21 @@
+<%# One directory row. Also broadcast over AgentsChannel, so the root element
+    id must match Agent#broadcast_status_change. Never renders credentials
+    or grants. %>
+<li id="<%= dom_id(agent, :directory_row) %>" class="agent-directory-row flex align-center gap">
+  <span class="avatar flex-item--no-shrink" style="--avatar-size: 2.65em;">
+    <%= avatar_tag agent.user, loading: :lazy %>
+  </span>
+
+  <div class="min-width flex-item-grow">
+    <div class="overflow-ellipsis txt-large">
+      <%= link_to agent.user.name, user_path(agent.user) %>
+    </div>
+    <div class="overflow-ellipsis txt-small"><%= agent.kind_description %></div>
+    <div class="txt-small">
+      <%= render "agents/status_badge", agent: agent %>
+    </div>
+    <div class="txt-small">
+      <%= agent.last_seen_at ? "last seen #{time_ago_in_words(agent.last_seen_at)} ago" : "never" %>
+    </div>
+  </div>
+</li>

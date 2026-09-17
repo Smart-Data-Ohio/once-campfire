@@ -29,4 +29,14 @@ class Rooms::RefreshesControllerTest < ActionDispatch::IntegrationTest
       assert_select "template", count: 1
     end
   end
+
+  test "refreshing a room the user no longer belongs to is a quiet 404" do
+    get room_refresh_url(rooms(:watercooler), format: :turbo_stream), params: { since: 0 }
+    assert_response :success
+
+    users(:david).memberships.find_by!(room: rooms(:watercooler)).destroy!
+
+    get room_refresh_url(rooms(:watercooler), format: :turbo_stream), params: { since: 0 }
+    assert_response :not_found
+  end
 end

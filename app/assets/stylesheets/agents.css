@@ -1,0 +1,43 @@
+.agent-status {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.agent-status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-dark);
+  white-space: nowrap;
+}
+
+.agent-status-badge--working {
+  border-color: var(--color-positive);
+}
+
+.agent-status-badge--waiting {
+  border-color: var(--color-alert);
+}
+
+.agent-status-badge--failed {
+  border-color: var(--color-negative);
+}
+
+.agent-status-badge--suspended {
+  opacity: 0.7;
+}
+
+.agent-status-note {
+  font-style: italic;
+}
+
+.agent-status-since {
+  opacity: 0.7;
+}
+
+.agent-directory-row {
+  list-style: none;
+}

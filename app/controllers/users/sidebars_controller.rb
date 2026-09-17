@@ -4,7 +4,8 @@ class Users::SidebarsController < ApplicationController
   def show
     all_memberships     = Current.user.memberships.visible.with_ordered_room
     @direct_memberships = extract_direct_memberships(all_memberships)
-    @other_memberships  = all_memberships.without(@direct_memberships)
+    @voice_memberships  = all_memberships.select { |m| m.room.voice? }
+    @other_memberships  = all_memberships.without(@direct_memberships + @voice_memberships)
 
     @direct_placeholder_users = find_direct_placeholder_users
   end
