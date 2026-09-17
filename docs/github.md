@@ -302,7 +302,9 @@ linked account, or whose token GitHub refuses — sees only the plain link
 the author typed, and nothing else. A repository whose privacy is still
 unknown (no fetch has recorded it yet) is treated as private until one
 does. PR thread headers follow the same rule: the card and its Files
-changed summary load per viewer behind the same gate.
+changed summary load per viewer behind the same gate. Work thread links
+to a private pull request show `owner/repo#number` and its state but
+never the title.
 
 The per-viewer decision is cached for ten minutes per repository, grants
 and denials alike, so a page of cards from one repository costs at most

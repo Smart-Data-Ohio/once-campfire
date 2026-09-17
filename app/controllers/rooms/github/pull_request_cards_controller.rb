@@ -25,5 +25,7 @@ class Rooms::Github::PullRequestCardsController < ApplicationController
     end
 
     @visible = helpers.github_pr_visible_to?(@pull_request, Current.user)
+
+    render layout: false
   end
 end
