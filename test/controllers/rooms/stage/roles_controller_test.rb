@@ -19,13 +19,15 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     host_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
     sign_in :david
 
-    # The promotion delivers two broadcasts to the room stream — the revoked
-    # grant refreshes the header stack, then the roster — and three to the
-    # affected member: the sidebar stack, the personalized panel, and the
-    # rejoin event for the persistent target in their huddle panel.
-    assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 2 do
-      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 3 do
-        patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
+    # The revoked grant refreshes the header stack on the room stream and a
+    # sidebar stack on every member's stream. Then the role change delivers a
+    # per-viewer roster to every member, plus the personalized panel and the
+    # rejoin event to the affected member.
+    assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 4 do
+        assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 2 do
+          patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
+        end
       end
     end
 
@@ -35,6 +37,16 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     assert grant.reload.revoked?
     assert HuddleCleanup.exists?(operation: :remove_participant, huddle_grant_id: grant.id)
     assert_not host_grant.reload.revoked?
+
+    roster_target = ActionView::RecordIdentifier.dom_id(@room, :stage_roster)
+    listener_roster = capture_turbo_stream_broadcasts([ users(:kevin), :rooms ])
+      .find { |stream| stream["target"] == roster_target }
+    assert_no_match "Invite to speak", listener_roster.to_html
+    assert_no_match "Make host", listener_roster.to_html
+
+    host_roster = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+      .find { |stream| stream["target"] == roster_target }
+    assert_match "Invite to speak", host_roster.to_html
   end
 
   test "the affected member's panel replacement carries the rejoin trigger" do
@@ -43,11 +55,12 @@ class Rooms::Stage::RolesControllerTest < ActionDispatch::IntegrationTest
     patch room_stage_role_url(@room, @listener), params: { stage_role: "speaker" }
 
     streams = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
-    assert_equal 2, streams.count
-    assert_equal "replace", streams.first["action"]
-    assert_equal ActionView::RecordIdentifier.dom_id(@room, :stage_panel), streams.first["target"]
-    assert_match "stage-rejoin", streams.first.to_html
-    assert_match "You are speaking", streams.first.to_html
+    assert_equal 3, streams.count
+
+    panel = streams.find { |stream| stream["target"] == ActionView::RecordIdentifier.dom_id(@room, :stage_panel) }
+    assert_equal "replace", panel["action"]
+    assert_match "stage-rejoin", panel.to_html
+    assert_match "You are speaking", panel.to_html
   end
 
   test "every role change appends a rejoin event to the member's persistent target" do

@@ -6,20 +6,35 @@ class Rooms::Stage::HandsControllerTest < ActionDispatch::IntegrationTest
     @listener = @room.memberships.find_by!(user: users(:jason))
   end
 
-  test "a listener raises their hand and every viewer gets the new roster" do
+  test "a listener raises their hand and every viewer gets their own roster" do
     sign_in :jason
 
-    assert_turbo_stream_broadcasts [ @room, :messages ], count: 1 do
-      post room_stage_hand_url(@room)
+    assert_turbo_stream_broadcasts [ @room, :messages ], count: 0 do
+      assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 1 do
+        assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 1 do
+          assert_turbo_stream_broadcasts [ users(:kevin), :rooms ], count: 1 do
+            post room_stage_hand_url(@room)
+          end
+        end
+      end
     end
 
     assert_redirected_to room_url(@room)
     assert_predicate @listener.reload, :hand_raised?
 
-    streams = capture_turbo_stream_broadcasts([ @room, :messages ])
-    assert_equal "replace", streams.first["action"]
-    assert_equal ActionView::RecordIdentifier.dom_id(@room, :stage_roster), streams.first["target"]
-    assert_match "Hand raised", streams.first.to_html
+    roster_target = ActionView::RecordIdentifier.dom_id(@room, :stage_roster)
+
+    host_streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+    assert_equal "replace", host_streams.first["action"]
+    assert_equal roster_target, host_streams.first["target"]
+    assert_match "Hand raised", host_streams.first.to_html
+    assert_match "Invite to speak", host_streams.first.to_html
+
+    listener_streams = capture_turbo_stream_broadcasts([ users(:kevin), :rooms ])
+    assert_equal roster_target, listener_streams.first["target"]
+    assert_match "Hand raised", listener_streams.first.to_html
+    assert_no_match "Invite to speak", listener_streams.first.to_html
+    assert_no_match "Make host", listener_streams.first.to_html
   end
 
   test "a turbo-stream raise swaps the actor's own controls without navigating" do
@@ -51,8 +66,12 @@ class Rooms::Stage::HandsControllerTest < ActionDispatch::IntegrationTest
     @listener.raise_hand!
     sign_in :jason
 
-    assert_turbo_stream_broadcasts [ @room, :messages ], count: 1 do
-      delete room_stage_hand_url(@room)
+    assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 1 do
+      assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 1 do
+        assert_turbo_stream_broadcasts [ users(:kevin), :rooms ], count: 1 do
+          delete room_stage_hand_url(@room)
+        end
+      end
     end
 
     assert_redirected_to room_url(@room)
@@ -72,8 +91,12 @@ class Rooms::Stage::HandsControllerTest < ActionDispatch::IntegrationTest
     @listener.raise_hand!
     sign_in :david
 
-    assert_turbo_stream_broadcasts [ @room, :messages ], count: 1 do
-      delete room_stage_hand_url(@room), params: { membership_id: @listener.id }
+    assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 1 do
+      assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 1 do
+        assert_turbo_stream_broadcasts [ users(:kevin), :rooms ], count: 1 do
+          delete room_stage_hand_url(@room), params: { membership_id: @listener.id }
+        end
+      end
     end
 
     assert_redirected_to room_url(@room)

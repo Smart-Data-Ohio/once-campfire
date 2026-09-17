@@ -3,6 +3,7 @@
 <% speakers = memberships.select(&:speaker?).sort_by { |m| m.user.name.downcase } %>
 <% listeners = memberships.select(&:listener?).sort_by { |m| [ m.hand_raised? ? 0 : 1, m.hand_raised_at || Time.at(0), m.user.name.downcase ] } %>
 <% sole_host = hosts.one? %>
+<% can_manage = viewer.host? || viewer.user.administrator? %>
 <div id="<%= dom_id(room, :stage_roster) %>" class="stage-panel__roster">
   <section class="stage-panel__group" aria-label="Hosts">
     <h3 class="stage-panel__group-heading">Hosts · <%= hosts.count %></h3>
@@ -16,14 +17,16 @@
             <strong class="overflow-ellipsis"><%= member.user.name %></strong>
             <span class="stage-panel__role">Host</span>
           </span>
-          <span class="stage-panel__member-actions" data-requires-manage>
-            <%= button_to "Move to speakers", room_stage_role_path(room, member.id), method: :patch,
-                  params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action",
-                  disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
-            <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
-                  params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action",
-                  disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
-          </span>
+          <% if can_manage %>
+            <span class="stage-panel__member-actions">
+              <%= button_to "Move to speakers", room_stage_role_path(room, member.id), method: :patch,
+                    params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action",
+                    disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
+              <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
+                    params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action",
+                    disabled: sole_host, title: ("The stage needs at least one host" if sole_host) %>
+            </span>
+          <% end %>
         </li>
       <% end %>
     </ul>
@@ -42,12 +45,14 @@
               <strong class="overflow-ellipsis"><%= member.user.name %></strong>
               <span class="stage-panel__role">Speaker</span>
             </span>
-            <span class="stage-panel__member-actions" data-requires-manage>
-              <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
-                    params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action" %>
-              <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
-                    params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
-            </span>
+            <% if can_manage %>
+              <span class="stage-panel__member-actions">
+                <%= button_to "Move to audience", room_stage_role_path(room, member.id), method: :patch,
+                      params: { stage_role: "listener" }, class: "btn btn--plain stage-panel__action" %>
+                <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
+                      params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
+              </span>
+            <% end %>
           </li>
         <% end %>
       </ul>
@@ -71,19 +76,21 @@
                 Listener<% if member.hand_raised? %> · <span class="stage-panel__hand-badge">Hand raised</span><% end %>
               </span>
             </span>
-            <span class="stage-panel__member-actions" data-requires-manage>
-              <% if member.hand_raised? %>
-                <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
-                      params: { stage_role: "speaker" }, class: "btn btn--reversed stage-panel__action" %>
-                <%= button_to "Lower hand", room_stage_hand_path(room), method: :delete,
-                      params: { membership_id: member.id }, class: "btn btn--plain stage-panel__action" %>
-              <% else %>
-                <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
-                      params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action" %>
-              <% end %>
-              <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
-                    params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
-            </span>
+            <% if can_manage %>
+              <span class="stage-panel__member-actions">
+                <% if member.hand_raised? %>
+                  <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
+                        params: { stage_role: "speaker" }, class: "btn btn--reversed stage-panel__action" %>
+                  <%= button_to "Lower hand", room_stage_hand_path(room), method: :delete,
+                        params: { membership_id: member.id }, class: "btn btn--plain stage-panel__action" %>
+                <% else %>
+                  <%= button_to "Invite to speak", room_stage_role_path(room, member.id), method: :patch,
+                        params: { stage_role: "speaker" }, class: "btn btn--plain stage-panel__action" %>
+                <% end %>
+                <%= button_to "Make host", room_stage_role_path(room, member.id), method: :patch,
+                      params: { stage_role: "host" }, class: "btn btn--plain stage-panel__action" %>
+              </span>
+            <% end %>
           </li>
         <% end %>
       </ul>

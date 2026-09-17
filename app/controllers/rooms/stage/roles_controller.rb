@@ -10,11 +10,11 @@ class Rooms::Stage::RolesController < ApplicationController
 
   # Hosts and administrators change any member's stage role. The role change
   # revokes the member's huddle grants in the same transaction, and three
-  # broadcasts deliver it: the shared roster goes to the room's stream, a
-  # personalized panel with a rejoin trigger goes to the affected member's own
-  # rooms stream, and a rejoin event goes to the persistent target in their
-  # huddle panel, which is present on every page. Both triggers make their
-  # browser rejoin with a fresh token for the new role.
+  # broadcasts deliver it: a per-viewer roster goes to every member's own
+  # rooms stream, a personalized panel with a rejoin trigger goes to the
+  # affected member's stream, and a rejoin event goes to the persistent
+  # target in their huddle panel, which is present on every page. Both
+  # triggers make their browser rejoin with a fresh token for the new role.
   def update
     target = @room.memberships.find_by(id: params[:membership_id])
     return head :not_found unless target
@@ -47,11 +47,16 @@ class Rooms::Stage::RolesController < ApplicationController
       head :not_found unless @room.stage?
     end
 
+    # Host action forms render only for viewers who may use them, so each
+    # member gets their own roster on their own stream. Stage rooms are
+    # small; a loop is fine.
     def broadcast_roster
-      broadcast_replace_to @room, :messages,
-        target: [ @room, :stage_roster ],
-        partial: "rooms/stage/roster",
-        locals: { room: @room }
+      @room.memberships.includes(:user).each do |member|
+        broadcast_replace_to member.user, :rooms,
+          target: [ @room, :stage_roster ],
+          partial: "rooms/stage/roster",
+          locals: { room: @room, viewer: member }
+      end
     end
 
     def broadcast_panel_to_member(target)
@@ -76,7 +81,7 @@ class Rooms::Stage::RolesController < ApplicationController
         format.turbo_stream do
           render turbo_stream: turbo_stream.replace([ @room, :stage_roster ],
             partial: "rooms/stage/roster",
-            locals: { room: @room })
+            locals: { room: @room, viewer: @membership })
         end
         format.html { redirect_to room_url(@room) }
       end

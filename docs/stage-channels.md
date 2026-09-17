@@ -35,7 +35,11 @@ The room header button reads **Join stage** and **Leave stage**. Joining uses
 the same `huddle:join` event and huddle panel as every other room. A listener
 joins subscribe-only: the microphone, camera, and screen-share controls stay
 hidden and the panel shows a "You are listening" note instead. Hosts and
-speakers get the full panel.
+speakers get the full panel. The join control carries a server-rendered hint
+from the viewer's stage role: a listener's hint skips the device prejoin
+check and any microphone acquisition and connects directly, while the token
+remains the authority for publishing after connect. Voice and DM joins pass
+no hint and behave as before.
 
 Stage rooms list under the existing **Voice** section in the sidebar with a
 stage glyph. They never create invitations, ringing, or missed-call items.
@@ -75,19 +79,22 @@ accepts a `membership_id` parameter so a host or administrator can lower
 another member's hand. `PATCH /rooms/:room_id/stage/roles/:membership_id`
 changes a role; hosts and administrators only.
 
-After a role change, the shared roster is broadcast to the room's stream and
-a personalized panel is broadcast to the affected member's own rooms stream.
-That replacement carries a rejoin trigger: the huddle panel leaves and
-rejoins the same room with a fresh token, skipping the prejoin check. The
-roster broadcast is one shared fragment for every viewer, so host-only
-controls are hidden from other viewers with CSS; the endpoints enforce the
-same permissions regardless.
+After a role change, a per-viewer roster is broadcast to every member's own
+rooms stream — host action forms render only for hosts and administrators —
+and a personalized panel is broadcast to the affected member's stream. That
+replacement carries a rejoin trigger, and a second rejoin event is appended
+to a persistent target inside the member's huddle panel, which exists on
+every page unlike the stage panel: the huddle panel leaves and rejoins the
+same room with a fresh token, skipping the prejoin check.
 
 ## Moderation
 
 Removing a member from the stage uses the existing members UI, which already
-ends their session and drops their sidebar row and header stack. Role changes
-are the only stage moderation tool: there is no separate mute, kick, or ban.
+ends their session and drops their sidebar row and header stack. An edit that
+would remove the last host while members remain is rejected with 422 and an
+inline error naming the host to replace first; emptying the room entirely
+stays allowed. Role changes are the only stage moderation tool: there is no
+separate mute, kick, or ban.
 
 ## Deliberately not included
 

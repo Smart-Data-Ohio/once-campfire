@@ -48,11 +48,16 @@ class Rooms::Stage::HandsController < ApplicationController
       head :not_found unless @room.stage?
     end
 
+    # Host action forms render only for viewers who may use them, so each
+    # member gets their own roster on their own stream. Stage rooms are
+    # small; a loop is fine.
     def broadcast_roster
-      broadcast_replace_to @room, :messages,
-        target: [ @room, :stage_roster ],
-        partial: "rooms/stage/roster",
-        locals: { room: @room }
+      @room.memberships.includes(:user).each do |member|
+        broadcast_replace_to member.user, :rooms,
+          target: [ @room, :stage_roster ],
+          partial: "rooms/stage/roster",
+          locals: { room: @room, viewer: member }
+      end
     end
 
     def respond_with_controls

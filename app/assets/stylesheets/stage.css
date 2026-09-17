@@ -188,13 +188,6 @@
   display: none;
 }
 
-/* The roster is one shared broadcast for every viewer, so host controls are
-   present for all viewers and hidden here for anyone who may not use them.
-   The endpoints enforce the same permissions regardless. */
-.stage-panel__body:not([data-viewer-can-manage="true"]) [data-requires-manage] {
-  display: none;
-}
-
 .stage-panel__action {
   font-size: 0.72rem;
   padding: 0.2rem 0.5rem;
