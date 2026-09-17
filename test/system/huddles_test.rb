@@ -9,7 +9,10 @@ class HuddlesTest < ApplicationSystemTestCase
   CAMPFIRE_PORT = 3001
   GATEWAY_PORT = 7884
 
-  Capybara.server_port = CAMPFIRE_PORT
+  # The gateway spawned below calls back into this fixture server, so the port
+  # is fixed only for LiveKit-backed runs. Every other system test file loads
+  # this class too, and a fixed port would make parallel workers collide.
+  Capybara.server_port = CAMPFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
 
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1000 ], options: { name: :huddle_chrome } do |options|
     options.add_argument "--use-fake-device-for-media-stream"
@@ -114,6 +117,145 @@ class HuddlesTest < ApplicationSystemTestCase
       page.evaluate_script("window.huddleTestLocalTracks.every(track => track.readyState === 'ended')")
     end
     using_session("Kevin") { assert_selector ".huddle__participant", count: 1 }
+  end
+
+  test "two users exchange camera video while navigating, muting, toggling, and leaving" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+    assert_selector "[data-huddle-target='camera'][aria-pressed='false']", text: "Camera off"
+    assert_no_selector ".huddle__camera video"
+
+    click_button "Camera off", exact: true
+    assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    assert_selector ".huddle__camera--local video"
+    assert_selector ".huddle__camera figcaption", text: "JZ (you)"
+    wait_for_condition("the local camera preview did not decode video") do
+      local_camera_decoding?
+    end
+
+    using_session("Kevin") do
+      assert_selector ".huddle__camera:not(.huddle__camera--local) video"
+      assert_selector ".huddle__camera figcaption", text: "JZ"
+      wait_for_condition("the remote camera did not decode video") do
+        remote_camera_decoding?
+      end
+      assert_media_received "video"
+
+      click_button "Camera off", exact: true
+      assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    end
+
+    assert_selector ".huddle__camera", count: 2
+    wait_for_condition("the remote camera did not decode video") do
+      remote_camera_decoding?
+    end
+    assert_media_received "video"
+
+    click_button "Mute", exact: true
+    assert_button "Unmute", exact: true
+    assert_selector ".huddle__camera", count: 2
+    wait_for_condition("muting stopped the remote camera") do
+      remote_camera_decoding?
+    end
+    click_button "Unmute", exact: true
+    assert_button "Mute", exact: true
+
+    click_button "Share screen"
+    assert_button "Stop sharing"
+    assert_selector ".huddle__screen video"
+    assert_selector ".huddle__camera", count: 2
+    using_session("Kevin") do
+      assert_selector ".huddle__screen video"
+      find("[data-huddle-screen-expand]").click
+      assert_selector "#channel-huddle.huddle--theater"
+      assert_selector ".huddle__camera", count: 2
+      assert_camera_thumbnails_do_not_cover_expanded_screen
+      find("body").send_keys :escape
+      assert_no_selector "#channel-huddle.huddle--theater"
+    end
+    click_button "Stop sharing"
+    assert_button "Share screen"
+
+    # Follow the actual sidebar link: a full visit would drop WebRTC connections.
+    original_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+    within("#sidebar") { click_link "HQ", exact: true }
+    assert_selector ".room--current", text: "HQ"
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_selector ".huddle__camera", count: 2
+    assert_equal original_connection_count, page.evaluate_script("window.huddleTestPeerConnections.length")
+    wait_for_condition("the remote camera did not survive navigation") do
+      remote_camera_decoding?
+    end
+
+    click_button "Camera on", exact: true
+    assert_selector "[data-huddle-target='camera'][aria-pressed='false']", text: "Camera off"
+    assert_selector ".huddle__camera", count: 1
+    using_session("Kevin") { assert_selector ".huddle__camera", count: 1 }
+
+    using_session("Kevin") do
+      click_button "Leave", exact: true
+      assert_no_selector "#channel-huddle:not([hidden])"
+      wait_for_condition("local camera was not stopped on leave") do
+        page.evaluate_script("window.huddleTestLocalTracks.every(track => track.readyState === 'ended')")
+      end
+    end
+    assert_selector ".huddle__participant", count: 1
+    assert_no_selector ".huddle__camera video"
+
+    # Joining stays audio-only: a rejoin never restores the previous camera state.
+    within("#sidebar") { click_link "Designers", exact: true }
+    click_button "Leave", exact: true
+    assert_no_selector "#channel-huddle:not([hidden])"
+    click_button "Join huddle"
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_selector "[data-huddle-target='camera'][aria-pressed='false']", text: "Camera off"
+    assert_no_selector ".huddle__camera video"
+  end
+
+  test "a camera that fails to start keeps the huddle connected and stays retryable" do
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+    open_huddle_as "jz@37signals.com"
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+
+    page.execute_script <<~JS
+      window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = (constraints) => {
+        if (constraints && constraints.video) {
+          return Promise.reject(new DOMException('Test permission denial', 'NotAllowedError'));
+        }
+        return window.huddleTestGetUserMedia(constraints);
+      };
+    JS
+
+    click_button "Camera off", exact: true
+
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_selector "[data-huddle-target='notice']", text: /Camera wasn’t started/
+    assert_selector "[data-huddle-target='camera']:not([disabled])", text: "Camera off"
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+    using_session("Kevin") do
+      assert_selector ".huddle__participant", count: 2
+      assert_media_received "audio"
+      assert_no_selector ".huddle__camera video"
+    end
+
+    page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
+    click_button "Camera off", exact: true
+    assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    assert_no_selector "[data-huddle-target='notice']:not([hidden])"
+    assert_selector ".huddle__camera--local video"
+    using_session("Kevin") do
+      assert_selector ".huddle__camera video"
+      wait_for_condition("the retried camera did not decode video") do
+        remote_camera_decoding?
+      end
+      assert_media_received "video"
+    end
   end
 
   test "two direct message participants exchange audio and screen while navigating and reconnecting" do
@@ -632,6 +774,31 @@ class HuddlesTest < ApplicationSystemTestCase
 
     def screen_video_width
       page.evaluate_script("document.querySelector('.huddle__screen video')?.clientWidth || 0")
+    end
+
+    def local_camera_decoding?
+      page.evaluate_script("Array.from(document.querySelectorAll('.huddle__camera--local video')).some(video => video.videoWidth > 0 && video.readyState >= 2)")
+    end
+
+    def remote_camera_decoding?
+      page.evaluate_script("Array.from(document.querySelectorAll('.huddle__camera:not(.huddle__camera--local) video')).some(video => video.videoWidth > 0 && video.readyState >= 2)")
+    end
+
+    def assert_camera_thumbnails_do_not_cover_expanded_screen
+      overlap = page.evaluate_script(<<~JS)
+        (() => {
+          const screen = document.querySelector('.huddle__screen--expanded video');
+          if (!screen) return 'missing expanded screen';
+          const box = screen.getBoundingClientRect();
+          const tiles = Array.from(document.querySelectorAll('.huddle__camera'));
+          if (!tiles.length) return 'missing camera tiles';
+          return tiles.some(tile => {
+            const rect = tile.getBoundingClientRect();
+            return rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top;
+          }) ? 'overlap' : 'none';
+        })()
+      JS
+      assert_equal "none", overlap
     end
 
     # Headless Chrome refuses real full screen, and a browser prompt would stall

@@ -4,7 +4,7 @@ require "uri"
 
 class Huddle
   TOKEN_TTL = 2.minutes
-  PUBLISH_SOURCES = %w[ microphone screen_share screen_share_audio ].freeze
+  PUBLISH_SOURCES = %w[ microphone screen_share screen_share_audio camera ].freeze
   REQUIRED_ENVIRONMENT = %w[
     LIVEKIT_URL LIVEKIT_INTERNAL_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_GATEWAY_SECRET
   ].freeze

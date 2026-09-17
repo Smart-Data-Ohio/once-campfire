@@ -126,6 +126,50 @@
   white-space: nowrap;
 }
 
+.huddle__cameras {
+  display: grid;
+  gap: var(--block-space-half);
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+}
+
+.huddle__cameras[hidden] {
+  display: none;
+}
+
+.huddle__camera {
+  background: var(--workspace-sidebar-hover, var(--color-message-bg));
+  border-radius: 0.5em;
+  margin: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.huddle__camera video {
+  aspect-ratio: 16 / 9;
+  background: oklch(var(--lch-always-black));
+  display: block;
+  inline-size: 100%;
+  object-fit: cover;
+}
+
+/* The local preview behaves like a mirror; remote cameras arrive as sent. */
+.huddle__camera--local video {
+  transform: scaleX(-1);
+}
+
+.huddle__camera figcaption {
+  background: oklch(var(--lch-always-black) / 0.72);
+  bottom: 0;
+  color: white;
+  font-size: 0.75rem;
+  inset-inline: 0;
+  overflow: hidden;
+  padding: 0.35em 0.6em;
+  position: absolute;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .huddle__people {
   min-block-size: 0;
 }
@@ -313,6 +357,32 @@
 }
 
 .huddle--theater .huddle__screen:not(.huddle__screen--expanded) figcaption {
+  display: none;
+}
+
+/* Camera tiles shrink to a thumbnail strip in theater mode so they never cover
+   the expanded screen. They have no expand control of their own in this slice. */
+.huddle--theater .huddle__cameras:not([hidden]) {
+  display: flex;
+  flex: none;
+  flex-direction: row;
+  gap: var(--block-space-half);
+  overflow-x: auto;
+}
+
+.huddle--theater .huddle__camera {
+  block-size: 4.5rem;
+  flex: none;
+  inline-size: 8rem;
+}
+
+.huddle--theater .huddle__camera video {
+  aspect-ratio: auto;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.huddle--theater .huddle__camera figcaption {
   display: none;
 }
 
