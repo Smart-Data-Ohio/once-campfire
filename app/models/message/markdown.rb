@@ -23,6 +23,8 @@ class Message::Markdown
   LANGUAGE_CLASS_PATTERN = /\Alanguage-[a-zA-Z0-9_+.-]+\z/
   BLOCK_TAGS = %w[ blockquote h1 h2 h3 h4 h5 h6 li ol p pre table tr ul ].freeze
   CELL_TAGS = %w[ td th ].freeze
+  ICON_ALT_PATTERN = /\A:(?<name>[a-z0-9_]+):\z/
+  AVATAR_SRC_PATTERN = %r{\A/users/[^/?#]+/avatar([?#]|\z)}
 
   class << self
     def render(source, room:)
@@ -44,18 +46,49 @@ class Message::Markdown
     # Markdown is sanitized before it is persisted. Presentation adds only
     # server-rendered Action Text attachments, then sanitizes once more with the
     # attributes required by the existing mention partial.
+    #
+    # Icon sources are rewritten from the :name: in their alt text, so a stored
+    # body keeps rendering after a digest change or an asset host move. Every
+    # image is checked: mention avatars are allowlisted by route path and
+    # anything else is dropped.
     def sanitize_presentation(html)
       safe = sanitize(html, tags: PRESENTATION_TAGS, attributes: PRESENTATION_ATTRIBUTES)
-      return safe unless safe.include?("icon--brand")
+      return safe unless safe.include?("<img")
 
       fragment = Nokogiri::HTML5.fragment(safe)
-      fragment.css("img.icon--brand").each do |img|
-        img.remove unless Icons.brand_image_urls.value?(img["src"])
+      fragment.css("img").each do |img|
+        if (brand = brand_from_alt(img["alt"]))
+          img["src"] = Icons.brand_image_urls.fetch(brand.name)
+        elsif !avatar_src?(img["src"])
+          img.remove
+        end
       end
       fragment.to_html
     end
 
     private
+      # The icon name carried in alt text, e.g. ":openai:". Aliases resolve to
+      # their brand; anything else is not an icon.
+      def brand_from_alt(alt)
+        name = alt.to_s.match(ICON_ALT_PATTERN)&.[](:name)
+        icon = name && Icons.find(name)
+
+        icon if icon.is_a?(Icons::Brand)
+      end
+
+      def avatar_src?(src)
+        path = src.to_s
+        path = path.delete_prefix(asset_host_prefix) if asset_host_prefix && path.start_with?(asset_host_prefix)
+
+        path.match?(AVATAR_SRC_PATTERN)
+      end
+
+      def asset_host_prefix
+        host = Rails.configuration.action_controller.asset_host
+
+        host if host.is_a?(String) && host.present?
+      end
+
       def sanitize(html, tags:, attributes:)
         sanitizer_class.new.sanitize(html, tags:, attributes:)
       end
