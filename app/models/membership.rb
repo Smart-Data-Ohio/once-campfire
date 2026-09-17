@@ -32,9 +32,13 @@ class Membership < ApplicationRecord
     # Drop the removed member's sidebar row over their existing rooms stream,
     # the same stream the involvement toggle uses. Voice rooms also drop the
     # header presence stack first: unlike the row, nothing else refreshes it.
+    # A failed broadcast (cable adapter outage) must never stop the
+    # connection reset that follows: report it and let the callbacks run on.
     def broadcast_room_removal_to_user
       broadcast_remove_to user, :rooms, target: [ room, :header_voice_participants ] if room.voice?
       broadcast_remove_to user, :rooms, target: [ room, :list ]
+    rescue StandardError => error
+      Rails.error.report(error, handled: true, severity: :warning, context: { membership_id: id, room_id: room_id, user_id: user_id })
     end
 
     def reset_user_remote_connections
