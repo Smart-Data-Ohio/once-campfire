@@ -12,7 +12,7 @@ class Github::PullRequestThreadsController < ApplicationController
     raise ActiveRecord::RecordNotFound unless pull_request.pull_request_references.exists?(message_id: parent_message.id)
 
     if (existing = Github::PullRequestThread.find_by(pull_request: pull_request, room: @room))
-      redirect_to room_thread_path(@room, existing.channel_thread)
+      redirect_to room_thread_path(@room, existing.channel_thread), status: :see_other
       return
     end
 
@@ -21,12 +21,12 @@ class Github::PullRequestThreadsController < ApplicationController
 
     if mapping.channel_thread_id == thread.id
       Github::FetchPullRequestJob.perform_later(pull_request)
-      redirect_to room_thread_path(@room, thread)
+      redirect_to room_thread_path(@room, thread), status: :see_other
     else
       # Lost an insert race: the winner's thread stands, ours was never
       # mapped and goes away so no orphaned empty thread is left behind.
       thread.destroy!
-      redirect_to room_thread_path(@room, mapping.channel_thread)
+      redirect_to room_thread_path(@room, mapping.channel_thread), status: :see_other
     end
   rescue ActiveRecord::RecordInvalid => error
     render_error error.record.errors.full_messages.to_sentence

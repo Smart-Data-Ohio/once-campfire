@@ -50,11 +50,13 @@
     <% card_message = local_assigns[:message] %>
     <% if card_message.present? && card_message.thread_id.nil? %>
       <% if (pr_thread_mapping = github_pr_thread_mapping_for(card_message.room_id, pull_request)) %>
-        <%= link_to "Discuss", room_thread_path(card_message.room_id, pr_thread_mapping.channel_thread_id), class: "github-pr-card__discuss" %>
+        <%= link_to "Discuss", room_thread_path(card_message.room_id, pr_thread_mapping.channel_thread_id),
+              class: "github-pr-card__discuss", data: { turbo_frame: "_top" } %>
       <% else %>
         <%= button_to "Discuss", room_github_pull_request_threads_path(card_message.room_id),
               params: { pull_request_id: pull_request.id, message_id: card_message.id },
-              class: "github-pr-card__discuss", form_class: "github-pr-card__discuss-form" %>
+              class: "github-pr-card__discuss", form_class: "github-pr-card__discuss-form",
+              form: { data: { turbo_frame: "_top" } } %>
       <% end %>
     <% end %>
   </footer>
