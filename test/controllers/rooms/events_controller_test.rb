@@ -601,6 +601,33 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @event.reload.venue_room_id
   end
 
+  test "the edit form keeps a venue the editor cannot see so an unrelated edit does not clear it" do
+    venue = Rooms::Voice.create_for({ name: "Design sync", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    sign_in :jason
+
+    get edit_room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Voice'] option[value='#{venue.id}'][selected]", "Design sync"
+
+    patch room_event_url(@room, @event), params: {
+      event: { starts_at: (@event.starts_at + 1.hour).iso8601, ends_at: @event.ends_at&.+(1.hour)&.iso8601, venue_room_id: venue.id }
+    }
+
+    assert_response :redirect
+    assert_equal venue.id, @event.reload.venue_room_id
+  end
+
+  test "the new form does not list another member's venue" do
+    Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    get new_room_event_url(@room)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] option", text: "Outsiders", count: 0
+  end
+
   test "the form lists only the member's voice and Stage channels, grouped by kind" do
     Rooms::Voice.create_for({ name: "Zebra", creator: users(:david) }, users: [ users(:david) ])
     Rooms::Voice.create_for({ name: "Alpha", creator: users(:david) }, users: [ users(:david) ])

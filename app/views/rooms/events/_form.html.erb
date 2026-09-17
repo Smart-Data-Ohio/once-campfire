@@ -26,12 +26,7 @@
 
   <div>
     <%= form.label :venue_room_id, "Where" %>
-    <% venue_rooms = Current.user.rooms.where(type: %w[ Rooms::Voice Rooms::Stage ]).ordered %>
-    <%= form.select :venue_room_id,
-          [
-            [ "Voice", venue_rooms.select(&:voice?).map { |venue| [ venue.name, venue.id ] } ],
-            [ "Stage", venue_rooms.select(&:stage?).map { |venue| [ venue.name, venue.id ] } ]
-          ].reject { |_, options| options.empty? },
+    <%= form.select :venue_room_id, event_venue_options(form.object),
           { include_blank: "No channel" },
           class: "input" %>
   </div>
