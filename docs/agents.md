@@ -108,6 +108,12 @@ otherwise. The object is `url`, `owner`, `repo`, `number`, `title`,
 `checks_state` (`checks_state` mirrors the card's check status). See
 [GitHub pull request cards](github.md#pull-request-threads).
 
+The `message` object itself carries `drive_attachments`: the message's
+Drive attachments as `[{ file_id, url }]` (`url` is the
+`https://drive.google.com/open?id=...` link), `[]` when there are none.
+Never names: bots receive no Drive credentials. See
+[Google Drive attachments](google-drive.md#attachments).
+
 ### Rate limit and loop guard
 
 At most 20 deliveries per agent per room per minute, counted from
@@ -130,7 +136,9 @@ The webhook payload gains an additive
 or null) when posted through event delivery. The legacy bot webhook path
 sends the unchanged payload without that key. Agent deliveries also carry
 the same additive `pull_request` key as polling: the PR context object in
-a pull-request discussion thread, null otherwise.
+a pull-request discussion thread, null otherwise. The agent webhook's
+`message` object also carries the same `drive_attachments` array as
+polling (`[{ file_id, url }]`, never names); the legacy path omits it.
 
 ## Management
 
