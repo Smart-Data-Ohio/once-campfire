@@ -29,6 +29,13 @@ class Twitter::Post < ApplicationRecord
     fetched_at.nil? || (fetch_error.present? && fetched_at < FETCH_ERROR_RETRY_AFTER.ago)
   end
 
+  # True when no fetch has ever completed or failed for this post. Rendering
+  # such a card re-enqueues its fetch (see Twitter::PostsHelper), so a lost
+  # job cannot strand it on "Loading post…" forever.
+  def fetch_pending?
+    fetched_at.nil? && fetch_error.nil?
+  end
+
   def fetch_requested_recently?
     fetch_requested_at.present? && fetch_requested_at >= FETCH_ERROR_RETRY_AFTER.ago
   end
