@@ -11,9 +11,12 @@ class ThreadTag < ApplicationRecord
 
   private
     # Tags render inside the board row, so any tag change refreshes it.
+    # Tags destroyed with their post stay silent: the post's own destroy
+    # removes the row, and a replace would re-render a deleted post.
     def broadcast_board_row_replace
       thread = channel_thread
       return unless thread&.room&.board?
+      return if thread.destroyed? || thread.marked_for_destruction?
 
       thread.broadcast_board_row_replace
     end

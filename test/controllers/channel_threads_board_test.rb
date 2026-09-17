@@ -492,7 +492,7 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     assert_no_match "Auto-close after", response.body
   end
 
-  test "a status change replaces the post row over the room stream" do
+  test "a status change replaces the list row and moves the column row" do
     @post.update!(work_owner_id: users(:kevin).id)
 
     sign_in :jz
@@ -502,9 +502,18 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     assert_rendered_turbo_stream_broadcast @room, :messages, action: "replace", target: [ @post, :board_row ] do
       assert_select ".board-row__status", text: "In progress"
     end
+
+    column_row_id = ActionView::RecordIdentifier.dom_id(@post, :board_column_row)
+    streams = capture_turbo_stream_broadcasts([ @room, :messages ])
+    assert streams.any? { |stream| stream["action"] == "remove" && stream["target"] == column_row_id },
+      "expected the stale column row to be removed"
+    move = streams.find { |stream| stream["action"] == "prepend" && stream["target"] == "board_column_in_progress" }
+    assert move, "expected a prepend into the new status column"
+    assert_includes move.to_html, column_row_id
+    assert_match "Ship it", move.to_html
   end
 
-  test "a new post prepends into the board list" do
+  test "a new post prepends into the board list and its status column" do
     sign_in :jz
     post room_threads_url(@room, format: :json), params: { thread: { name: "Prepended post" } }
     assert_response :created
@@ -516,6 +525,13 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     end
     assert_equal "board_posts", prepend["target"]
     assert_match "Prepended post", prepend.to_html
+
+    column_prepend = streams.find do |stream|
+      stream["action"] == "prepend" && stream.to_html.include?(ActionView::RecordIdentifier.dom_id(post, :board_column_row))
+    end
+    assert column_prepend, "expected a prepend of the new post into its status column"
+    assert_equal "board_column_planned", column_prepend["target"]
+    assert_match "Prepended post", column_prepend.to_html
   end
 
   test "a tag change replaces the post row over the room stream" do
@@ -526,6 +542,40 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     assert_rendered_turbo_stream_broadcast @room, :messages, action: "replace", target: [ @post, :board_row ] do
       assert_select ".board-tag", text: "shiny"
     end
+    assert_rendered_turbo_stream_broadcast @room, :messages, action: "replace", target: [ @post, :board_column_row ] do
+      assert_select ".board-tag", text: "shiny"
+    end
+  end
+
+  test "deleting a post removes its rows instead of re-rendering them" do
+    @post.tag_names = "doomed"
+    @post.save!
+
+    sign_in :david
+    ActionCable.server.pubsub.clear
+    delete room_thread_url(@room, @post, format: :json)
+    assert_response :no_content
+
+    streams = capture_turbo_stream_broadcasts([ @room, :messages ])
+    removes = streams.select { |stream| stream["action"] == "remove" }
+    assert_equal [
+      ActionView::RecordIdentifier.dom_id(@post, :board_row),
+      ActionView::RecordIdentifier.dom_id(@post, :board_column_row)
+    ].to_set, removes.map { |stream| stream["target"] }.to_set
+    assert streams.none? { |stream| stream["action"] == "replace" },
+      "destroyed tags must not re-render the deleted row"
+  end
+
+  test "deleting a channel thread broadcasts no board row remove" do
+    thread = ChannelThread.create!(room: rooms(:designers), creator: users(:david), name: "Ordinary")
+
+    sign_in :david
+    ActionCable.server.pubsub.clear
+    delete room_thread_url(rooms(:designers), thread, format: :json)
+    assert_response :no_content
+
+    streams = capture_turbo_stream_broadcasts([ rooms(:designers), :messages ])
+    assert_empty streams
   end
 
   test "bot posting API returns 422 in a board" do

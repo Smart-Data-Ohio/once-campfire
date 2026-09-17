@@ -55,6 +55,7 @@ class ChannelThread < ApplicationRecord
 
   after_create_commit :announce_board_post, if: :board_post?
   after_update_commit :broadcast_board_row_replace_on_change, if: :board_post?
+  after_destroy_commit :broadcast_board_row_remove, if: :board_post?
 
   scope :ordered, -> { order(last_activity_at: :desc, id: :desc) }
   scope :active, -> { where(closed_at: nil, locked_at: nil) }
@@ -557,13 +558,15 @@ class ChannelThread < ApplicationRecord
     ChannelThread::PushMessageJob.perform_later(self, message)
   end
 
-  # Replace this post's row on the board index over the room's existing
-  # message stream. Both renderings use the same row id, so one replace
-  # refreshes whichever rendering a viewer has open.
+  # Replace this post's rows on the board index over the room's existing
+  # message stream. The list and column renderings use distinct row ids, so
+  # both are refreshed; viewers in the other rendering ignore the absent
+  # target, like the per-context work link containers do.
   def broadcast_board_row_replace
+    broadcast_board_list_row_replace
     broadcast_replace_to room, :messages,
-      target: ActionView::RecordIdentifier.dom_id(self, :board_row),
-      partial: "rooms/boards/row", locals: { thread: self }
+      target: board_column_row_dom_id,
+      partial: "rooms/boards/row", locals: { thread: self, dom_suffix: :board_column_row }
   end
 
   private
@@ -580,11 +583,13 @@ class ChannelThread < ApplicationRecord
       (names - existing).each { |name| tags.build(name:) }
     end
 
-    # A new post prepends into the board list and, having no root message
-    # to do it, marks the board unread for its members itself.
+    # A new post prepends into the board list and its status column and,
+    # having no root message to do it, marks the board unread for its
+    # members itself.
     def announce_board_post
       broadcast_prepend_to room, :messages, target: "board_posts",
         partial: "rooms/boards/row", locals: { thread: self }
+      broadcast_board_column_row_prepend
 
       now = Time.current
       room.memberships.visible.disconnected.where.not(user_id: creator_id)
@@ -597,7 +602,41 @@ class ChannelThread < ApplicationRecord
     def broadcast_board_row_replace_on_change
       return unless (BOARD_ROW_BROADCAST_ATTRIBUTES & previous_changes.keys).any?
 
-      broadcast_board_row_replace
+      # A status change moves the row between columns: list viewers keep
+      # their row updated in place, while the column rendering drops the
+      # stale row and prepends it into its new column.
+      if previous_changes.key?("work_status")
+        broadcast_board_list_row_replace
+        broadcast_remove_to room, :messages, target: board_column_row_dom_id
+        broadcast_board_column_row_prepend
+      else
+        broadcast_board_row_replace
+      end
+    end
+
+    def broadcast_board_list_row_replace
+      broadcast_replace_to room, :messages,
+        target: board_list_row_dom_id,
+        partial: "rooms/boards/row", locals: { thread: self }
+    end
+
+    def broadcast_board_column_row_prepend
+      broadcast_prepend_to room, :messages,
+        target: "board_column_#{work_status}",
+        partial: "rooms/boards/row", locals: { thread: self, dom_suffix: :board_column_row }
+    end
+
+    def broadcast_board_row_remove
+      broadcast_remove_to room, :messages, target: board_list_row_dom_id
+      broadcast_remove_to room, :messages, target: board_column_row_dom_id
+    end
+
+    def board_list_row_dom_id
+      ActionView::RecordIdentifier.dom_id(self, :board_row)
+    end
+
+    def board_column_row_dom_id
+      ActionView::RecordIdentifier.dom_id(self, :board_column_row)
     end
 
     def set_default_name
