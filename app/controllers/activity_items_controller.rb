@@ -104,12 +104,13 @@ class ActivityItemsController < ApplicationController
 
     # The ordering is (updated_at, id), so the cursor resolves the before
     # item's updated_at and pages strictly below that pair. A cursor whose
-    # item is gone falls back to the id alone.
+    # item is gone serves the first page: an id comparison alone would
+    # misorder under updated_at ordering.
     def apply_cursor(scope)
       return scope unless params[:before].to_s.match?(/\A\d+\z/)
 
       cursor = accessible_activity_items.find_by(id: params[:before].to_i)
-      return scope.where("activity_items.id < ?", params[:before].to_i) unless cursor
+      return scope unless cursor
 
       scope.where(
         "activity_items.updated_at < ? OR (activity_items.updated_at = ? AND activity_items.id < ?)",

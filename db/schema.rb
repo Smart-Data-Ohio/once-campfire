@@ -73,6 +73,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022902) do
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+    t.index ["user_id", "updated_at"], name: "index_activity_items_on_user_id_and_updated_at"
   end
 
   create_table "agent_approvals", force: :cascade do |t|

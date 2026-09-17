@@ -321,6 +321,31 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a deleted cursor serves the first page" do
+    2.times do |index|
+      ActivityItem.create!(
+        user: users(:david),
+        source: @room.messages.create!(creator: users(:jz), body: "Cursor #{index}", client_message_id: "cursor-#{index}"),
+        event_type: "reply"
+      )
+    end
+
+    with_page_size(2) do
+      get activity_items_url, as: :json
+      cursor = response.parsed_body.fetch("next_cursor")
+      assert_not_nil cursor
+
+      ActivityItem.find(cursor).destroy!
+
+      get activity_items_url, as: :json
+      first_page_ids = response.parsed_body.fetch("activity_items").pluck("id")
+
+      get activity_items_url(before: cursor), as: :json
+      assert_response :success
+      assert_equal first_page_ids, response.parsed_body.fetch("activity_items").pluck("id")
+    end
+  end
+
   test "state changes preserve the type filter" do
     patch handled_activity_item_url(@item, state: "handled", status: "read", type: "events")
 

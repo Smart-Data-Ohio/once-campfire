@@ -52,8 +52,15 @@ class User < ApplicationRecord
   end
 
   def inbox_preferences=(value)
-    hash = value.is_a?(ActionController::Parameters) ? value.to_unsafe_h : value.to_h
-    self[:inbox_preferences] = hash.stringify_keys.slice(*User::InboxPreferences::KEYS)
+    hash = value.is_a?(ActionController::Parameters) ? value.to_unsafe_h : value
+    unless hash.nil? || hash.is_a?(Hash)
+      self[:inbox_preferences] = value
+      return
+    end
+
+    existing = self[:inbox_preferences]
+    existing = {} unless existing.is_a?(Hash)
+    self[:inbox_preferences] = existing.merge((hash || {}).stringify_keys.slice(*User::InboxPreferences::KEYS))
   end
 
   def initials
@@ -91,7 +98,13 @@ class User < ApplicationRecord
 
   private
     def inbox_preferences_must_be_boolean
-      (self[:inbox_preferences] || {}).each do |key, value|
+      raw = self[:inbox_preferences]
+      unless raw.nil? || raw.is_a?(Hash)
+        errors.add(:inbox_preferences, "is invalid")
+        return
+      end
+
+      (raw || {}).each do |key, value|
         unless User::InboxPreferences.boolean_value?(value)
           errors.add(:"inbox_preferences.#{key}", "must be true or false")
         end

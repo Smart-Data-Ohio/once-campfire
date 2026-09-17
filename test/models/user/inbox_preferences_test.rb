@@ -40,6 +40,28 @@ class User::InboxPreferencesTest < ActiveSupport::TestCase
     assert_equal true, user.reload.inbox_preferences.github_review_requests
   end
 
+  test "assigning preferences merges into the existing hash" do
+    user = users(:david)
+    user.update!(inbox_preferences: { "github_review_requests" => false })
+    user.update!(inbox_preferences: { "event_reminders" => false })
+
+    preferences = user.reload.inbox_preferences
+    assert_equal false, preferences.github_review_requests
+    assert_equal false, preferences.event_reminders
+    assert_equal true, preferences.agent_work
+    assert_equal({ "github_review_requests" => false, "event_reminders" => false }, user.read_attribute(:inbox_preferences))
+  end
+
+  test "non-hash input is invalid without raising" do
+    user = users(:david)
+    user.inbox_preferences = "banana"
+
+    assert_not user.valid?
+    assert_includes user.errors[:inbox_preferences], "is invalid"
+    assert_not user.update(inbox_preferences: "banana")
+    assert_equal true, user.reload.inbox_preferences.github_review_requests
+  end
+
   test "unknown keys are ignored" do
     user = users(:david)
     user.update!(inbox_preferences: { "bogus" => false })

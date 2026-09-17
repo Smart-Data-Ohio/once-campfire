@@ -31,6 +31,9 @@ The inbox honours each channel's notification setting. Suppression happens when 
 | Work updates and assignments | Yes | Yes | No | No |
 | Event invitations, updates, cancellations, reminders | Yes | Yes | No | No |
 | Huddle invitations and missed calls | Yes | Yes | No | No |
+| Agent approval requests | Yes | Yes | Yes | Yes |
+
+Agent approval requests are workspace-scoped rather than room-scoped, so channel involvement never suppresses them; only the profile's agent-approvals switch does.
 
 Push notifications already follow the same setting for messages, thread activity, and huddle invitations: members with notifications off or invisible get no push from that room. One difference: a direct mention still creates an inbox item when notifications are off, but sends no push. Event reminder pushes still go to every going or maybe attendee.
 

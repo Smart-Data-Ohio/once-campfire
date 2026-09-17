@@ -12,8 +12,10 @@ module ActivityItems
 
     class << self
       # This is the source hook for message creation and future source types.
-      # It is safe to call more than once for the same source because the
-      # database identity is recipient + source, not the delivery attempt.
+      # Mentions, replies, and assignments are idempotent per recipient +
+      # source, but thread_activity and work_update refresh the
+      # recipient's existing unhandled item for the thread in place —
+      # unread again, back at the top — so repeat calls are not no-ops.
       def record_message!(message)
         new(message).record_message!
       end

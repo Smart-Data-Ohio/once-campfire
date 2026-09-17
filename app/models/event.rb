@@ -158,7 +158,7 @@ class Event < ApplicationRecord
     # members with notifications off or invisible get no invitation,
     # update, cancellation, or reminder items from this room.
     def notified_member_ids
-      room.memberships.where.not(involvement: %w[ nothing invisible ]).select(:user_id)
+      room.memberships.where(involvement: %w[ mentions everything ]).select(:user_id)
     end
 
     # Activity items are unique per recipient + source, so a later lifecycle
