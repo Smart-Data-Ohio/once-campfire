@@ -56,6 +56,74 @@ class Accounts::BotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Bender's New Friend", users(:bender).reload.name
   end
 
+  test "admin can set provider, runtime, and description" do
+    get edit_account_bot_url(users(:bender))
+    assert_response :ok
+    assert_select "input[name='agent[provider]']", 1
+    assert_select "input[name='agent[runtime]']", 1
+    assert_select "textarea[name='agent[description]']", 1
+
+    put account_bot_url(users(:bender)), params: {
+      user: { name: "Bender Bot" },
+      agent: { provider: "OpenAI", runtime: "Codex CLI 0.9", description: "Does things" }
+    }
+
+    assert_redirected_to account_bots_url
+    assert_equal "OpenAI", agents(:bender_agent).reload.provider
+    assert_equal "Codex CLI 0.9", agents(:bender_agent).runtime
+    assert_equal "Does things", agents(:bender_agent).description
+  end
+
+  test "owner can set provider, runtime, and description" do
+    agents(:bender_agent).update!(owner: users(:kevin))
+    sign_in users(:kevin)
+
+    get edit_account_bot_url(users(:bender))
+    assert_response :ok
+    assert_no_match "Manage agent credentials", response.body
+
+    put account_bot_url(users(:bender)), params: {
+      user: { name: "Bender Bot" },
+      agent: { provider: "Anthropic", runtime: "Claude Code", description: "Helps out" }
+    }
+
+    assert_redirected_to account_bots_url
+    assert_equal "Anthropic", agents(:bender_agent).reload.provider
+  end
+
+  test "another member gets 403 on edit and update" do
+    sign_in users(:kevin)
+
+    get edit_account_bot_url(users(:bender))
+    assert_response :forbidden
+
+    put account_bot_url(users(:bender)), params: {
+      user: { name: "Bender Bot" }, agent: { provider: "Evil" }
+    }
+    assert_response :forbidden
+    assert_nil agents(:bender_agent).reload.provider
+  end
+
+  test "owner still gets 403 on admin-only bot pages" do
+    agents(:bender_agent).update!(owner: users(:kevin))
+    sign_in users(:kevin)
+
+    get account_bots_url
+    assert_response :forbidden
+
+    delete account_bot_url(users(:bender))
+    assert_response :forbidden
+  end
+
+  test "description over 500 characters is rejected" do
+    put account_bot_url(users(:bender)), params: {
+      user: { name: "Bender Bot" }, agent: { description: "x" * 501 }
+    }
+
+    assert_response :unprocessable_entity
+    assert_nil agents(:bender_agent).reload.description
+  end
+
   test "destroy" do
     assert_difference -> { User.active_bots.count }, -1 do
       delete account_bot_url(users(:bender))
