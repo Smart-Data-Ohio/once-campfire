@@ -28,6 +28,15 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match "Legacy access", response.body
   end
 
+  test "room picker includes direct rooms under their display names" do
+    direct_room = rooms(:bender_and_kevin)
+
+    get account_bot_grants_url(@bot)
+
+    assert_response :ok
+    assert_select "select[name='agent_grant[room_id]'] option[value='#{direct_room.id}']", text: "Bender Bot and Kevin"
+  end
+
   test "index renders a fallback for grants whose room was deleted" do
     AgentGrant.create!(agent: @agent, room: rooms(:watercooler), granted_by: users(:david), capability: "post_messages")
     rooms(:watercooler).destroy!

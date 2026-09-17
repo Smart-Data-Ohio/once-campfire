@@ -39,7 +39,7 @@
       <div class="flex align-center gap">
         <label class="flex align-center gap flex-item-grow txt-large input input--actor">
           <%= form.select :room_id,
-                options_from_collection_for_select(@bot.rooms.without_directs.ordered, :id, :name),
+                @bot.rooms.ordered.map { |room| [ room_display_name(room), room.id ] },
                 { prompt: "Workspace-wide (all rooms)" }, { class: "input" } %>
         </label>
         <span class="txt-small">Room membership still applies</span>
