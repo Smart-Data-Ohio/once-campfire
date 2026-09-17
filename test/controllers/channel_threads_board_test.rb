@@ -388,6 +388,7 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
     sign_in :jz
     get room_url(@room)
     assert_response :success
+    assert_select ".room-header__kind", text: "Board"
     assert_select "#board_posts .board-row", count: 1
     assert_select "##{ActionView::RecordIdentifier.dom_id(@post, :board_row)}", text: /Ship it/
     assert_select ".board-row__status", text: "Planned"
@@ -498,6 +499,23 @@ class ChannelThreadsBoardTest < ActionDispatch::IntegrationTest
 
     get room_url(@room, view: "board", status: "done")
     assert_select ".board__column[aria-label='In progress'] .board-row", count: 1
+  end
+
+  test "post payloads do not advertise removing work tracking" do
+    sign_in :jz
+    get room_thread_url(@room, @post, format: :json)
+    assert_response :success
+    permissions = response.parsed_body.dig("thread", "permissions")
+    assert_equal false, permissions["can_remove_work"]
+    assert_equal true, permissions["can_manage_work"]
+
+    work_thread = ChannelThread.create!(room: rooms(:designers), creator: users(:jz), name: "Channel work")
+    ThreadMembership.join!(work_thread, users(:jz))
+    work_thread.update_work!(actor: users(:jz), work_status: "planned")
+
+    get room_thread_url(rooms(:designers), work_thread, format: :json)
+    assert_response :success
+    assert_equal true, response.parsed_body.dig("thread", "permissions", "can_remove_work")
   end
 
   test "post page shows the board header, result, and manage controls without tracking controls" do
