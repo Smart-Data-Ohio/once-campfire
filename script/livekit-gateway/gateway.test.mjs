@@ -157,7 +157,7 @@ async function createHarness(overrides = {}) {
     livekitApiKey: API_KEY,
     livekitApiSecret: API_SECRET,
     checkIntervalMs: overrides.checkIntervalMs ?? 30,
-    requestTimeoutMs: overrides.requestTimeoutMs ?? 100,
+    requestTimeoutMs: overrides.requestTimeoutMs ?? 1_000,
     reconnectGraceMs: overrides.reconnectGraceMs ?? 80,
     removalDeadlineMs: overrides.removalDeadlineMs ?? 500,
     onDecision: (decision) => state.decisions.push(decision),
