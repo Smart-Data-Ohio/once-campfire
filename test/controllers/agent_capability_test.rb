@@ -147,6 +147,34 @@ class AgentCapabilityTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "session-cookie POST gets 403 JSON with forgery protection enabled" do
+    sign_in :david
+
+    original_forgery_protection = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+
+    post room_agent_messages_url(@room),
+      params: { message: { body: "Human", client_message_id: "csrf-human" } }
+
+    assert_response :forbidden
+    assert_equal "Forbidden: Bearer agent token required", response.parsed_body["error"]
+  ensure
+    ActionController::Base.allow_forgery_protection = original_forgery_protection
+  end
+
+  test "agent-token POST succeeds with forgery protection enabled" do
+    original_forgery_protection = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+
+    post room_agent_messages_url(@room),
+      params: { message: { body: "Hello", client_message_id: "csrf-bearer" } }.to_json,
+      headers: bearer_headers
+
+    assert_response :created
+  ensure
+    ActionController::Base.allow_forgery_protection = original_forgery_protection
+  end
+
   private
     def grant!(capability:, room: nil)
       AgentGrant.create!(agent: @agent, room: room, granted_by: users(:david), capability: capability)
