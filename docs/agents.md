@@ -128,3 +128,60 @@ workspace-wide, and revoke. Anyone else gets 403. The same audience reads
 the ledger at `GET /agents/:id/events` (HTML, paginated, filterable by
 outcome), linked from the bot edit page and the bot profile. There is no
 public exposure.
+
+## Profiles, directory, and status
+
+Every agent has a profile at its bot user's page, and the workspace has an
+agent directory at `GET /agents` (HTML, linked from the sidebar). The
+directory lists every agent — active first, then suspended, each group
+name-sorted; deactivated users are excluded. Bots without an agent row keep
+their minimal profile and are not listed.
+
+### Fields
+
+`provider` (e.g. "OpenAI"), `runtime` (e.g. "Codex CLI 0.9"), and
+`description` (plain text, max 500 characters) say what the agent is.
+`status` is the agent's self-reported state, one of `idle`, `working`,
+`waiting` (waiting on a human), or `failed`; `status_note` (max 200
+characters) is a free-text companion, `status_changed_at` records the last
+status change, and `last_seen_at` records the last authenticated Bearer
+request. Suspension is separate and still comes from `suspended_at`.
+
+### Who can change them
+
+Admins and the agent's owner edit provider, runtime, and description on the
+bot edit page; anyone else gets 403. Status and note are set only by the
+agent itself through `PATCH /agents/me` (see below). `last_seen_at` is
+touched automatically on every successfully authenticated Bearer request, at
+most once per minute per agent, without callbacks or broadcasts.
+
+### `PATCH /agents/me`
+
+Bearer-only JSON, with the same authentication as `GET /agents/me` (bad,
+revoked, or expired credentials, a suspended agent, or a deactivated user
+return 401). Only `status` and `status_note` are assignable; anything else
+in the body is ignored. An unknown status returns 422 with a JSON error.
+
+```sh
+curl -X PATCH https://campfire.example.com/agents/me \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"working","status_note":"reviewing the thread"}'
+```
+
+### Visibility
+
+Any active human member sees an agent's identity (kind, owner or managing
+group, provider, runtime), description, status badge with note and "since"
+time, last-seen time, the rooms the agent belongs to (only rooms the viewer
+is also a member of, as links; the rest counted as "and N more"), and a
+summary of its active grants ("post_messages in 3 rooms, read_messages
+workspace-wide"; legacy agents show "legacy access (no grants recorded)").
+Only admins and the owner also see the compact 24-hour activity line
+(delivered, acknowledged, posted, and suppressed counts from the ledger);
+the full ledger stays linked from the profile for the same audience.
+
+Status changes broadcast a Turbo Stream replace of the profile status badge
+and the directory row over the `agents:all` stream (`AgentsChannel`), which
+every signed-in human may subscribe to and bots may not. The badge and row
+carry no credentials or grants. `last_seen_at` changes never broadcast.
