@@ -86,7 +86,7 @@ class Github::WebhooksController < ActionController::API
       number = pr["number"]
       return [] unless full_name && number
 
-      [ full_name.split("/", 2) + [ number ] ]
+      [ owner_and_repo(full_name) + [ number ] ]
     end
 
     def pr_numbers_from_check_payload(check, payload)
@@ -94,7 +94,7 @@ class Github::WebhooksController < ActionController::API
       pull_requests = check&.dig("pull_requests") || []
       return [] unless full_name
 
-      owner, repo = full_name.split("/", 2)
+      owner, repo = owner_and_repo(full_name)
       pull_requests.filter_map { |pr| [ owner, repo, pr["number"] ] if pr["number"] }
     end
 
@@ -105,7 +105,13 @@ class Github::WebhooksController < ActionController::API
       branches = (payload["branches"] || []).filter_map { |branch| branch["name"] }
       return [] unless full_name && branches.any?
 
-      owner, repo = full_name.split("/", 2)
+      owner, repo = owner_and_repo(full_name)
       Github::PullRequest.where(owner: owner, repo: repo, head_branch: branches).pluck(:owner, :repo, :number)
+    end
+
+    # Stored names are lowercase; payloads carry the repository's display
+    # case, so the lookup halves are downcased to match.
+    def owner_and_repo(full_name)
+      full_name.split("/", 2).map(&:downcase)
     end
 end
