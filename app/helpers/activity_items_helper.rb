@@ -152,7 +152,11 @@ module ActivityItemsHelper
     when "event_cancelled"
       "This event was cancelled."
     when "event_reminder"
-      "Starts in 15 minutes: #{event.title}."
+      if event.venue.present?
+        "Starts in 15 minutes: #{event.title} in #{event.venue.name}."
+      else
+        "Starts in 15 minutes: #{event.title}."
+      end
     else
       "Event updated: #{start}."
     end

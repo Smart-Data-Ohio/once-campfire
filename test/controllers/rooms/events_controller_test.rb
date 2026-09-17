@@ -533,6 +533,174 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Added to your Google Calendar"
   end
 
+  test "a member can create an event with a venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    post room_events_url(@room), params: {
+      event: { title: "Voice social", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: voice.id }
+    }
+
+    event = Event.order(:created_at).last
+    assert_redirected_to room_event_path(@room, event)
+    assert_equal voice.id, event.venue_room_id
+  end
+
+  test "the organizer can set and clear the venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    times = {
+      starts_at: @event.starts_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M"),
+      ends_at: @event.ends_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M")
+    }
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: voice.id) }
+
+    assert_redirected_to room_event_path(@room, @event)
+    assert_equal voice.id, @event.reload.venue_room_id
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: "") }
+
+    assert_redirected_to room_event_path(@room, @event)
+    assert_nil @event.reload.venue_room_id
+  end
+
+  test "create rejects a text channel venue" do
+    assert_no_difference -> { Event.count } do
+      post room_events_url(@room), params: {
+        event: { title: "Bad venue", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: @room.id }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+  end
+
+  test "create rejects a venue the organizer does not belong to" do
+    outsiders = Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    assert_no_difference -> { Event.count } do
+      post room_events_url(@room), params: {
+        event: { title: "Outsider meetup", starts_at: "2026-09-25T15:30", time_zone: "UTC", venue_room_id: outsiders.id }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+  end
+
+  test "update rejects a venue the organizer does not belong to" do
+    outsiders = Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+    times = {
+      starts_at: @event.starts_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M"),
+      ends_at: @event.ends_at.in_time_zone(@event.time_zone).strftime("%Y-%m-%dT%H:%M")
+    }
+
+    patch room_event_url(@room, @event), params: { event: times.merge(venue_room_id: outsiders.id) }
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "must be a voice or Stage channel you belong to"
+    assert_nil @event.reload.venue_room_id
+  end
+
+  test "the edit form keeps a venue the editor cannot see so an unrelated edit does not clear it" do
+    venue = Rooms::Voice.create_for({ name: "Design sync", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    sign_in :jason
+
+    get edit_room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Voice'] option[value='#{venue.id}'][selected]", "Design sync"
+
+    patch room_event_url(@room, @event), params: {
+      event: { starts_at: (@event.starts_at + 1.hour).iso8601, ends_at: @event.ends_at&.+(1.hour)&.iso8601, venue_room_id: venue.id }
+    }
+
+    assert_response :redirect
+    assert_equal venue.id, @event.reload.venue_room_id
+  end
+
+  test "the new form does not list another member's venue" do
+    Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    get new_room_event_url(@room)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] option", text: "Outsiders", count: 0
+  end
+
+  test "the form lists only the member's voice and Stage channels, grouped by kind" do
+    Rooms::Voice.create_for({ name: "Zebra", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Voice.create_for({ name: "Alpha", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    Rooms::Voice.create_for({ name: "Outsiders", creator: users(:jason) }, users: [ users(:jason) ])
+
+    get new_room_event_url(@room)
+
+    assert_response :success
+    assert_select "select[name='event[venue_room_id]'] option[value='']", "No channel"
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Voice'] option", 2
+    assert_select "select[name='event[venue_room_id]'] optgroup[label='Stage'] option", 1
+    assert_select "select[name='event[venue_room_id]'] option", 4
+
+    select_html = response.body[/<select\b[^>]*name="event\[venue_room_id\]"[^>]*>[\s\S]*?<\/select>/]
+    assert_not_nil select_html
+    assert select_html.index(">Alpha</option>") < select_html.index(">Zebra</option>")
+    assert_includes select_html, ">Town Hall</option>"
+    assert select_html.index('label="Voice"') < select_html.index('label="Stage"')
+    assert_not_includes select_html, "Outsiders"
+    assert_not_includes select_html, "Designers"
+  end
+
+  test "show links the venue with a Join button for venue members" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_select "span.sidebar-item__icon", 1
+    assert_select "a[href='#{room_path(voice)}']", text: "Lounge"
+    assert_select "a.btn[href='#{room_path(voice)}']", "Join"
+  end
+
+  test "show names the venue without a link for non-members" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+    sign_in :kevin
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_includes response.body, "Lounge"
+    assert_select "a[href='#{room_path(voice)}']", 0
+    assert_select "a", { text: "Join", count: 0 }
+  end
+
+  test "index rows show the venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_select "article a[href='#{room_path(voice)}']", text: "Lounge"
+  end
+
+  test "show and index omit the Where line without a venue" do
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_not_includes response.body, "Where:"
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_not_includes response.body, "Where:"
+  end
+
   private
     def count_sql_queries(&block)
       queries = 0

@@ -38,6 +38,18 @@
         <% end %>
         <span class="room-events__zone"><%= event_zone_label(@event) %></span>
       </p>
+      <% if @event.venue.present? %>
+        <p class="room-events__times">
+          Where:
+          <span class="<%= @event.venue.stage? ? "stage-room" : "voice-room" %>"><span class="sidebar-item__icon" aria-hidden="true"></span></span>
+          <% if venue_member?(@event.venue) %>
+            <%= link_to @event.venue.name, room_path(@event.venue) %>
+            <%= link_to "Join", room_path(@event.venue), class: "btn btn--primary" %>
+          <% else %>
+            <%= @event.venue.name %>
+          <% end %>
+        </p>
+      <% end %>
     </div>
 
     <% if @event.manageable_by?(Current.user) %>

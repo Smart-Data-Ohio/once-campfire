@@ -44,6 +44,22 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     end
   end
 
+  test "an event with a venue syncs its location and join line" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: voice.id)
+    connect_google!(@david)
+    stub_google_event_insert
+
+    Calendar::SyncEntryJob.perform_now(@event.id, @david.id)
+
+    venue_url = Rails.application.routes.url_helpers.room_url(voice, host: "www.example.com")
+    assert_requested(:post, GOOGLE_EVENTS_URL) do |request|
+      payload = JSON.parse(request.body)
+      payload["location"] == "Lounge" &&
+        payload["description"] == "Finalize the launch checklist.\n\nFrom Campfire: #{event_url}\n\nJoin: #{venue_url}"
+    end
+  end
+
   test "events without an end default to one hour" do
     event = @room.events.create!(organizer: @david, title: "Quick sync", starts_at: 2.days.from_now, time_zone: "UTC")
     connect_google!(@david)
@@ -343,6 +359,19 @@ class Calendar::SyncEntryJobTest < ActiveSupport::TestCase
     end
 
     assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ @event.id, @david.id ])
+  end
+
+  test "setting or clearing the venue enqueues a sync, like a title change" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    connect_google!(@david)
+
+    assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ @event.id, @david.id ]) do
+      @event.update_with_announcement!({ venue_room_id: voice.id }, actor: @david)
+    end
+
+    assert_enqueued_with(job: Calendar::SyncEntryJob, args: [ @event.id, @david.id ]) do
+      @event.update_with_announcement!({ venue_room_id: nil }, actor: @david)
+    end
   end
 
   test "updating only the title enqueues a sync, an unchanged save does not" do

@@ -6,6 +6,7 @@ class Event < ApplicationRecord
   # inside #with_recurrence_mutation (see #recurrence_fields_require_scoped_api).
   belongs_to :room
   belongs_to :organizer, class_name: "User"
+  belongs_to :venue, class_name: "Room", optional: true, foreign_key: :venue_room_id
 
   has_many :attendances, class_name: "EventAttendance", dependent: :destroy, inverse_of: :event
   has_many :attendees, through: :attendances, source: :user
@@ -19,6 +20,7 @@ class Event < ApplicationRecord
   validate :time_zone_must_be_valid
   validate :ends_at_must_follow_starts_at
   validate :organizer_must_be_eligible
+  validate :venue_must_be_voice_or_stage_channel, if: :will_save_change_to_venue_room_id?
   validate :recurrence_until_requirements, if: :validates_recurrence_range?
   validate :recurrence_occurrence_cap, if: :validates_recurrence_range?
   validate :series_head_must_keep_rule
@@ -236,6 +238,22 @@ class Event < ApplicationRecord
       errors.add :organizer, "must be an active human member of the room"
     end
 
+    # The venue is only checked when it is set or changed: an organizer who
+    # later leaves the venue keeps a valid event, and other edits stay valid.
+    def venue_must_be_voice_or_stage_channel
+      return if venue_room_id.blank?
+
+      venue_room = Room.find_by(id: venue_room_id)
+      unless venue_room.is_a?(Rooms::Voice) || venue_room.is_a?(Rooms::Stage)
+        errors.add :venue, "must be a voice or Stage channel you belong to"
+        return
+      end
+
+      unless venue_room.memberships.exists?(user_id: organizer_id)
+        errors.add :venue, "must be a voice or Stage channel you belong to"
+      end
+    end
+
     # Every occurrence carries the series rule and end date, but the range only
     # constrains the head: later occurrences start nearer to (or on) the end.
     def validates_recurrence_range?
@@ -339,7 +357,7 @@ class Event < ApplicationRecord
         rule: recurrence_rule, until_date: recurrence_until
       ).drop(1).each do |(slot_starts, slot_ends)|
         room.events.create!(
-          organizer:, title:, description:,
+          organizer:, title:, description:, venue_room_id:,
           starts_at: slot_starts, ends_at: slot_ends, time_zone:,
           series_id: id, recurrence_rule:, recurrence_until:
         )
@@ -430,6 +448,7 @@ class Event < ApplicationRecord
         rule_changed = will_save_change_to_recurrence_rule? || will_save_change_to_recurrence_until?
         time_changed = TIME_CHANGE_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
         title_changed = will_save_change_to_title?
+        venue_changed = will_save_change_to_venue_room_id?
         description_changed = will_save_change_to_description?
         zone_changed = will_save_change_to_time_zone?
         starts_delta = will_save_change_to_starts_at? ? starts_at - starts_at_was : 0
@@ -443,14 +462,14 @@ class Event < ApplicationRecord
         if starts_delta.nonzero? && followers.any?
           shift_series_and_following_with_parking!(followers,
             starts_delta:, ends_delta:, ends_added:, ends_removed:,
-            title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+            title_changed:, venue_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
         else
           with_following_reorder { with_recurrence_mutation { save! } }
 
           followers.each do |occurrence|
             assign_following_changes(occurrence,
               starts_delta:, ends_delta:, ends_added:, ends_removed:,
-              title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+              title_changed:, venue_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
             occurrence.send(:with_series_follower_save) { occurrence.save! }
           end
         end
@@ -477,7 +496,7 @@ class Event < ApplicationRecord
     # every mover is parked and placed in series order with a guarded save,
     # so no destination can collide with a slot another mover still holds.
     def shift_series_and_following_with_parking!(followers, starts_delta:, ends_delta:, ends_added:, ends_removed:,
-        title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+        title_changed:, venue_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
       with_following_reorder do
         with_recurrence_mutation do
           raise ActiveRecord::RecordInvalid, self unless valid?
@@ -487,7 +506,7 @@ class Event < ApplicationRecord
       followers.each do |occurrence|
         assign_following_changes(occurrence,
           starts_delta:, ends_delta:, ends_added:, ends_removed:,
-          title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+          title_changed:, venue_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
       end
 
       parked_series_id = series_id
@@ -502,8 +521,9 @@ class Event < ApplicationRecord
     end
 
     def assign_following_changes(occurrence, starts_delta:, ends_delta:, ends_added:, ends_removed:,
-        title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+        title_changed:, venue_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
       occurrence.title = title if title_changed
+      occurrence.venue_room_id = venue_room_id if venue_changed
       occurrence.description = description if description_changed
       occurrence.time_zone = time_zone if zone_changed
       shift_occurrence_times!(occurrence, starts_delta:, ends_delta:, ends_added:, ends_removed:)
@@ -598,7 +618,7 @@ class Event < ApplicationRecord
 
       unmatched_slots.each do |(slot_starts, slot_ends)|
         room.events.create!(
-          organizer:, title:, description:,
+          organizer:, title:, description:, venue_room_id:,
           starts_at: slot_starts, ends_at: slot_ends, time_zone:,
           series_id: id, recurrence_rule:, recurrence_until:
         ).tap { |occurrence| copy_attendances_to!(occurrence) }
