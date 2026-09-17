@@ -90,6 +90,38 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     end
   end
 
+  test "the sidebar loads once when the cable connects and reloads on reconnect" do
+    sidebar_loads = []
+    count_sidebar_loads = ->(*, payload) do
+      sidebar_loads << true if payload[:controller] == "Users::SidebarsController" && payload[:action] == "show"
+    end
+
+    ActiveSupport::Notifications.subscribed(count_sidebar_loads, "process_action.action_controller") do
+      # Drain the sign-in page's loads first: its reload can complete after
+      # the subscription starts.
+      wait_for_sidebar_quiet(sidebar_loads)
+      before = sidebar_loads.size
+
+      visit room_path(@room)
+      wait_for_cable_connection
+
+      # The sidebar HTML is fresh on page load, so the cable connect must not
+      # reload it: the reload replaces the turbo-cable-stream-source elements
+      # inside the frame, and any user-stream broadcast sent between the
+      # unsubscribe and the resubscribe is silently lost.
+      wait_for_sidebar_quiet(sidebar_loads)
+      assert_equal 1, sidebar_loads.size - before, "the sidebar reloaded when the cable connected"
+
+      # After a genuine disconnect the sidebar may have missed broadcasts, so
+      # the reconnect still reloads it. The client monitor reopens a dropped
+      # connection only after its 6 s stale threshold over jittered 6–12 s
+      # polls, so give the reload the same budget as the removal test below.
+      users(:jason).reset_remote_connections
+      Timeout.timeout(30) { sleep 0.2 until sidebar_loads.size - before > 1 }
+      assert_equal 2, sidebar_loads.size - before
+    end
+  end
+
   test "join voice dispatches huddle:join" do
     visit room_path(@room)
     wait_for_cable_connection
@@ -398,6 +430,18 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       end
     end
 
+    # Sidebar loads arrive in bursts (initial fetch, then a reload if the
+    # channel reconnects). Two quiet seconds means the burst is over.
+    def wait_for_sidebar_quiet(loads)
+      Timeout.timeout(30) do
+        loop do
+          before = loads.size
+          sleep 2
+          break if loads.size == before
+        end
+      end
+    end
+
     # Records every Turbo Stream render as "action:target" so the test can
     # wait for a specific broadcast to land instead of sleeping a fixed time.
     def observe_turbo_stream_renders
@@ -414,9 +458,9 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     # (nobody in voice yet) would win over the sighting render. Wait for the
     # issuance render to arrive before recording the sighting. Only the
     # header render is waited for: it travels the room stream on the main
-    # page, while the sidebar render travels a user stream whose
-    # subscription has a legitimate gap during the sidebar's initial
-    # reload (rooms-list reconnects once on every page load).
+    # page, while the sidebar render travels a user stream inside the
+    # sidebar frame, which still reloads (dropping its subscriptions
+    # briefly) on every cable reconnect.
     def wait_for_issuance_broadcast(after: 0)
       Timeout.timeout(10) do
         sleep 0.05 until header_voice_renders > after
