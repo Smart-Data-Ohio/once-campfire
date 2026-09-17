@@ -10,10 +10,12 @@ class Agents::PostsController < ApplicationController
 
   before_action :set_room, only: %i[ index create ]
   before_action :ensure_agent_token, only: %i[ index create ]
-  before_action :ensure_board_room, only: %i[ index create ]
   require_agent_capability :read_messages, only: :index
   require_agent_capability :post_messages, only: :create
   require_agent_capability :manage_threads, only: :create
+  # After the capability checks so a member without a grant sees 403, not
+  # a hint about what kind of room this is.
+  before_action :ensure_board_room, only: %i[ index create ]
 
   LIST_MAX_LIMIT = 100
   LIST_STATUSES = %w[ planned in_progress blocked done open all ].freeze
