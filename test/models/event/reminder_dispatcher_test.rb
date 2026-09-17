@@ -27,6 +27,29 @@ class Event::ReminderDispatcherTest < ActiveSupport::TestCase
     end
   end
 
+  test "members with notifications off keep their invitation and get no reminder" do
+    memberships(:jason_designers).update!(involvement: "nothing")
+
+    Event::ReminderDispatcher.dispatch_due!
+
+    assert_equal "event_invitation", ActivityItem.find_by!(user: users(:jason), source: @event).event_type
+    assert_equal "event_reminder", ActivityItem.find_by!(user: users(:jz), source: @event).event_type
+  end
+
+  test "an attendee with reminders switched off keeps the invitation while others are reminded" do
+    users(:jason).update!(inbox_preferences: { "event_reminders" => false })
+
+    assert_enqueued_with(job: Event::ReminderPushJob, args: [ @event ]) do
+      Event::ReminderDispatcher.dispatch_due!
+    end
+
+    assert_equal "event_invitation", ActivityItem.find_by!(user: users(:jason), source: @event).event_type
+    assert_equal "event_reminder", ActivityItem.find_by!(user: users(:jz), source: @event).event_type
+
+    @event.update_with_announcement!({ starts_at: 2.days.from_now }, actor: @organizer)
+    assert_equal "event_update", ActivityItem.find_by!(user: users(:jason), source: @event).event_type
+  end
+
   test "declined attendees keep their invitation and get no reminder" do
     Event::ReminderDispatcher.dispatch_due!
 

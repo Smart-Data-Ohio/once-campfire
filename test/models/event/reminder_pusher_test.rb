@@ -15,6 +15,18 @@ class Event::ReminderPusherTest < ActiveSupport::TestCase
     Event::ReminderPusher.new(event:).push
   end
 
+  test "push reminders ignore the event_reminders inbox switch" do
+    event = events(:launch_party)
+    users(:david).update!(inbox_preferences: { "event_reminders" => false })
+
+    pool = Rails.configuration.x.web_push_pool
+    pool.expects(:queue).with do |_payload, subscriptions|
+      subscriptions.map(&:user_id).include?(users(:david).id)
+    end
+
+    Event::ReminderPusher.new(event:).push
+  end
+
   test "a direct room reminder is titled by the organizer" do
     room = rooms(:david_and_jason)
     event = room.events.create!(

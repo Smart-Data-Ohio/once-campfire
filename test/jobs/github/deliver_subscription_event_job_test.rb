@@ -108,6 +108,31 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_equal 2, @room.messages.where("markdown_source LIKE ?", "%requested a review%").count
   end
 
+  test "review_requested skips the item when the reviewer switched them off" do
+    users(:kevin).update!(github_login: "kevin-gh", inbox_preferences: { "github_review_requests" => false })
+
+    assert_difference -> { @room.messages.count }, 1 do
+      assert_no_difference -> { ActivityItem.where(event_type: "pr_review_request").count } do
+        Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "review_requested", reviewer: "kevin-gh"))
+      end
+    end
+  end
+
+  test "review_requested still notifies a member with notifications off but not an invisible one" do
+    users(:kevin).update!(github_login: "kevin-gh")
+    memberships(:kevin_designers).update!(involvement: "nothing")
+
+    assert_difference -> { ActivityItem.where(user: users(:kevin), event_type: "pr_review_request").count }, 1 do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "review_requested", reviewer: "kevin-gh"))
+    end
+
+    memberships(:kevin_designers).update!(involvement: "invisible")
+
+    assert_no_difference -> { ActivityItem.where(user: users(:kevin), event_type: "pr_review_request").count } do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "review_requested", reviewer: "kevin-gh", number: 14))
+    end
+  end
+
   test "team review requests post nothing" do
     assert_no_difference -> { @room.messages.count } do
       payload = pull_request_payload(action: "review_requested")

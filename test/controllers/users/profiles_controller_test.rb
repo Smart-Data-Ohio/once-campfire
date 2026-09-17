@@ -118,6 +118,42 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_nil users(:david).reload.github_login
   end
 
+  test "profile lists the notification switches with explanations" do
+    get user_profile_url
+
+    assert_response :success
+    User::InboxPreferences::KEYS.each do |key|
+      assert_select "input[name='user[inbox_preferences][#{key}]'][type=checkbox][checked]"
+    end
+    assert_includes response.body, "GitHub review requests"
+    assert_includes response.body, "The incoming-call banner still shows."
+  end
+
+  test "profile saves the notification switches" do
+    put user_profile_url, params: { user: { inbox_preferences: {
+      "github_review_requests" => "0",
+      "agent_approvals" => "0",
+      "agent_work" => "1",
+      "event_reminders" => "false",
+      "huddle_invitations" => "true"
+    } } }
+
+    assert_redirected_to user_profile_url
+    preferences = users(:david).reload.inbox_preferences
+    assert_equal false, preferences.github_review_requests
+    assert_equal false, preferences.agent_approvals
+    assert_equal true, preferences.agent_work
+    assert_equal false, preferences.event_reminders
+    assert_equal true, preferences.huddle_invitations
+  end
+
+  test "profile rejects non-boolean notification input" do
+    put user_profile_url, params: { user: { inbox_preferences: { "github_review_requests" => "banana" } } }
+
+    assert_response :unprocessable_entity
+    assert_equal true, users(:david).reload.inbox_preferences.github_review_requests
+  end
+
   test "clearing a github login unlinks it" do
     users(:david).update!(github_login: "david-gh")
 

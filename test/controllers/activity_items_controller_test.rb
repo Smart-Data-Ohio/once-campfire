@@ -242,7 +242,138 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal agent_approvals_path(agent), payload.dig("source", "path")
   end
 
+  test "index orders items by recency" do
+    older = ActivityItem.create!(user: users(:david), source: @room.messages.create!(creator: users(:jz), body: "Older", client_message_id: "order-older"), event_type: "reply")
+    older.update_columns(updated_at: 2.days.ago)
+
+    get activity_items_url, as: :json
+    assert_equal [ @item.id, older.id ], response.parsed_body.fetch("activity_items").pluck("id")
+
+    older.touch
+
+    get activity_items_url, as: :json
+    assert_equal [ older.id, @item.id ], response.parsed_body.fetch("activity_items").pluck("id")
+  end
+
+  test "type filters return only their event types as JSON" do
+    create_typed_items_for(users(:david))
+
+    ActivityItem::TYPE_FILTER_EVENT_TYPES.each do |type_filter, event_types|
+      get activity_items_url(type: type_filter), as: :json
+
+      assert_response :success
+      payload = response.parsed_body
+      assert_equal type_filter, payload.fetch("type_filter")
+      returned_types = payload.fetch("activity_items").pluck("event_type")
+      assert_equal event_types.sort, returned_types.uniq.sort
+      assert_equal ActivityItem.where(user: users(:david), event_type: event_types).count, returned_types.count
+    end
+
+    get activity_items_url, as: :json
+    assert_equal "all", response.parsed_body.fetch("type_filter")
+    assert_equal ActivityItem.where(user: users(:david)).count, response.parsed_body.fetch("activity_items").count
+
+    get activity_items_url(type: "bogus"), as: :json
+    assert_equal "all", response.parsed_body.fetch("type_filter")
+    assert_equal ActivityItem.where(user: users(:david)).count, response.parsed_body.fetch("activity_items").count
+  end
+
+  test "type filters return only their event types as HTML" do
+    create_typed_items_for(users(:david))
+
+    ActivityItem::TYPE_FILTER_EVENT_TYPES.each do |type_filter, event_types|
+      get activity_items_url(type: type_filter)
+
+      assert_response :success
+      ActivityItem.where(user: users(:david), event_type: event_types).find_each do |item|
+        assert_select "##{ActionView::RecordIdentifier.dom_id(item)}", count: 1
+      end
+      ActivityItem.where(user: users(:david)).where.not(event_type: event_types).find_each do |item|
+        assert_select "##{ActionView::RecordIdentifier.dom_id(item)}", count: 0
+      end
+    end
+  end
+
+  test "type filter survives pagination" do
+    3.times do |index|
+      event = @room.events.create!(organizer: users(:jason), title: "Paged event #{index}", starts_at: 2.days.from_now, time_zone: "UTC")
+      ActivityItem.find_by!(user: users(:david), source: event)
+    end
+
+    with_page_size(2) do
+      get activity_items_url(type: "events")
+
+      assert_response :success
+      assert_select "a.activity-inbox__older[href*='type=events']", count: 1
+
+      get activity_items_url(type: "events"), as: :json
+      payload = response.parsed_body
+      assert_equal 2, payload.fetch("activity_items").count
+      assert_not_nil payload.fetch("next_cursor")
+      assert_equal "events", payload.fetch("type_filter")
+
+      get activity_items_url(type: "events", before: payload.fetch("next_cursor")), as: :json
+      follow_up = response.parsed_body
+      assert_equal 1, follow_up.fetch("activity_items").count
+      assert_nil follow_up.fetch("next_cursor")
+      assert_equal "events", follow_up.fetch("type_filter")
+      assert_empty((payload.fetch("activity_items").pluck("id") & follow_up.fetch("activity_items").pluck("id")))
+    end
+  end
+
+  test "state changes preserve the type filter" do
+    patch handled_activity_item_url(@item, state: "handled", status: "read", type: "events")
+
+    assert_redirected_to activity_items_path(status: "read", type: "events")
+
+    patch read_activity_item_url(@item, state: "read", status: "unread", type: "bogus")
+
+    assert_redirected_to activity_items_path(status: "unread", type: "all")
+  end
+
   private
+    def create_typed_items_for(user)
+      new_message = ->(body) do
+        @room.messages.create!(creator: users(:jz), body:, client_message_id: "filter-#{SecureRandom.hex(4)}")
+      end
+
+      ActivityItem.create!(user:, source: new_message.call("hello"), event_type: "mention")
+      ActivityItem.create!(user:, source: new_message.call("reply"), event_type: "reply")
+
+      thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Filter thread")
+      thread_message = thread.post_message!(creator: users(:jz), attributes: { body: "thread", client_message_id: "filter-thread-#{SecureRandom.hex(4)}" })
+      ActivityItem.create!(user:, source: thread_message, event_type: "thread_activity")
+
+      work_thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Filter work")
+      work_thread.update_work!(actor: users(:jz), work_status: "planned")
+      ActivityItem.create!(user:, source: work_thread.work_thread_events.ordered.first, event_type: "work_update")
+      work_thread.update_work!(actor: users(:jz), work_owner_id: users(:jason).id)
+      ActivityItem.create!(user:, source: work_thread.work_thread_events.ordered.first, event_type: "work_assignment")
+
+      %w[ event_invitation event_update event_cancelled event_reminder ].each_with_index do |event_type, index|
+        event = @room.events.create!(organizer: users(:jason), title: "Filter event #{index}", starts_at: 2.days.from_now, time_zone: "UTC")
+        ActivityItem.find_by!(user:, source: event).update!(event_type:)
+      end
+
+      ActivityItem.create!(user:, source: new_message.call("pr"), event_type: "pr_review_request")
+
+      approval = AgentApproval.create!(agent: agents(:bender_agent), room: @room, action: "deploy", summary: "Ship it")
+      ActivityItem.find_by!(user:, source: approval)
+
+      travel_to(3.minutes.ago) { start_dm_huddle_for(user) }.update!(event_type: "huddle_missed")
+      start_dm_huddle_for(user)
+    end
+
+    def with_page_size(size)
+      original = ActivityItemsController::PAGE_SIZE
+      ActivityItemsController.send(:remove_const, :PAGE_SIZE)
+      ActivityItemsController.const_set(:PAGE_SIZE, size)
+      yield
+    ensure
+      ActivityItemsController.send(:remove_const, :PAGE_SIZE)
+      ActivityItemsController.const_set(:PAGE_SIZE, original)
+    end
+
     def start_dm_huddle_for(recipient)
       starter = (rooms(:david_and_jason).user_ids - [ recipient.id ]).first
       session = Session.create!(user_id: starter, user_agent: "huddle test", ip_address: "127.0.0.1")
