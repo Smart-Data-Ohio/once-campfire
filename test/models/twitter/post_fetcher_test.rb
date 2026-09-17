@@ -150,6 +150,30 @@ class Twitter::PostFetcherTest < ActiveSupport::TestCase
     assert_equal "Post response too large", @post.reload.fetch_error
   end
 
+  test "an oversized body with a lying Content-Length is rejected while streaming" do
+    stub_request(:get, "https://api.fxtwitter.com/jack/status/424242")
+      .to_return(status: 200, body: "x" * (2.megabytes + 1), headers: { "Content-Length" => "10" })
+
+    Twitter::PostFetcher.new(@post).fetch
+
+    assert_equal "Post response too large", @post.reload.fetch_error
+  end
+
+  test "media alt text is stripped of tags and capped at 1000 characters" do
+    stub_post(status: "424242", handle: "jack", media: {
+      "photos" => [
+        { "type" => "photo", "url" => "https://pbs.twimg.com/media/a.jpg",
+          "width" => 10, "height" => 10, "altText" => "<b>hi</b>" },
+        { "type" => "photo", "url" => "https://pbs.twimg.com/media/b.jpg",
+          "width" => 10, "height" => 10, "altText" => "y" * 2000 }
+      ]
+    })
+
+    Twitter::PostFetcher.new(@post).fetch
+
+    assert_equal [ "hi", "y" * 1000 ], @post.reload.media.map { |entry| entry["alt"] }
+  end
+
   private
     def stub_post(status:, handle:, text: "just setting up my twttr", author_name: "jack",
         avatar_url: "https://pbs.twimg.com/profile_images/1/avatar_200x200.jpg", media: nil, quote: nil)

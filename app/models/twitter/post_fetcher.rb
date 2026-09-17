@@ -15,6 +15,7 @@ module Twitter
     READ_TIMEOUT = 10
     MAX_BODY_BYTES = 2.megabytes
     MAX_MEDIA = 4
+    MAX_ALT_CHARS = 1000
 
     ALLOWED_MEDIA_HOSTS = %w[ pbs.twimg.com video.twimg.com ].freeze
 
@@ -58,11 +59,11 @@ module Twitter
       end
 
       def fetch_tweet
-        response = get(request_path)
+        response, body = get(request_path)
 
         case response
         when Net::HTTPSuccess
-          parse_tweet(response)
+          parse_tweet(body)
         when Net::HTTPNotFound
           raise FetchError, "Post not found on X"
         else
@@ -81,22 +82,39 @@ module Twitter
       def get(path)
         uri = URI::HTTPS.build(host: API_HOST, path: path)
 
+        response = nil
+        body = nil
         Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
-          http.get(uri.request_uri, { "User-Agent" => "Campfire-X-Post-Cards", "Accept" => "application/json" })
+          request = Net::HTTP::Get.new(uri.request_uri, { "User-Agent" => "Campfire-X-Post-Cards", "Accept" => "application/json" })
+          http.request(request) do |streamed|
+            response = streamed
+            body = read_capped_body(streamed)
+          end
         end
+
+        [ response, body ]
       end
 
-      def parse_tweet(response)
+      def read_capped_body(response)
         if response["Content-Length"].to_i > MAX_BODY_BYTES
           raise FetchError, "Post response too large"
         end
 
-        body = response.body.to_s
-        if body.bytesize > MAX_BODY_BYTES
-          raise FetchError, "Post response too large"
-        end
+        # The header can lie or be missing, so count the bytes as they
+        # stream in and stop at the cap instead of buffering the whole
+        # body first (same shape as Opengraph::Fetch).
+        StringIO.new.tap do |body|
+          response.read_body do |chunk|
+            if body.string.bytesize + chunk.bytesize > MAX_BODY_BYTES
+              raise FetchError, "Post response too large"
+            end
+            body << chunk
+          end
+        end.string
+      end
 
-        data = JSON.parse(body)
+      def parse_tweet(body)
+        data = JSON.parse(body.to_s)
         tweet = data.is_a?(Hash) ? data["tweet"] : nil
 
         if tweet.is_a?(Hash)
@@ -126,9 +144,9 @@ module Twitter
         nil
       end
 
-      def clean_text(value)
+      def clean_text(value, limit: Twitter::Post::MAX_TEXT_CHARS)
         stripped = sanitizer.sanitize(value.to_s).strip
-        stripped.presence&.truncate(Twitter::Post::MAX_TEXT_CHARS, omission: "")
+        stripped.presence&.truncate(limit, omission: "")
       end
 
       def clean_handle(value)
@@ -166,7 +184,7 @@ module Twitter
           "thumbnail_url" => thumbnail_url,
           "width" => positive_integer(entry["width"]),
           "height" => positive_integer(entry["height"]),
-          "alt" => entry["altText"].presence || entry["alt"].presence
+          "alt" => clean_text(entry["altText"].presence || entry["alt"].presence, limit: MAX_ALT_CHARS)
         }
       end
 
