@@ -50,7 +50,7 @@ When someone starts a huddle in a one-to-one DM, the other participant gets an i
 
 Every invitation also lands in the activity inbox. Answering the call marks it handled automatically. An invitation left unanswered for 45 seconds, or one whose starter left first, becomes a missed-huddle item that stays unread until opened or handled. Starting the call again rings again unless an unhandled invitation from the last two minutes is still pending, so reconnects and rejoins do not ring twice.
 
-There is no audible ringtone in this version. As with other inbox sources, losing access to the DM removes its huddle items.
+There is no audible ringtone in this version, and the invitation ignores the recipient's `involvement` setting: only push delivery respects notification settings. Both stay out of scope. As with other inbox sources, losing access to the DM removes its huddle items.
 
 ## Appearance
 
