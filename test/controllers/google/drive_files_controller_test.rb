@@ -56,7 +56,7 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_empty response.body
-    assert_not_requested :get, %r{\A#{GOOGLE_DRIVE_FILES_URL}/}
+    assert_not_requested :get, %r{\A#{Regexp.escape(GOOGLE_DRIVE_FILES_URL)}/}
   end
 
   test "show is 404 with an empty body for a disconnected account" do
@@ -66,7 +66,7 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_empty response.body
-    assert_not_requested :get, %r{\A#{GOOGLE_DRIVE_FILES_URL}/}
+    assert_not_requested :get, %r{\A#{Regexp.escape(GOOGLE_DRIVE_FILES_URL)}/}
   end
 
   test "show is 404 with an empty body without the Drive scope" do
@@ -76,7 +76,7 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_empty response.body
-    assert_not_requested :get, %r{\A#{GOOGLE_DRIVE_FILES_URL}/}
+    assert_not_requested :get, %r{\A#{Regexp.escape(GOOGLE_DRIVE_FILES_URL)}/}
   end
 
   test "show is 404 with an empty body when Google answers 403 or 404" do
@@ -107,7 +107,7 @@ class Google::DriveFilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_empty response.body
-    assert_not_requested :get, %r{\A#{GOOGLE_DRIVE_FILES_URL}/}
+    assert_not_requested :get, %r{\A#{Regexp.escape(GOOGLE_DRIVE_FILES_URL)}/}
   end
 
   test "show is 503 on a Google transport failure" do
