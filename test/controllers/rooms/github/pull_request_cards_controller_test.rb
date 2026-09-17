@@ -100,6 +100,36 @@ class Rooms::Github::PullRequestCardsControllerTest < ActionDispatch::Integratio
     end
   end
 
+
+  test "a cached denial no longer applies after the member relinks" do
+    stub_request(:get, "https://api.github.com/user")
+      .to_return(status: 200, body: { login: "david" }.to_json)
+    post github_connection_url, params: { access_token: "alpha-link" }
+    assert_redirected_to user_profile_path
+
+    denied = stub_request(:get, "https://api.github.com/repos/acme/secret")
+      .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+    with_memory_cache do
+      get room_github_pull_request_card_url(@room, @pull_request, message_id: @message.id)
+      assert_response :success
+      assert_select ".github-pr-card", count: 0
+
+      travel 1.second do
+        post github_connection_url, params: { access_token: "beta-relink" }
+        assert_redirected_to user_profile_path
+      end
+
+      granted = stub_request(:get, "https://api.github.com/repos/acme/secret")
+        .to_return(status: 200, body: { private: true }.to_json)
+
+      get room_github_pull_request_card_url(@room, @pull_request, message_id: @message.id)
+      assert_response :success
+      assert_select ".github-pr-card__title", text: "Secret plans"
+
+    end
+  end
+
   test "a transport error renders the empty frame and caches nothing" do
     GithubConnectedAccount.create!(user: users(:david), github_login: "david", access_token: "user-token")
     stub_request(:get, "https://api.github.com/repos/acme/secret").to_timeout

@@ -20,6 +20,19 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_empty Message.last.drive_attachments
   end
 
+  test "update ignores drive_file_ids" do
+    message = @room.messages.create!(
+      creator: users(:bender), markdown_source: "bot here", client_message_id: "bot-drive-update"
+    )
+    message.drive_attachments.create!(file_id: "1AbcDefGhIjKlMnOpQrSt")
+
+    patch room_bot_message_url(@room, users(:bender).bot_key, message),
+      params: { message: { drive_file_ids: [ "2BcdEfgHiJkLmNoPqRsTu" ] } }
+
+    assert_response :ok
+    assert_equal [ "1AbcDefGhIjKlMnOpQrSt" ], message.reload.drive_attachments.map(&:file_id)
+  end
+
   test "create with UTF-8 content" do
     assert_difference -> { Message.count }, +1 do
       post room_bot_messages_url(@room, users(:bender).bot_key), params: +"Hello 👋!"

@@ -33,6 +33,22 @@ class Messages::ForwarderTest < ActiveSupport::TestCase
     assert_includes forwarded.plain_text_body, "Context"
   end
 
+  test "copies Drive attachment ids onto room and thread forwards" do
+    @source.drive_attachments.create!([ { file_id: "1AbcDefGhIjKlMnOpQrSt" }, { file_id: "2BcdEfgHiJkLmNoPqRsTu" } ])
+    thread = ChannelThread.create!(room: @source_room, creator: @creator, name: "Forward attachments")
+
+    results = Messages::Forwarder.call(
+      source: @source,
+      destinations: [ { room_id: @destination.id }, { room_id: @source_room.id, thread_id: thread.id } ],
+      creator: @creator
+    )
+
+    assert_equal 2, results.size
+    results.each do |result|
+      assert_equal %w[ 1AbcDefGhIjKlMnOpQrSt 2BcdEfgHiJkLmNoPqRsTu ], result.message.drive_attachments.map(&:file_id)
+    end
+  end
+
   test "a later thread destination failure rolls back prior messages and cloned blobs" do
     thread = ChannelThread.create!(room: @source_room, creator: @creator, name: "Forward destination")
     before_messages = Message.count
