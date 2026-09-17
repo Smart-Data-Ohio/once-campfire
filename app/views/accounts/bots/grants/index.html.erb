@@ -2,7 +2,7 @@
 
 <% content_for :nav do %>
   <div class="flex-item-justify-start">
-    <%= link_back_to edit_account_bot_path(@bot) %>
+    <%= link_back_to(Current.user.administrator? ? edit_account_bot_path(@bot) : user_path(@bot)) %>
   </div>
 <% end %>
 

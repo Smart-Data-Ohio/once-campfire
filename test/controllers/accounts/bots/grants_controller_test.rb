@@ -141,6 +141,24 @@ class Accounts::Bots::GrantsControllerTest < ActionDispatch::IntegrationTest
     assert AgentGrant.last.revoked?
   end
 
+  test "back link goes to the bot editor for admins" do
+    get account_bot_grants_url(@bot)
+
+    assert_response :ok
+    assert_select "a[href='#{edit_account_bot_path(@bot)}']", 1
+  end
+
+  test "back link goes to the bot profile for owners without admin rights" do
+    @agent.update!(owner: users(:kevin))
+    sign_in users(:kevin)
+
+    get account_bot_grants_url(@bot)
+
+    assert_response :ok
+    assert_select "a[href='#{user_path(@bot)}']", 1
+    assert_select "a[href='#{edit_account_bot_path(@bot)}']", 0
+  end
+
   test "non-owner cannot manage grants" do
     sign_in users(:kevin)
 
