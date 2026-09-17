@@ -89,6 +89,7 @@ class StreamingTest < ApplicationSystemTestCase
     sign_in "david@37signals.com"
     visit room_path(room)
     wait_for_cable_connection
+    join_stage_without_media(room, users(:david))
     find("button[aria-label='Show stage']").click
     page.execute_script("window.streamStartEvents = []; window.addEventListener('huddle:stream-start', event => window.streamStartEvents.push(event.detail))")
 
@@ -105,6 +106,28 @@ class StreamingTest < ApplicationSystemTestCase
     assert_selector "#voice_rooms .stage-room .stage-live-dot__pip"
     assert_selector ".stage-panel__note--live", text: "Live: David"
     assert_selector "button", text: "Stop stream"
+  end
+
+  test "the Go live control stays disabled until the huddle connects to the room" do
+    room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:jason) ])
+    sign_in "david@37signals.com"
+    visit room_path(room)
+    wait_for_cable_connection
+    find("button[aria-label='Show stage']").click
+
+    assert_button "Go live", disabled: true
+
+    dispatch_huddle_changed(room_id: room.id + 1000, state: "connected")
+    assert_button "Go live", disabled: true
+
+    dispatch_huddle_changed(room_id: room.id, state: "connecting")
+    assert_button "Go live", disabled: true
+
+    dispatch_huddle_changed(room_id: room.id, state: "connected")
+    assert_button "Go live", disabled: false
+
+    dispatch_huddle_changed(room_id: room.id, state: "idle")
+    assert_button "Go live", disabled: true
   end
 
   test "the huddle controller maps stream quality to screen-share presets" do
@@ -223,6 +246,7 @@ class StreamingTest < ApplicationSystemTestCase
     sign_in "david@37signals.com"
     visit room_path(room)
     wait_for_cable_connection
+    join_stage_without_media(room, users(:david))
     find("button[aria-label='Show stage']").click
 
     select "1080p15", from: "Stream quality"
@@ -312,6 +336,26 @@ class StreamingTest < ApplicationSystemTestCase
       Rooms::Stage.create_for({ name:, creator: members.first }, users: members).tap do |room|
         @stream_rooms << room
       end
+    end
+
+    # The non-LiveKit stand-in for joining the stage: a real grant so the
+    # server accepts the Go live POST, plus a synthetic huddle:changed event
+    # so the stage panel enables the control, mirroring the connected state
+    # a real join would broadcast.
+    def join_stage_without_media(room, user)
+      HuddleGrant.issue!(
+        session: user.sessions.create!(user_agent: "System Test"),
+        membership: room.memberships.find_by!(user: user)
+      )
+      dispatch_huddle_changed(room_id: room.id, state: "connected")
+    end
+
+    def dispatch_huddle_changed(room_id:, state:)
+      page.execute_script(<<~JS, room_id, state)
+        window.dispatchEvent(new CustomEvent("huddle:changed", {
+          detail: { roomId: arguments[0], state: arguments[1], sharing: [], expanded: false }
+        }));
+      JS
     end
 
     def join_stage_and_confirm

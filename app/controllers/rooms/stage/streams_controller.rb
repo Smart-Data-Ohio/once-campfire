@@ -8,12 +8,18 @@ class Rooms::Stage::StreamsController < ApplicationController
   # Hosts and speakers go live with their screen at an explicit quality. One
   # room carries at most one live stream: starting while another is live
   # answers 409 naming the presenter, including when a concurrent start wins
-  # the race and the partial unique index rejects this one. The Stream
-  # callbacks broadcast the header badge, sidebar dot, and per-viewer panel;
-  # the response only swaps the actor's own panel without navigating.
+  # the race and the partial unique index rejects this one. Going live also
+  # requires an active huddle grant for the room, so a stream never starts
+  # without a call to publish over. The Stream callbacks broadcast the header
+  # badge, sidebar dot, and per-viewer panel; the response only swaps the
+  # actor's own panel without navigating.
   def create
     unless @membership.host? || @membership.speaker?
       return render plain: "Only hosts and speakers can go live", status: :forbidden
+    end
+
+    unless HuddleGrant.active.exists?(room_id: @room.id, membership_id: @membership.id)
+      return render plain: "Join the stage before going live", status: :forbidden
     end
 
     unless Stream::QUALITIES.include?(params[:quality].to_s)

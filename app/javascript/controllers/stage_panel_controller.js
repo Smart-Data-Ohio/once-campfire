@@ -8,6 +8,28 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static targets = [ "panel", "toggle" ]
 
+  connect() {
+    this.huddleRoomId = null
+    this.huddleState = "idle"
+    this.handleHuddleChange = this.#handleHuddleChange.bind(this)
+    window.addEventListener("huddle:changed", this.handleHuddleChange)
+
+    // Turbo replaces the panel body — and with it the Go live form — on
+    // every stream start and end, so a swapped-in form is evaluated against
+    // the last known huddle state as soon as it lands.
+    this.goLiveObserver = new MutationObserver(() => this.#updateGoLiveControl())
+    this.goLiveObserver.observe(this.element, { childList: true, subtree: true })
+    this.#updateGoLiveControl()
+
+    queueMicrotask(() => window.dispatchEvent(new CustomEvent("huddle:query")))
+  }
+
+  disconnect() {
+    window.removeEventListener("huddle:changed", this.handleHuddleChange)
+    this.goLiveObserver?.disconnect()
+    this.goLiveObserver = null
+  }
+
   toggle(event) {
     event?.preventDefault()
 
@@ -59,5 +81,28 @@ export default class extends Controller {
     if (!Number.isInteger(roomId) || roomId <= 0) return
 
     window.dispatchEvent(new CustomEvent("huddle:stream-stop", { detail: { roomId } }))
+  }
+
+  #handleHuddleChange({ detail }) {
+    this.huddleRoomId = Number(detail?.roomId) || null
+    this.huddleState = detail?.state || "idle"
+    this.#updateGoLiveControl()
+  }
+
+  // Going live needs the call: the share starts on top of the huddle
+  // connection, so the control stays disabled until the huddle panel reports
+  // itself connected to this room. Only "connected" counts — a reconnecting
+  // huddle would start a stream with nothing to publish over. The server's
+  // grant check stays as the backstop.
+  #updateGoLiveControl() {
+    const form = this.element.querySelector(".stage-panel__stream-form")
+    if (!form) return
+
+    const roomId = Number(form.dataset.roomId)
+    const connected = Number.isInteger(roomId) && roomId > 0 &&
+      roomId === this.huddleRoomId && this.huddleState === "connected"
+
+    const submit = form.querySelector("[type='submit']")
+    if (submit) submit.disabled = !connected
   }
 }

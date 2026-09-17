@@ -15,11 +15,12 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a host goes live, broadcasting the badge, dot, and panels" do
+    HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"), membership: @host)
     sign_in :david
 
-    assert_turbo_stream_broadcasts [ @room, :messages ], count: 1 do
-      assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 2 do
-        assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 2 do
+    assert_difference -> { capture_turbo_stream_broadcasts([ @room, :messages ]).count }, 1 do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count }, 2 do
+        assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count }, 2 do
           assert_difference -> { Stream.live.count }, 1 do
             post room_stage_stream_url(@room), params: { quality: "1080p30" }
           end
@@ -37,6 +38,7 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
 
   test "a speaker goes live" do
     @listener.change_stage_role!("speaker")
+    HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @listener)
     sign_in :jason
 
     post room_stage_stream_url(@room), params: { quality: "720p15" }
@@ -46,6 +48,7 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a turbo-stream start swaps the actor's own panel without navigating" do
+    HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"), membership: @host)
     sign_in :david
 
     post room_stage_stream_url(@room), params: { quality: "1080p15" },
@@ -78,7 +81,32 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @room.live_stream
   end
 
+  test "a host without a huddle grant cannot go live" do
+    sign_in :david
+
+    assert_no_difference -> { Stream.live.count } do
+      post room_stage_stream_url(@room), params: { quality: "1080p15" }
+    end
+
+    assert_response :forbidden
+    assert_equal "Join the stage before going live", response.body
+  end
+
+  test "a host whose grant was revoked cannot go live" do
+    grant = HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"), membership: @host)
+    grant.revoke!
+    sign_in :david
+
+    assert_no_difference -> { Stream.live.count } do
+      post room_stage_stream_url(@room), params: { quality: "1080p15" }
+    end
+
+    assert_response :forbidden
+    assert_equal "Join the stage before going live", response.body
+  end
+
   test "an unknown quality is unprocessable" do
+    HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"), membership: @host)
     sign_in :david
 
     assert_no_difference -> { Stream.live.count } do
@@ -90,6 +118,7 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a missing quality is unprocessable" do
+    HuddleGrant.issue!(session: users(:david).sessions.create!(user_agent: "Test"), membership: @host)
     sign_in :david
 
     post room_stage_stream_url(@room)
@@ -101,6 +130,7 @@ class Rooms::Stage::StreamsControllerTest < ActionDispatch::IntegrationTest
   test "starting while another stream is live returns conflict naming the presenter" do
     Stream.create!(room: @room, membership: @host, user: users(:david), quality: "1080p15")
     @listener.change_stage_role!("speaker")
+    HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @listener)
     sign_in :jason
 
     assert_no_difference -> { Stream.live.count } do
