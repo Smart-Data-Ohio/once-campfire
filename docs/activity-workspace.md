@@ -36,7 +36,7 @@ Inside a channel, the thread browser's **Show** filter lists that channel's **Op
 
 Use **Work threads** in the sidebar to find open, completed, or all work across your accessible channels. Completing or reopening work preserves its messages. Discussion archival and work completion are separate: unfinished work remains discoverable even if the conversation is archived.
 
-This first version supports human ownership and progress. Agent assignment and richer links to PRs, Drive files, and Events are planned integrations.
+A work thread can also be owned by an agent. The same people who assign a human — the person who started the thread, the channel's creator, or an administrator — pick an agent from the **Agents** group in **Update work**. An eligible agent is active, belongs to the channel, and may post there; suspending the agent or removing it from the channel leaves its assignment visible as unavailable, exactly like an inactive human owner. The agent learns about the assignment through its event feed, moves the work through statuses with an optional note, and its progress lands in Work history and the activity inbox like any owner's. Agent-owned threads show the agent's name with an `agent` badge, and the **Work threads** view filters to **Owned by agents**. See [AI agents](agents.md#work-threads). Richer links to PRs, Drive files, and Events remain planned.
 
 ## Huddles in direct messages
 
