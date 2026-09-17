@@ -70,9 +70,37 @@ module Github
         # Same creation path bot API messages take (MessagesController#create
         # via Messages::ByBotsController): a normal message with the bot as
         # creator, broadcast to the room. The PR URL on its own line syncs a
-        # PR reference, so the card renders and fills in on fetch.
+        # PR reference, so the card renders and fills in on fetch. When the
+        # room already discusses the PR in a thread, the update lands there
+        # as a thread reply instead, which also refreshes the thread's
+        # activity timestamp so it surfaces in the threads list.
         def post_message!(room, bot, post)
+          thread = pull_request_thread_for(room, post)
+          return post_room_message!(room, bot, post) if thread.nil?
+
+          # A locked thread refuses the reply; the dedupe row is already
+          # claimed, so the update falls back to a root room message rather
+          # than failing the job. Closed threads reopen inside post_message!.
+          begin
+            message = thread.post_message!(creator: bot, attributes: { markdown_source: "#{post.line}\n#{post.url}" })
+          rescue ChannelThread::LockedError
+            return post_room_message!(room, bot, post)
+          end
+          message.tap(&:broadcast_create)
+        end
+
+        def post_room_message!(room, bot, post)
           room.root_messages.create_with_attachment!(creator: bot, markdown_source: "#{post.line}\n#{post.url}").tap(&:broadcast_create)
+        end
+
+        # The room's discussion thread for the posted PR, if one exists.
+        # Stored PR names are downcased, as are the post's names, so this
+        # is a plain equality lookup.
+        def pull_request_thread_for(room, post)
+          pull_request = Github::PullRequest.find_by(owner: post.owner, repo: post.repo, number: post.number)
+          return unless pull_request
+
+          Github::PullRequestThread.find_by(github_pull_request_id: pull_request.id, room_id: room.id)&.channel_thread
         end
 
         def record_review_request_item(room, message, post)
@@ -199,8 +227,7 @@ module Github
           return [] if branches.empty? || payload["sha"].blank?
 
           full_name = payload.dig("repository", "full_name")
-          cased_owner, cased_repo = repository_name_parts(payload)
-          Github::PullRequest.where(owner: cased_owner, repo: cased_repo, head_branch: branches).map do |pr|
+          Github::PullRequest.where(owner: owner, repo: repo, head_branch: branches).map do |pr|
             Post.new(event_key: "checks_failed", owner:, repo:, number: pr.number, title: pr.title,
               url: pr.html_url.presence || "https://github.com/#{full_name}/pull/#{pr.number}",
               line: checks_failed_line(pr.number, pr.title, payload["context"]),
@@ -219,8 +246,9 @@ module Github
 
         # Best effort: the message posts whether or not the PR was fetched
         # yet; the title is filled in when a stored row already has one.
+        # The payload's names arrive in any case; stored names are downcased.
         def stored_pr_title(owner, repo, number)
-          Github::PullRequest.find_by(owner:, repo:, number:)&.title
+          Github::PullRequest.find_by(owner: owner.to_s.downcase, repo: repo.to_s.downcase, number:)&.title
         end
 
         def checks_failed_line(number, title, name)

@@ -83,6 +83,8 @@ T3 Code is the user's interaction reference, not a verified feature specificatio
 
 Done for the first slice when a linked PR renders current context, receives relevant updates once, and remains visible only to authorized viewers.
 
+**Status:** PR threads shipped: each room gets one discussion thread per pull request from the card's Discuss control, subscription updates land in that thread, the thread header shows the live card with a Files changed summary, and agents mentioned there receive the PR context in their delivery payload; see [GitHub pull request cards](docs/github.md#pull-request-threads). Still open: authorized write actions and per-user GitHub identity.
+
 ### 5. Events and Google Calendar
 
 Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). One-way Google Calendar publishing for connected attendees is live; see [Google Calendar](docs/google-calendar.md). Recurrence has shipped; only linking an event to a text, voice, or Stage channel remains.

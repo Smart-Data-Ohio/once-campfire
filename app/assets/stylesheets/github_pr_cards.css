@@ -110,3 +110,88 @@
 .github-pr-card__link {
   margin-inline-start: auto;
 }
+
+.github-pr-card__discuss-form {
+  display: inline;
+  margin: 0;
+}
+
+.github-pr-card__discuss {
+  font: inherit;
+}
+
+button.github-pr-card__discuss {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-link);
+  cursor: pointer;
+}
+
+button.github-pr-card__discuss:hover {
+  text-decoration: underline;
+}
+
+.github-pr-thread-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.github-pr-files {
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5em;
+  background-color: var(--color-bg);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.github-pr-files__heading {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.github-pr-files__list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.github-pr-files__file {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.github-pr-files__path {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.github-pr-files__status {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.github-pr-files__counts {
+  margin-inline-start: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.github-pr-files__more,
+.github-pr-files__loading,
+.github-pr-files__empty {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}

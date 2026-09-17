@@ -2,7 +2,7 @@
 <% if pull_requests.any? %>
   <div id="<%= dom_id(message, :github_pr_cards) %>" class="github-pr-cards">
     <% pull_requests.each do |pull_request| %>
-      <%= render "github/pull_requests/card", pull_request: pull_request %>
+      <%= render "github/pull_requests/card", pull_request: pull_request, message: message %>
     <% end %>
   </div>
 <% end %>
