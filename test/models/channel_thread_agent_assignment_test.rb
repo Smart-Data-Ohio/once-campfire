@@ -244,7 +244,7 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     grant!(@agent, "post_messages")
     @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
 
-    @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress", note: "Digging in")
+    @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress", note: "Digging in")
 
     assert_equal "in_progress", @thread.reload.work_status
     event = @thread.work_thread_events.ordered.first
@@ -270,7 +270,7 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     ThreadMembership.join!(thread, recipient).update!(involvement: "everything")
     thread.update_work!(actor: creator, work_status: "planned", work_owner_id: bot.id)
 
-    thread.update_work_status_by_agent!(agent: agent, work_status: "in_progress", note: "On it")
+    thread.update_work_by_agent!(agent: agent, work_status: "in_progress", note: "On it")
 
     event = thread.work_thread_events.ordered.first
     assert_equal "work_update", ActivityItem.find_by!(user: recipient, source: event).event_type
@@ -278,12 +278,64 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: bot, source: event)
   end
 
+  test "an agent tags update replaces the set without touching the status" do
+    grant!(@agent, "post_messages")
+    @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
+
+    @thread.update_work_by_agent!(agent: @agent, tags: "API, launch")
+
+    assert_equal %w[ api launch ], @thread.reload.tag_names
+    assert_equal "planned", @thread.work_status
+  end
+
+  test "an agent work update validates tags and run_url" do
+    grant!(@agent, "post_messages")
+    @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
+
+    assert_raises(ActiveRecord::RecordInvalid) do
+      @thread.update_work_by_agent!(agent: @agent, tags: "one, two, three, four, five, six")
+    end
+    assert_raises(ActiveRecord::RecordInvalid) do
+      @thread.update_work_by_agent!(agent: @agent, run_url: "http://example.com/runs/1")
+    end
+    assert_raises(ActiveRecord::RecordInvalid) do
+      @thread.update_work_by_agent!(agent: @agent)
+    end
+
+    assert_equal [], @thread.reload.tag_names
+    assert_nil @thread.run_url
+  end
+
+  test "an agent result update records the event with the agent as actor" do
+    grant!(@agent, "post_messages")
+    @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
+
+    @thread.update_result_by_agent!(agent: @agent, markdown: "## Agent outcome")
+
+    assert_equal "## Agent outcome", @thread.reload.result_markdown
+    assert_equal @bot.id, @thread.result_updated_by_id
+    event = @thread.work_thread_events.ordered.first
+    assert_equal "result_updated", event.event_type
+    assert_equal @bot.id, event.actor_id
+  end
+
+  test "an agent cannot write the result of work it does not own" do
+    grant!(@agent, "post_messages")
+    @thread.update_work!(actor: @manager, work_owner_id: users(:jason).id)
+
+    assert_raises(ActiveRecord::RecordNotFound) do
+      @thread.update_result_by_agent!(agent: @agent, markdown: "Hijacked")
+    end
+
+    assert_nil @thread.reload.result_markdown
+  end
+
   test "an agent cannot move work it does not own" do
     grant!(@agent, "post_messages")
     @thread.update_work!(actor: @manager, work_owner_id: users(:jason).id)
 
     assert_raises(ActiveRecord::RecordNotFound) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress")
+      @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress")
     end
 
     assert_equal "planned", @thread.reload.work_status
@@ -294,12 +346,12 @@ class ChannelThreadAgentAssignmentTest < ActiveSupport::TestCase
     @thread.update_work!(actor: @manager, work_owner_id: @bot.id)
 
     error = assert_raises(ActiveRecord::RecordInvalid) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "shipped")
+      @thread.update_work_by_agent!(agent: @agent, work_status: "shipped")
     end
     assert_match "is invalid", error.record.errors.full_messages.to_sentence
 
     error = assert_raises(ActiveRecord::RecordInvalid) do
-      @thread.update_work_status_by_agent!(agent: @agent, work_status: "in_progress", note: "x" * 501)
+      @thread.update_work_by_agent!(agent: @agent, work_status: "in_progress", note: "x" * 501)
     end
     assert_match "too long", error.record.errors.full_messages.to_sentence
 

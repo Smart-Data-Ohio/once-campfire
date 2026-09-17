@@ -237,25 +237,16 @@ class ChannelThreadsController < ApplicationController
     # work_assigned event; a first message notifies the board.
     def create_board_post
       board_attributes = board_post_attributes
-      owner_id = board_attributes[:work_owner_id].presence
-      first_message = board_first_message
 
-      ChannelThread.transaction do
-        @thread = @room.channel_threads.new(
-          name: board_attributes[:name],
-          work_status: board_attributes[:work_status].presence || "planned",
-          creator: Current.user
-        )
-        @thread.tag_names = board_attributes[:tags] if board_attributes.key?(:tags)
-        @thread.save!
-        ThreadMembership.join!(@thread, Current.user)
-
-        message = if first_message.present?
-          @thread.post_message!(creator: Current.user, attributes: first_message)
-        end
-        @thread.update_work!(actor: Current.user, work_owner_id: owner_id) if owner_id
-        notify_board_post_created!(@thread, message) if message
-      end
+      @thread = ChannelThread.create_board_post!(
+        room: @room,
+        creator: Current.user,
+        name: board_attributes[:name],
+        work_status: board_attributes[:work_status].presence || "planned",
+        owner_id: board_attributes[:work_owner_id].presence,
+        tags: board_attributes[:tags],
+        first_message: board_first_message_markdown
+      )
 
       respond_to do |format|
         format.html { redirect_to room_thread_path(@room, @thread) }
@@ -273,26 +264,6 @@ class ChannelThreadsController < ApplicationController
           render :new, status: :unprocessable_entity
         end
         format.any { render_error error.record.errors.full_messages.to_sentence }
-      end
-    end
-
-    # A new post notifies board members following everything, plus the
-    # assigned human owner whatever their involvement, sourced at the
-    # opening message so the inbox can open its exact context. The items go
-    # through the recorder for grouping and idempotency; the recipients are
-    # authorized here because room followers are not thread members yet.
-    def notify_board_post_created!(thread, message)
-      memberships = thread.room.memberships.includes(:user).to_a
-
-      memberships.each do |membership|
-        user = membership.user
-        next unless user&.active? && !user.bot?
-        next if user.id == thread.creator_id
-        next if membership.involved_in_invisible?
-        next unless membership.involved_in_everything? || user.id == thread.work_owner_id
-
-        ActivityItems::Recorder.record!(recipient: user, source: message,
-          event_type: "thread_activity", skip_source_check: true)
       end
     end
 
@@ -384,12 +355,9 @@ class ChannelThreadsController < ApplicationController
       source.permit(:name, :work_status, :work_owner_id, :tags).to_h.symbolize_keys
     end
 
-    def board_first_message
+    def board_first_message_markdown
       source = params[:thread].present? ? params.require(:thread) : params
-      markdown_source = source.permit(:first_message).fetch(:first_message, "").to_s
-      return {} if markdown_source.blank?
-
-      { markdown_source: markdown_source }
+      source.permit(:first_message).fetch(:first_message, "").to_s
     end
 
     def thread_work_update_attributes(attributes)

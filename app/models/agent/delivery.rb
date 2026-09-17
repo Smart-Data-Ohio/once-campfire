@@ -25,7 +25,7 @@ class Agent::Delivery
           message: message,
           actor_id: message.creator_id,
           outcome: "delivered",
-          metadata: { "hop" => message_hop }
+          metadata: { "hop" => message_hop, "thread_id" => message.thread_id }
         )
       end
 
@@ -68,26 +68,17 @@ class Agent::Delivery
       end
     end
 
-    # Shared work payload for event polling, the agent work API, and the
-    # webhook. The url is the workspace permalink path for the thread, the
-    # same form thread push notifications use; agents combine it with
-    # their configured host.
+    # Shared work payload for event polling and the webhook. The url is
+    # the workspace permalink path for the thread, the same form thread
+    # push notifications use; agents combine it with their configured
+    # host. The thread_id, status, and assigned_by keys predate the
+    # shared builder and keep their names; everything else comes from it.
     def work_payload(thread, assigned_by:)
-      room = thread.room
-      {
+      Agents::WorkPayload.for(thread).merge(
         thread_id: thread.id,
-        room_id: room.id,
-        title: thread.name,
         status: thread.work_status,
-        url: Rails.application.routes.url_helpers.room_path(room, thread: thread.id),
-        assigned_by: assigned_by,
-        links: WorkThreadLink.agent_payloads_for(thread),
-        board_id: room.board? ? room.id : nil,
-        board_name: room.board? ? room.name : nil,
-        tags: thread.tag_names,
-        result: thread.result_markdown,
-        run_url: thread.run_url
-      }
+        assigned_by: assigned_by
+      )
     end
 
     # Posts a work assignment change to the agent's webhook. The payload
