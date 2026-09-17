@@ -50,11 +50,10 @@ class Internal::HuddleControllerTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
   end
 
-  test "rejects admin, data, camera, metadata, and unknown privileges" do
+  test "rejects admin, data, metadata, and unknown privileges" do
     privileged_grants = [
       { "roomAdmin" => true },
       { "canPublishData" => true },
-      { "canPublishSources" => Huddle::PUBLISH_SOURCES + [ "camera" ] },
       { "canUpdateOwnMetadata" => true },
       { "unknownPrivilege" => true }
     ]
@@ -62,6 +61,23 @@ class Internal::HuddleControllerTest < ActionDispatch::IntegrationTest
     privileged_grants.each do |privilege|
       claims = decoded_claims(@huddle.token)
       claims.fetch("video").merge!(privilege)
+      post_authorize(signed_token(claims))
+      assert_response :unauthorized
+    end
+  end
+
+  test "rejects any publish source set other than the exact camera grant" do
+    offending_source_sets = [
+      %w[ microphone screen_share screen_share_audio ],
+      %w[ camera ],
+      [],
+      Huddle::PUBLISH_SOURCES + [ "unknown_source" ],
+      Huddle::PUBLISH_SOURCES + [ "camera" ]
+    ]
+
+    offending_source_sets.each do |sources|
+      claims = decoded_claims(@huddle.token)
+      claims.fetch("video")["canPublishSources"] = sources
       post_authorize(signed_token(claims))
       assert_response :unauthorized
     end

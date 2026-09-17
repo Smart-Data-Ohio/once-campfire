@@ -13,9 +13,10 @@ const loadLiveKit = () => liveKitPromise ||= import("livekit-client").catch(erro
 
 export default class extends Controller {
   static targets = [
-    "activeControls", "leaveLabel", "mute", "muteLabel", "noise", "noiseLabel", "notice",
-    "participantCount", "participantList", "people", "resumeAudio", "retry", "roomName", "screens",
-    "settings", "share", "shareLabel", "sharing", "sharingExpand", "sharingName", "status"
+    "activeControls", "camera", "cameraLabel", "cameras", "leaveLabel", "mute", "muteLabel",
+    "noise", "noiseLabel", "notice", "participantCount", "participantList", "people",
+    "resumeAudio", "retry", "roomName", "screens", "settings", "share", "shareLabel",
+    "sharing", "sharingExpand", "sharingName", "status"
   ]
   static values = {
     currentUserId: Number,
@@ -167,6 +168,7 @@ export default class extends Controller {
     this.roomId = null
     this.roomName = null
     this.identity = null
+    this.#clearConnectedNotice()
     this.#setState("idle", "Not in a huddle")
   }
 
@@ -247,6 +249,65 @@ export default class extends Controller {
     }
   }
 
+  toggleCamera = async () => {
+    const room = this.room
+    if (!room || this.state !== "connected" || this.cameraTarget.disabled) return
+
+    this.cameraTarget.disabled = true
+    const enabling = !room.localParticipant.isCameraEnabled
+
+    try {
+      await this.#setCameraEnabled(room, enabling)
+
+      if (room !== this.room) {
+        await this.#setCameraEnabled(room, false).catch(() => {})
+        return
+      }
+
+      this.#syncLocalCamera(room)
+      this.#updateMediaControls()
+      if (enabling) this.#clearConnectedNotice()
+      this.#showTemporaryStatus(enabling ? "Your camera is on" : "Camera off")
+    } catch (error) {
+      if (room === this.room) {
+        const message = this.#permissionWasDenied(error)
+          ? "Camera wasn’t started. Allow camera access to try again."
+          : "Camera could not be changed. Try again."
+        // A camera that fails to start leaves the huddle connected, so the
+        // failure stays in the notice target instead of fading with the
+        // four-second status line.
+        if (enabling) {
+          this.#showConnectedNotice(message)
+        } else {
+          this.#showTemporaryStatus(message)
+        }
+        this.#updateMediaControls()
+      }
+    } finally {
+      if (room === this.room) this.cameraTarget.disabled = false
+    }
+  }
+
+  // Unlike screen share, `setCameraEnabled(false)` only mutes: the track stays
+  // published and keeps the device claimed. Turning the camera off unpublishes
+  // instead, which releases the camera and removes the tile on both sides.
+  async #setCameraEnabled(room, enabling) {
+    if (enabling) {
+      // The camera keeps frame rate under constrained bandwidth: the SDK's
+      // own default for a camera track, spelled out so the camera does not
+      // inherit the room's screen-share "maintain-resolution" preference.
+      await room.localParticipant.setCameraEnabled(true, undefined, { degradationPreference: "maintain-framerate" })
+      return
+    }
+
+    const publication = room.localParticipant.getTrackPublication(this.liveKit.Track.Source.Camera)
+    if (publication?.track) {
+      await room.localParticipant.unpublishTrack(publication.track)
+    } else {
+      await room.localParticipant.setCameraEnabled(false)
+    }
+  }
+
   resumeAudio = async () => {
     if (!this.room) return
 
@@ -324,7 +385,7 @@ export default class extends Controller {
   }
 
   #roomOptions(liveKit) {
-    const { AudioPresets, ScreenSharePresets } = liveKit
+    const { AudioPresets, ScreenSharePresets, VideoPresets } = liveKit
 
     return {
       adaptiveStream: true,
@@ -332,6 +393,13 @@ export default class extends Controller {
       // Spelled out rather than inherited so a future SDK upgrade cannot quietly
       // change what Campfire asks the browser to do with a microphone.
       audioCaptureDefaults: this.#audioCaptureOptions(),
+      // The 720p/30 camera target from docs/huddle-quality.md, step 5. This is
+      // the SDK's own `videoDefaults` written out, so it changes no behavior
+      // today and only pins it against upgrades.
+      videoCaptureDefaults: {
+        deviceId: { ideal: "default" },
+        resolution: VideoPresets.h720.resolution
+      },
       publishDefaults: {
         audioPreset: AudioPresets.music,
         dtx: true,
@@ -341,7 +409,19 @@ export default class extends Controller {
         // own default; 1080p/30 waits on the bandwidth measurements in
         // docs/huddle-quality.md.
         screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
-        degradationPreference: "maintain-resolution"
+        degradationPreference: "maintain-resolution",
+        // Camera top layer: 1280×720 at up to 1.7 Mbps and 30 fps. The capture
+        // constraint above already holds the source at 720p, where this matches
+        // what the SDK would derive on its own. Simulcast is the SDK default;
+        // with it on, the publisher also sends 640×360 and 320×180 layers so
+        // adaptiveStream can size each subscription from its rendered element.
+        // The codec stays the SDK default (VP8); codec comparison is future
+        // measurement work. The shared "maintain-resolution" preference above
+        // is the screen-share setting; the camera passes the SDK's
+        // camera-specific "maintain-framerate" default in its own publish
+        // options (see #setCameraEnabled), so each track keeps its own default.
+        videoEncoding: VideoPresets.h720.encoding,
+        simulcast: true
       }
     }
   }
@@ -510,6 +590,7 @@ export default class extends Controller {
     }
 
     this.#syncLocalScreenShare(room)
+    this.#syncLocalCamera(room)
   }
 
   #syncLocalScreenShare(room) {
@@ -517,6 +598,16 @@ export default class extends Controller {
 
     for (const publication of room.localParticipant.trackPublications.values()) {
       if (publication.track && publication.source === Track.Source.ScreenShare) {
+        this.#attachTrack(publication.track, publication, room.localParticipant)
+      }
+    }
+  }
+
+  #syncLocalCamera(room) {
+    const { Track } = this.liveKit
+
+    for (const publication of room.localParticipant.trackPublications.values()) {
+      if (publication.track && publication.source === Track.Source.Camera) {
         this.#attachTrack(publication.track, publication, room.localParticipant)
       }
     }
@@ -538,11 +629,19 @@ export default class extends Controller {
       return
     }
 
+    if (track.kind !== Track.Kind.Video) return
+
     const isScreenShare = publication.source === Track.Source.ScreenShare || track.source === Track.Source.ScreenShare
-    if (track.kind !== Track.Kind.Video || !isScreenShare) return
+    const isCamera = publication.source === Track.Source.Camera || track.source === Track.Source.Camera
+    if (!isScreenShare && !isCamera) return
 
     const isLocal = participant === this.room?.localParticipant
     const name = `${this.#participantName(participant)}${isLocal ? " (you)" : ""}`
+
+    if (isCamera) {
+      this.#attachCamera(track, publication, name, isLocal)
+      return
+    }
 
     const figure = document.createElement("figure")
     figure.className = "huddle__screen"
@@ -593,12 +692,43 @@ export default class extends Controller {
       publication,
       name,
       isLocal,
+      kind: "screen",
       expandButton,
       fullscreenButton
     })
 
     this.#updateScreenControls()
     this.#renderSharingNotice()
+  }
+
+  // One tile per published camera track: the local preview plus every remote
+  // camera. Camera tiles have no expand or full-screen controls in this slice;
+  // theater mode keeps them as small thumbnails (see huddle.css) so they never
+  // cover the expanded screen.
+  #attachCamera(track, publication, name, isLocal) {
+    const figure = document.createElement("figure")
+    figure.className = "huddle__camera"
+    if (isLocal) figure.classList.add("huddle__camera--local")
+
+    const video = track.attach()
+    video.autoplay = true
+    video.playsInline = true
+    video.muted = isLocal
+
+    const caption = document.createElement("figcaption")
+    caption.textContent = name
+
+    figure.append(video, caption)
+    this.camerasTarget.appendChild(figure)
+    this.camerasTarget.hidden = false
+    this.attachments.set(track, {
+      elements: [ video ],
+      wrapper: figure,
+      publication,
+      name,
+      isLocal,
+      kind: "camera"
+    })
   }
 
   #screenButton(label, description) {
@@ -630,6 +760,7 @@ export default class extends Controller {
     attachment?.wrapper?.remove()
     this.attachments.delete(track)
     this.screensTarget.hidden = !this.screensTarget.children.length
+    this.camerasTarget.hidden = !this.camerasTarget.children.length
     this.#renderSharingNotice()
 
     if (heldFocus) this.#restoreFocusAfterDetach()
@@ -644,11 +775,13 @@ export default class extends Controller {
     for (const track of [ ...this.attachments.keys() ]) this.#detachTrack(track, { restoreFocus: false })
     this.screensTarget.replaceChildren()
     this.screensTarget.hidden = true
+    this.camerasTarget.replaceChildren()
+    this.camerasTarget.hidden = true
     this.#renderSharingNotice()
   }
 
   #screenTracks() {
-    return [ ...this.attachments.keys() ].filter(track => this.attachments.get(track).wrapper)
+    return [ ...this.attachments.keys() ].filter(track => this.attachments.get(track).kind === "screen")
   }
 
   #sharingDescriptions() {
@@ -720,7 +853,7 @@ export default class extends Controller {
 
   #updateScreenControls() {
     for (const [ track, attachment ] of this.attachments) {
-      if (!attachment.wrapper) continue
+      if (attachment.kind !== "screen") continue
 
       const expanded = this.expandedTrack === track
       const fullscreen = this.fullscreenTrack === track
@@ -1001,6 +1134,7 @@ export default class extends Controller {
 
     const microphoneEnabled = this.room.localParticipant.isMicrophoneEnabled
     const screenShareEnabled = this.room.localParticipant.isScreenShareEnabled
+    const cameraEnabled = this.room.localParticipant.isCameraEnabled
 
     this.muteLabelTarget.textContent = microphoneEnabled ? "Mute" : "Unmute"
     this.muteTarget.setAttribute("aria-pressed", String(!microphoneEnabled))
@@ -1008,6 +1142,8 @@ export default class extends Controller {
     this.element.classList.toggle("huddle--muted", !microphoneEnabled)
     this.shareLabelTarget.textContent = screenShareEnabled ? "Stop sharing" : "Share screen"
     this.shareTarget.setAttribute("aria-pressed", String(screenShareEnabled))
+    this.cameraLabelTarget.textContent = cameraEnabled ? "Camera on" : "Camera off"
+    this.cameraTarget.setAttribute("aria-pressed", String(cameraEnabled))
   }
 
   #updateAudioPlaybackControl() {
@@ -1033,6 +1169,7 @@ export default class extends Controller {
     this.peopleTarget.hidden = !(connected || reconnecting)
     this.muteTarget.disabled = !connected
     this.shareTarget.disabled = !connected
+    this.cameraTarget.disabled = !connected
     this.retryTarget.hidden = !failed
     this.leaveLabelTarget.textContent = connecting ? "Cancel" : failed ? "Close" : "Leave"
     this.resumeAudioTarget.hidden = true
@@ -1049,6 +1186,19 @@ export default class extends Controller {
       this.element.hidden = false
       this.broadcastState()
     }
+  }
+
+  // A failure that leaves the huddle connected — a camera that would not
+  // start — stays in the notice target until the camera starts or the huddle
+  // is left, instead of fading with the four-second status line.
+  #showConnectedNotice(message) {
+    this.noticeTarget.textContent = message
+    this.noticeTarget.hidden = false
+  }
+
+  #clearConnectedNotice() {
+    this.noticeTarget.textContent = ""
+    this.noticeTarget.hidden = true
   }
 
   #showTemporaryStatus(message) {
