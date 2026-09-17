@@ -163,4 +163,61 @@ class Google::ClientTest < ActiveSupport::TestCase
 
     assert_raises(Google::Client::Error) { Google::Client.exchange_code(code: "bad", redirect_uri: "http://test.host/x") }
   end
+
+  test "authorize_url with drive requests both scopes and incremental auth" do
+    url = Google::Client.authorize_url(redirect_uri: "http://test.host/google/callback", state: "signed-state", drive: true)
+    query = Rack::Utils.parse_query(URI(url).query)
+
+    assert_equal "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.metadata.readonly", query["scope"]
+    assert_equal "true", query["include_granted_scopes"]
+  end
+
+  test "authorize_url without drive omits incremental auth" do
+    url = Google::Client.authorize_url(redirect_uri: "http://test.host/google/callback", state: "signed-state")
+    query = Rack::Utils.parse_query(URI(url).query)
+
+    assert_not_includes query.keys, "include_granted_scopes"
+  end
+
+  test "drive_file fetches metadata with the Drive fields" do
+    stub = stub_google_drive_file("1AbcDefGhIjKlMnOpQrSt")
+
+    file = @client.drive_file("1AbcDefGhIjKlMnOpQrSt")
+
+    assert_equal "Q3 Planning", file["name"]
+    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested :get, "#{GOOGLE_DRIVE_FILES_URL}/1AbcDefGhIjKlMnOpQrSt",
+      query: hash_including({
+        "fields" => "id,name,mimeType,modifiedTime,owners(displayName),webViewLink,iconLink",
+        "supportsAllDrives" => "true"
+      })
+  end
+
+  test "drive_file refreshes an expired access token first" do
+    @account.update!(access_token_expires_at: 1.hour.ago)
+    stub_google_token_refresh
+    file_stub = stub_google_drive_file("1AbcDefGhIjKlMnOpQrSt")
+
+    @client.drive_file("1AbcDefGhIjKlMnOpQrSt")
+
+    assert_requested :post, GOOGLE_TOKEN_URL
+    assert_requested file_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+  end
+
+  test "drive_file maps 403 and 404 to NotFound" do
+    stub_google_drive_file("forbidden-file-id", status: 403)
+    stub_google_drive_file("missing-file-id1", status: 404)
+
+    assert_raises(Google::Client::NotFound) { @client.drive_file("forbidden-file-id") }
+    assert_raises(Google::Client::NotFound) { @client.drive_file("missing-file-id1") }
+  end
+
+  test "drive_file maps a timeout to Unavailable" do
+    stub_request(:get, "#{GOOGLE_DRIVE_FILES_URL}/1AbcDefGhIjKlMnOpQrSt")
+      .with(query: hash_including({ "supportsAllDrives" => "true" })).to_timeout
+
+    error = assert_raises(Google::Client::Unavailable) { @client.drive_file("1AbcDefGhIjKlMnOpQrSt") }
+
+    assert_equal "Google Drive request failed (Net::OpenTimeout)", error.message
+  end
 end

@@ -17,7 +17,7 @@ class MessagesHelperTest < ActionView::TestCase
     assert_match %r{<table>.*<div class="mention mention--user-#{users(:david).id}"}m, presentation
     assert_match %r{\sDavid\s*</div>}, presentation
     assert_match %r{<div class="mention mention--user-#{users(:david).id}" sgid="[^"]+" data-user-id="#{users(:david).id}">}, presentation
-    assert_match %r{\A<div class="markdown-body">}, presentation
+    assert_match %r{\A<div class="markdown-body" data-controller="drive-link">}, presentation
     assert_no_match /trix-content/, presentation
   end
 
