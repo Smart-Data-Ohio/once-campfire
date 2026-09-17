@@ -169,6 +169,31 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
     t.index ["subscription_id"], name: "index_github_notifications_on_subscription_id"
   end
 
+  create_table "event_attendances", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "event_id", null: false
+    t.string "response", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["event_id", "user_id"], name: "index_event_attendances_on_event_id_and_user_id", unique: true
+  end
+
+  create_table "events", force: :cascade do |t|
+    t.datetime "cancelled_at"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.datetime "ends_at"
+    t.integer "organizer_id", null: false
+    t.datetime "reminded_at"
+    t.integer "room_id", null: false
+    t.datetime "starts_at", null: false
+    t.string "time_zone", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organizer_id"], name: "index_events_on_organizer_id"
+    t.index ["room_id", "starts_at"], name: "index_events_on_room_id_and_starts_at"
+  end
+
   create_table "github_pull_request_references", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "github_pull_request_id", null: false

@@ -23,7 +23,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 
 The first activity inbox, human-owned work threads, one-to-one DM Huddles, and neutral gray/charcoal palette are live as of September 15, 2026. See [Activity inbox and work threads](docs/activity-workspace.md) for the initial behavior and boundaries and [the release record](docs/releases/2026-09-15-activity-workspace.md) for validation and rollback details.
 
-The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
+The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events, plus native event invitations, updates, cancellations, and reminders; agent and GitHub sources follow their integrations.
 
 The first agent identity slice is live: agents 1:1 with bot users, Bearer credentials with a management UI, and room-scoped or workspace-wide capability grants (`post_messages` and `react` enforced; the rest stored for later) with immediate cascade revocation. See [AI agents](docs/agents.md). Event delivery, activity ledger, and approvals follow separately.
 
@@ -81,12 +81,13 @@ Done for the first slice when a linked PR renders current context, receives rele
 
 ### 5. Events and Google Calendar
 
-- Native Events with organizer, time zone, description, RSVP, reminders, and a linked text, voice, or Stage channel.
+Native Events with organizer, time zone, description, RSVP, reminders, and inbox invitations are live; see [Native events](docs/events.md). Google Calendar sync, recurrence, and linking an event to a text, voice, or Stage channel remain follow-ups.
+
 - Google Calendar connection so opted-in events can appear in a participant's calendar.
 - Define the source of truth and attendee consent before choosing one-way publishing or two-way synchronization.
 - Handle updates, cancellations, recurring events, disconnected accounts, and retries without duplicate calendar entries.
 
-Done for the first slice when an opted-in attendee receives a calendar entry and a later event change or cancellation updates that same entry correctly.
+Done for the calendar slice when an opted-in attendee receives a calendar entry and a later event change or cancellation updates that same entry correctly.
 
 ### 6. Google Drive and Smart Apps
 
@@ -99,12 +100,12 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live. Agent and Events sources follow their integrations, while PR review requests already land in the reviewer's inbox.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources, and PR review requests already land in the reviewer's inbox. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.
 - Per-channel and per-integration notification controls; group related updates and avoid duplicate items when one action triggers several events.
-- Start with existing mentions, replies, and thread activity. Add agent, GitHub, and Events sources as their respective features ship.
+- Start with existing mentions, replies, and thread activity. Add agent and GitHub sources as their respective features ship.
 - Enforce source permissions when listing, opening, and acting on an item, including after access changes.
 
 Done for the first slice when a member can find a mention or reply, open its exact context, mark it handled, and keep that state across sessions without seeing another member's private activity. Handling an inbox item must not silently resolve the underlying work or approve an external action.

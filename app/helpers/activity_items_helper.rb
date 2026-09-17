@@ -15,6 +15,8 @@ module ActivityItemsHelper
       thread ? room_path(thread.room, thread: thread.id) : activity_items_path
     when HuddleGrant
       source.room ? room_path(source.room) : activity_items_path
+    when Event
+      source.room ? room_event_path(source.room, source) : activity_items_path
     else
       activity_items_path
     end
@@ -36,6 +38,14 @@ module ActivityItemsHelper
       "Incoming huddle"
     when "huddle_missed"
       "Missed huddle"
+    when "event_invitation"
+      "Event invitation"
+    when "event_update"
+      "Event update"
+    when "event_cancelled"
+      "Event cancelled"
+    when "event_reminder"
+      "Event reminder"
     when "pr_review_request"
       "Review requested"
     else
@@ -58,6 +68,8 @@ module ActivityItemsHelper
       source.thread ? "#{room_display_name(source.thread.room)} · #{source.thread.name}" : "Unavailable thread"
     when HuddleGrant
       source.room ? room_display_name(source.room) : "Unavailable room"
+    when Event
+      source.room ? "#{room_display_name(source.room)} · #{source.title}" : source.title
     else
       source.class.name.humanize
     end
@@ -86,6 +98,8 @@ module ActivityItemsHelper
       else
         "#{caller} started a huddle"
       end
+    when Event
+      activity_item_event_body(item)
     else
       "Source updated"
     end
@@ -100,10 +114,30 @@ module ActivityItemsHelper
       source.actor&.name || "Work thread"
     when HuddleGrant
       source.user&.name
+    when Event
+      source.organizer&.name
     end
   end
 
   def activity_item_work_status_label(status)
     status.present? ? status.humanize : "None"
+  end
+
+  def activity_item_event_body(item)
+    event = item.source
+    start = event.starts_at.in_time_zone(event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z")
+
+    case item.event_type
+    when "event_invitation"
+      "You are invited: #{start}."
+    when "event_update"
+      "The time changed: #{start}."
+    when "event_cancelled"
+      "This event was cancelled."
+    when "event_reminder"
+      "Starts in 15 minutes: #{event.title}."
+    else
+      "Event updated: #{start}."
+    end
   end
 end
