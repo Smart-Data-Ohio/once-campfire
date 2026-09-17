@@ -624,6 +624,56 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes select_html, "Designers"
   end
 
+  test "show links the venue with a Join button for venue members" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_select "span.sidebar-item__icon", 1
+    assert_select "a[href='#{room_path(voice)}']", text: "Lounge"
+    assert_select "a.btn[href='#{room_path(voice)}']", "Join"
+  end
+
+  test "show names the venue without a link for non-members" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+    sign_in :kevin
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_includes response.body, "Lounge"
+    assert_select "a[href='#{room_path(voice)}']", 0
+    assert_select "a", { text: "Join", count: 0 }
+  end
+
+  test "index rows show the venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_includes response.body, "Where:"
+    assert_select "article a[href='#{room_path(voice)}']", text: "Lounge"
+  end
+
+  test "show and index omit the Where line without a venue" do
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_not_includes response.body, "Where:"
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_not_includes response.body, "Where:"
+  end
+
   private
     def count_sql_queries(&block)
       queries = 0
