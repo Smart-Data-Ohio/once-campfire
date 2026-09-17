@@ -31,9 +31,9 @@ module GithubWriteAction
     # body back so the member can retry without retyping. The frame
     # submission takes the HTML branch; Turbo Stream requests take the
     # stream branch.
-    def render_write_result(notice: nil, alert: nil, status: :ok, comment_body: nil, review_body: nil)
+    def render_write_result(notice: nil, alert: nil, status: :ok, comment_body: nil, review_body: nil, reviewers_body: nil)
       locals = { thread: @thread, pull_request: @pull_request, notice: notice, alert: alert,
-        comment_body: comment_body, review_body: review_body }
+        comment_body: comment_body, review_body: review_body, reviewers_body: reviewers_body }
 
       respond_to do |format|
         format.turbo_stream do

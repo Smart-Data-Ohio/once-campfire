@@ -51,6 +51,28 @@ class Github::WriteClientTest < ActiveSupport::TestCase
     assert_requested changes
   end
 
+  test "request_reviewers posts the logins to the requested_reviewers endpoint" do
+    stub = stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/requested_reviewers")
+      .with(
+        body: { reviewers: [ "alice", "bob" ] }.to_json,
+        headers: { "Authorization" => "Bearer user-token-123" }
+      )
+      .to_return(status: 201, body: { id: 12 }.to_json)
+
+    assert_equal({ "id" => 12 }, @client.request_reviewers(@pull_request, logins: [ "alice", "bob" ]))
+    assert_requested stub
+  end
+
+  test "request_reviewers maps a GitHub 422 to Refused with GitHub's message" do
+    stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/requested_reviewers")
+      .to_return(status: 422, body: { message: "Review cannot be requested from pull request author" }.to_json)
+
+    error = assert_raises(Github::WriteClient::Refused) do
+      @client.request_reviewers(@pull_request, logins: [ "alice" ])
+    end
+    assert_equal "GitHub refused: Review cannot be requested from pull request author", error.message
+  end
+
   test "401 raises Unauthorized" do
     stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments")
       .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
