@@ -13,6 +13,8 @@ module ActivityItemsHelper
     when WorkThreadEvent
       thread = source.thread
       thread ? room_path(thread.room, thread: thread.id) : activity_items_path
+    when HuddleGrant
+      source.room ? room_path(source.room) : activity_items_path
     when Event
       source.room ? room_event_path(source.room, source) : activity_items_path
     else
@@ -32,6 +34,10 @@ module ActivityItemsHelper
       "Work assignment"
     when "work_update"
       "Work update"
+    when "huddle_started"
+      "Incoming huddle"
+    when "huddle_missed"
+      "Missed huddle"
     when "event_invitation"
       "Event invitation"
     when "event_update"
@@ -58,6 +64,8 @@ module ActivityItemsHelper
       end
     when WorkThreadEvent
       source.thread ? "#{room_display_name(source.thread.room)} · #{source.thread.name}" : "Unavailable thread"
+    when HuddleGrant
+      source.room ? room_display_name(source.room) : "Unavailable room"
     when Event
       source.room ? "#{room_display_name(source.room)} · #{source.title}" : source.title
     else
@@ -81,6 +89,13 @@ module ActivityItemsHelper
         changes << "Owner: #{source.from_owner_name.presence || "unassigned"} → #{source.to_owner_name.presence || "unassigned"}"
       end
       changes.presence&.to_sentence || "Work thread updated"
+    when HuddleGrant
+      caller = source.user&.name || "Someone"
+      if item.event_type == "huddle_missed"
+        "You missed a huddle from #{caller}"
+      else
+        "#{caller} started a huddle"
+      end
     when Event
       activity_item_event_body(item)
     else
@@ -95,6 +110,8 @@ module ActivityItemsHelper
       source.creator&.name
     when WorkThreadEvent
       source.actor&.name || "Work thread"
+    when HuddleGrant
+      source.user&.name
     when Event
       source.organizer&.name
     end

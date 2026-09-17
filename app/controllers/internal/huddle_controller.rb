@@ -8,6 +8,7 @@ class Internal::HuddleController < ActionController::API
     grant = HuddleGrant.find_by(**coordinates)
 
     if grant&.authorize_or_revoke!
+      grant.record_seen!
       render json: grant.authorization_payload
     else
       head :forbidden
@@ -20,6 +21,7 @@ class Internal::HuddleController < ActionController::API
     grant = HuddleGrant.find_by(id: params[:id])
 
     if grant&.authorize_or_revoke!
+      grant.record_seen!
       render json: grant.authorization_payload
     else
       head :not_found
