@@ -43,8 +43,12 @@ class Github::WebhooksController < ActionController::API
 
     # Enqueue subscription delivery only when some room subscribes to the
     # event's repository; unsubscribed repositories enqueue nothing and
-    # create no rows or bot users.
+    # create no rows or bot users. issue_comment is skipped outright: the
+    # notifier has no matching event type, so the job would be a no-op and
+    # only the card refresh above runs.
     def enqueue_subscription_delivery(event, payload)
+      return if event == "issue_comment"
+
       owner, repo = Github::Notifier.repository_owner_and_repo(payload)
       return unless owner
 

@@ -94,6 +94,18 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "issue_comment enqueues only the refresh, never subscription delivery" do
+    Github::RepositorySubscription.create!(room: @room, owner: "rails", repo: "rails", created_by: users(:david))
+    body = issue_comment_payload(number: 123).to_json
+
+    assert_enqueued_jobs 1, only: Github::FetchPullRequestJob do
+      assert_no_enqueued_jobs only: Github::DeliverSubscriptionEventJob do
+        post github_webhooks_url, params: body, headers: webhook_headers(event: "issue_comment", body: body)
+        assert_response :success
+      end
+    end
+  end
+
   test "redelivered issue_comment events enqueue nothing" do
     body = issue_comment_payload(number: 123).to_json
     headers = webhook_headers(event: "issue_comment", body: body)
