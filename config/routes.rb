@@ -84,6 +84,8 @@ Rails.application.routes.draw do
   get "agents/work/:id", to: "agents/work#show", defaults: { format: :json }, as: :agents_work_thread
   patch "agents/work/:id", to: "agents/work#update", defaults: { format: :json }
   post "rooms/:room_id/agents/messages", to: "agents/messages#create", defaults: { format: :json }, as: :room_agent_messages
+  get "rooms/:room_id/agents/posts", to: "agents/posts#index", defaults: { format: :json }, as: :room_agent_posts
+  post "rooms/:room_id/agents/posts", to: "agents/posts#create", defaults: { format: :json }
   post "rooms/:room_id/agents/github/pull_request_actions", to: "agents/github/pull_request_actions#create",
     defaults: { format: :json }, as: :room_agent_github_pull_request_actions
 
