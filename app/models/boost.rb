@@ -9,15 +9,16 @@ class Boost < ApplicationRecord
   SHORTCODE_CONTENT_PATTERN = /\A:[a-z0-9_]+:\z/
 
   # Emoji shortcodes resolve to the character itself, so they render and
-  # count exactly like an emoji typed directly. Brand shortcodes stay as
-  # :name:, canonicalised so aliases share one reaction chip, and render
-  # through BoostsHelper. Unknown shortcodes stay literal text, as before.
+  # count exactly like an emoji typed directly. Brand and workspace icon
+  # shortcodes stay as :name:, canonicalised so aliases share one reaction
+  # chip, and render through BoostsHelper. Unknown shortcodes stay literal
+  # text, as before.
   def self.resolve_content(content)
     return content unless content.to_s.match?(SHORTCODE_CONTENT_PATTERN)
 
     case (icon = Icons.find(content.to_s[1...-1]))
     when Icons::Emoji then icon.character
-    when Icons::Brand then ":#{icon.name}:"
+    when Icons::Brand, Icons::Custom then ":#{icon.name}:"
     else content
     end
   end

@@ -99,6 +99,12 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
 
   test "rendering a room page costs no extra queries per message with a PR link" do
     create_pr_messages(2, offset: 200)
+
+    # Warm per-process caches (the workspace icon registry's version stamp)
+    # so the two measured renders share the same constant cold-cache cost.
+    get room_url(@room)
+    assert_response :success
+
     small = count_queries { get room_url(@room) }
     assert_response :success
 
