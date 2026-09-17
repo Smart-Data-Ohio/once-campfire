@@ -21,7 +21,8 @@ export default class extends Controller {
     "createStatus", "createSubmit", "conversation", "conversationTitle", "conversationMeta",
     "threadStatus", "parent", "content", "messages", "empty", "retry", "composerMount", "composerStatus", "join", "leave",
     "preferences", "involvementControl", "involvement", "rename", "convertToWork", "removeWork", "closeThread", "reopen", "lock", "unlock", "delete", "manage",
-    "autoArchiveControl", "autoArchive", "work", "workStatusLabel", "workOwnerLabel", "workManage", "workStatus", "workOwner", "workComplete", "workReopen", "workHistory", "workHistoryList"
+    "autoArchiveControl", "autoArchive", "work", "workStatusLabel", "workOwnerLabel", "workManage", "workStatus", "workOwner", "workComplete", "workReopen", "workHistory", "workHistoryList",
+    "workLinksFrame"
   ]
 
   #desktopQuery
@@ -491,6 +492,7 @@ export default class extends Controller {
     this.workTarget.hidden = true
     this.workManageTarget.hidden = true
     this.workHistoryTarget.hidden = true
+    this.#clearWorkLinks()
     if (this.hasRetryTarget) this.retryTarget.hidden = true
     this.parentTarget.hidden = true
     this.emptyTarget.hidden = true
@@ -516,6 +518,7 @@ export default class extends Controller {
     }
 
     this.#renderWorkMetadata(thread)
+    this.#renderWorkLinks(thread)
     this.#updateThreadActions(thread)
     this.#updateThreadListItem(thread)
     this.#updateUnreadToggle()
@@ -625,6 +628,31 @@ export default class extends Controller {
     this.workCompleteTarget.hidden = !canStatus || thread.work_status === "done"
     this.workReopenTarget.hidden = !canStatus || thread.work_status !== "done"
     this.#renderWorkHistory(thread)
+  }
+
+  // Work links render server-side inside a turbo frame so the Linked row
+  // and the Link forms stay identical across the panel, the thread page
+  // header, and the Work list. Pointing the frame at the thread loads
+  // the box; link adds and removals refresh it through Turbo Streams.
+  #renderWorkLinks(thread) {
+    if (!this.hasWorkLinksFrameTarget) return
+    const frame = this.workLinksFrameTarget
+    if (!(thread.work || thread.work_status)) {
+      this.#clearWorkLinks()
+      return
+    }
+
+    const url = `/threads/${encodeURIComponent(thread.id)}/work/links`
+    frame.hidden = false
+    if (frame.getAttribute("src") !== url) frame.setAttribute("src", url)
+  }
+
+  #clearWorkLinks() {
+    if (!this.hasWorkLinksFrameTarget) return
+    const frame = this.workLinksFrameTarget
+    frame.removeAttribute("src")
+    frame.replaceChildren()
+    frame.hidden = true
   }
 
   #renderWorkOwnerOptions(thread, canAssign) {

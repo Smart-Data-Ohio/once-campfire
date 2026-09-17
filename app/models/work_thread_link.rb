@@ -25,8 +25,12 @@ class WorkThreadLink < ApplicationRecord
   # are omitted. Drive entries carry only the stored URL and cached
   # title: bots never receive Drive credentials.
   def self.agent_payloads_for(thread)
-    where(channel_thread_id: thread.id).ordered
-      .includes(:github_pull_request, :event).filter_map(&:agent_payload)
+    links = if thread.association(:work_thread_links).loaded?
+      thread.work_thread_links.sort_by(&:id)
+    else
+      where(channel_thread_id: thread.id).ordered.includes(:github_pull_request, :event).to_a
+    end
+    links.filter_map(&:agent_payload)
   end
 
   def agent_payload

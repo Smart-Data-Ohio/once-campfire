@@ -15,7 +15,7 @@ class WorkThreadsController < ApplicationController
       scope = ChannelThread
         .work
         .for_room_member(Current.user)
-        .includes(:room, :creator, :work_owner, :memberships)
+        .includes(:room, :creator, :work_owner, :memberships, work_thread_links: %i[ github_pull_request event ])
         .order(updated_at: :desc, id: :desc)
 
       case @state

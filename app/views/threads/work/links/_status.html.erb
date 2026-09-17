@@ -1,0 +1,3 @@
+<%# locals: (thread:, context:, message: nil) -%>
+<p class="work-links__status<%= " work-links__status--error" if message.present? %>"
+   id="<%= work_thread_links_status_id(thread, context) %>" role="status"><%= message %></p>
