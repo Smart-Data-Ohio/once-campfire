@@ -883,7 +883,8 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     before = occurrences.map { |occurrence| [ occurrence.series_id, occurrence.starts_at, occurrence.ends_at, occurrence.recurrence_rule ] }
     last_mover_id = occurrences.find { |occurrence| occurrence.starts_at == utc(2027, 2, 28, 10, 0) }.id
 
-    with_failing_save_for(last_mover_id) do
+    failures = []
+    with_failing_placement_for(last_mover_id, failures) do
       assert_raises(RuntimeError) do
         head.update_with_scope!(
           { recurrence_rule: "monthly", recurrence_until: Date.new(2027, 7, 31) },
@@ -891,6 +892,13 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
         )
       end
     end
+
+    # The stub only fires while the row is parked (series_id cleared) and being
+    # placed back into the series, so the failure happened inside
+    # rematerialize_series! rather than during the earlier follower saves.
+    assert_equal 1, failures.size
+    assert_equal [ nil, head.id ], failures.first.series_id_change
+    assert_not_equal utc(2027, 2, 28, 10, 0), failures.first.starts_at
 
     occurrences.each_with_index do |occurrence, index|
       fresh = Event.find(occurrence.id)
@@ -900,6 +908,8 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
       assert_equal before[index][3], fresh.recurrence_rule
     end
     assert_equal 6, head.reload.series_events.count
+    assert_not failures.first.instance_variable_get(:@allow_recurrence_mutation)
+    assert_not failures.first.instance_variable_get(:@skip_series_order_validation)
   end
 
   test "series order puts uncancelled occurrences first at equal times" do
@@ -1020,6 +1030,24 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_equal utc(2027, 1, 1, 9, 0), head.reload.starts_at
   end
 
+  test "a head-only series can still be re-timed through this and following" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 5)
+    )
+    assert_equal [ head.id ], head.series_events.pluck(:id)
+
+    head.update_with_scope!(
+      { starts_at: utc(2027, 1, 1, 10, 0), ends_at: utc(2027, 1, 1, 11, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal utc(2027, 1, 1, 10, 0), head.reload.starts_at
+    assert_equal utc(2027, 1, 1, 11, 0), head.ends_at
+    assert_equal head.id, head.series_id
+    assert_equal [ head.id ], head.series_events.pluck(:id)
+    assert_not head.instance_variable_get(:@following_reorder)
+  end
+
   test "a single-occurrence description edit of the head still succeeds" do
     head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
     occurrences = head.series_events.to_a
@@ -1050,7 +1078,8 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     editor = occurrences.second
     before = occurrences.map { |occurrence| [ occurrence.series_id, occurrence.starts_at, occurrence.ends_at ] }
 
-    with_failing_save_for(occurrences.third.id) do
+    failures = []
+    with_failing_save_for(occurrences.third.id, failures) do
       assert_raises(RuntimeError) do
         editor.update_with_scope!(
           { starts_at: utc(2027, 1, 9, 9, 0), ends_at: utc(2027, 1, 9, 10, 0) },
@@ -1062,10 +1091,16 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_not editor.instance_variable_get(:@allow_recurrence_mutation)
     assert_not editor.instance_variable_get(:@following_reorder)
     assert_not editor.instance_variable_get(:@skip_series_order_validation)
-    occurrences.each do |occurrence|
-      assert_not occurrence.instance_variable_get(:@allow_recurrence_mutation)
-      assert_not occurrence.instance_variable_get(:@skip_series_order_validation)
-    end
+
+    # The follower that raised is the instance the model loaded internally,
+    # not one of the pre-loaded rows above; its flags must be cleared too.
+    assert_equal 1, failures.size
+    failing = failures.first
+    assert_equal occurrences.third.id, failing.id
+    assert_not_same occurrences.third, failing
+    assert_not failing.instance_variable_get(:@allow_recurrence_mutation)
+    assert_not failing.instance_variable_get(:@skip_series_order_validation)
+    assert_not failing.instance_variable_get(:@following_reorder)
 
     occurrences.each_with_index do |occurrence, index|
       fresh = occurrence.reload
@@ -1088,10 +1123,31 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
   end
 
   private
-    def with_failing_save_for(event_id)
+    def with_failing_save_for(event_id, failures = [])
       original = Event.instance_method(:save!)
       Event.define_method(:save!) do |*args, **kwargs, &block|
-        raise "boom" if id == event_id
+        if id == event_id
+          failures << self
+          raise "boom"
+        end
+
+        original.bind_call(self, *args, **kwargs, &block)
+      end
+      yield
+    ensure
+      Event.define_method(:save!, original)
+    end
+
+    # Fails only when the given row is being placed back into its series after
+    # being parked (series_id cleared by with_parked_series_rows), which only
+    # happens inside rematerialize_series!.
+    def with_failing_placement_for(event_id, failures = [])
+      original = Event.instance_method(:save!)
+      Event.define_method(:save!) do |*args, **kwargs, &block|
+        if id == event_id && series_id_was.nil? && series_id.present?
+          failures << self
+          raise "boom"
+        end
 
         original.bind_call(self, *args, **kwargs, &block)
       end
