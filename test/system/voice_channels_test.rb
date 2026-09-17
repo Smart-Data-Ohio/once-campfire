@@ -367,7 +367,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
 
     refresh_probe_stack
     assert_no_selector "#probe-voice-stack.voice-stack--live"
-    within("#probe-voice-stack") do
+    within("#probe-voice-stack", visible: :all) do
       assert_no_selector "img.voice-stack__avatar"
       assert_selector "[data-huddle-participants-target='count'][hidden]", visible: :all
     end
