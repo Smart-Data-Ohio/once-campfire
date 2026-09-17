@@ -100,6 +100,13 @@ read (membership or grant revoked, message deleted) are omitted.
 Both require `read_messages` (`Agent#has_capability_anywhere?` at the
 endpoint, per-room `Agent#can?` per row and per ack).
 
+Message event rows carry a `pull_request` key: the PR context object when
+the message lives in a pull-request discussion thread, explicit null
+otherwise. The object is `url`, `owner`, `repo`, `number`, `title`,
+`state`, `head_branch`, `base_branch`, `review_decision`, and
+`checks_state` (`checks_state` mirrors the card's check status). See
+[GitHub pull request cards](github.md#pull-request-threads).
+
 ### Rate limit and loop guard
 
 At most 20 deliveries per agent per room per minute, counted from
@@ -120,7 +127,9 @@ mentioning each other stop with both suppressions in the ledger.
 The webhook payload gains an additive
 `agent: { id, name, owner, delivery_id }` key (`owner` is the owner's name
 or null) when posted through event delivery. The legacy bot webhook path
-sends the unchanged payload without that key.
+sends the unchanged payload without that key. Agent deliveries also carry
+the same additive `pull_request` key as polling: the PR context object in
+a pull-request discussion thread, null otherwise.
 
 ## Management
 

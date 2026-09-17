@@ -494,7 +494,75 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "menu li", text: "No events yet."
   end
 
+  test "a mention in a PR thread carries the pull_request object" do
+    thread = discuss_pull_request(number: 12, client_id: "agent-pr-mention")
+    thread.post_message!(
+      creator: users(:david),
+      attributes: { markdown_source: "Hey @[Bender Bot], review this", client_message_id: "agent-pr-mention-1" }
+    )
+
+    get agents_events_url, headers: bearer_headers
+
+    assert_response :success
+    row = response.parsed_body.find { |entry| entry["event_type"] == "mention" }
+    assert row, "expected a mention row in #{response.parsed_body.inspect}"
+    assert_equal thread.messages.last.id, row.dig("message", "id")
+    assert_equal(
+      {
+        "url" => "https://github.com/rails/rails/pull/12",
+        "owner" => "rails",
+        "repo" => "rails",
+        "number" => 12,
+        "title" => "Fix login",
+        "state" => "open",
+        "head_branch" => "shiny",
+        "base_branch" => "main",
+        "review_decision" => "approved",
+        "checks_state" => "passing"
+      },
+      row["pull_request"]
+    )
+  end
+
+  test "mentions elsewhere carry an explicit null pull_request" do
+    ordinary_parent = human_says("ordinary starter", "agent-null-parent")
+    ordinary = ChannelThread.create!(room: @room, creator: users(:david), name: "Ordinary chat", parent_message: ordinary_parent)
+    ordinary.post_message!(
+      creator: users(:david),
+      attributes: { markdown_source: "Hey @[Bender Bot] in a thread", client_message_id: "agent-null-thread" }
+    )
+    human_says("Hey @[Bender Bot] in the room", "agent-null-room")
+
+    get agents_events_url, headers: bearer_headers
+
+    assert_response :success
+    rows = response.parsed_body.select { |entry| entry["event_type"] == "mention" }
+    assert_equal 2, rows.size
+    rows.each do |row|
+      assert row.key?("pull_request"), "expected an explicit null pull_request in #{row.inspect}"
+      assert_nil row["pull_request"]
+    end
+  end
+
   private
+    def discuss_pull_request(number:, client_id:)
+      parent = @room.messages.create!(
+        creator: users(:david),
+        markdown_source: "review https://github.com/rails/rails/pull/#{number}",
+        client_message_id: client_id
+      )
+      pull_request = parent.github_pull_requests.first
+      pull_request.update!(
+        title: "Fix login", state: "open", base_branch: "main", head_branch: "shiny",
+        review_decision: "approved", check_status: "passing",
+        html_url: "https://github.com/rails/rails/pull/#{number}"
+      )
+      thread = ChannelThread.create!(room: @room, creator: users(:david), name: "PR chat", parent_message: parent)
+      ThreadMembership.join!(thread, users(:david))
+      Github::PullRequestThread.create!(pull_request: pull_request, room: @room, channel_thread: thread)
+      thread
+    end
+
     def bearer_headers
       { "Authorization" => "Bearer #{@secret}" }
     end

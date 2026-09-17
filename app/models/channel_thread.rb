@@ -17,6 +17,8 @@ class ChannelThread < ApplicationRecord
   belongs_to :work_owner, class_name: "User", optional: true
 
   has_many :messages, -> { ordered }, foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
+  has_one :pull_request_thread, class_name: "Github::PullRequestThread",
+    foreign_key: :channel_thread_id, dependent: :destroy, inverse_of: :channel_thread
   has_many :memberships, class_name: "ThreadMembership", foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
   has_many :users, through: :memberships
   has_many :work_thread_events, foreign_key: :channel_thread_id, inverse_of: :thread, dependent: :destroy

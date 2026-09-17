@@ -139,6 +139,10 @@ Rails.application.routes.draw do
       resources :github_subscriptions, only: %i[ create update destroy ]
     end
 
+    namespace :github do
+      resources :pull_request_threads, only: :create
+    end
+
     get "@:message_id", to: "rooms#show", as: :at_message
   end
 

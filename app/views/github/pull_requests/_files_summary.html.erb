@@ -1,0 +1,25 @@
+<% files_summary = pull_request.changed_files_summary %>
+<% changed_files = files_summary["files"] %>
+<section class="github-pr-files" aria-label="Files changed">
+  <h2 class="github-pr-files__heading">Files changed</h2>
+  <% if pull_request.changed_files.blank? %>
+    <p class="github-pr-files__loading">Loading files…</p>
+  <% elsif changed_files.empty? %>
+    <p class="github-pr-files__empty">No files changed.</p>
+  <% else %>
+    <ul class="github-pr-files__list">
+      <% changed_files.each do |file| %>
+        <li class="github-pr-files__file">
+          <span class="github-pr-files__path"><%= file["filename"] %></span>
+          <% if file["status"].present? %>
+            <span class="github-pr-files__status"><%= file["status"].to_s.humanize %></span>
+          <% end %>
+          <span class="github-pr-files__counts">+<%= file["additions"].to_i %> −<%= file["deletions"].to_i %></span>
+        </li>
+      <% end %>
+    </ul>
+    <% if (more_files = files_summary["total_count"].to_i - changed_files.size).positive? %>
+      <p class="github-pr-files__more">and <%= more_files %> more on GitHub</p>
+    <% end %>
+  <% end %>
+</section>

@@ -32,6 +32,8 @@ module Github
         fetch_error: nil
       )
 
+      merge_changed_files!(attributes, total_count: data["changed_files"])
+
       @pull_request.update!(attributes)
     rescue FetchError => error
       @pull_request.update!(fetched_at: Time.current, fetch_error: error.message)
@@ -113,6 +115,40 @@ module Github
         end
       rescue FetchError
         nil
+      end
+
+      # Fetches the changed-files summary, but only for PRs with at least
+      # one discussion thread: unmapped PRs never pay for the extra call.
+      # Stores path, additions, deletions, and status per file, capped at
+      # 100 — diff bodies are never stored. A failed files fetch keeps the
+      # previous summary in place and records the existing fetch_error.
+      def merge_changed_files!(attributes, total_count:)
+        return unless @pull_request.pull_request_threads.exists?
+
+        files = fetch_changed_files
+        attributes.merge!(
+          changed_files: {
+            "files" => files,
+            "total_count" => total_count.to_i.positive? ? total_count.to_i : files.size
+          }.to_json,
+          changed_files_fetched_at: Time.current
+        )
+      rescue FetchError => error
+        attributes[:fetch_error] = error.message
+      end
+
+      def fetch_changed_files
+        files = get("pulls/#{@pull_request.number}/files?per_page=100")
+        return [] unless files.is_a?(Array)
+
+        files.first(100).map do |file|
+          {
+            "filename" => file["filename"],
+            "additions" => file["additions"].to_i,
+            "deletions" => file["deletions"].to_i,
+            "status" => file["status"]
+          }
+        end
       end
 
       def fetch_pull_request

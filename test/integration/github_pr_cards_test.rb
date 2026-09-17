@@ -30,6 +30,25 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
     assert_select '.github-pr-card__link[rel="noopener noreferrer"]', count: 1
   end
 
+  test "the card keeps the fetched repository name case" do
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "please review https://github.com/Rails/Rails/pull/124",
+      client_message_id: "card-render-case"
+    )
+    pull_request = message.github_pull_requests.first
+    fill_card(pull_request)
+    pull_request.update!(
+      html_url: "https://github.com/Rails/Rails/pull/124",
+      payload: { "base" => { "repo" => { "full_name" => "Rails/Rails" } } }
+    )
+
+    get room_url(@room)
+
+    assert_response :success
+    assert_select ".github-pr-card__repo", text: "Rails/Rails"
+  end
+
   test "a message without a PR link renders no card" do
     @room.messages.create!(
       creator: users(:david), markdown_source: "just chatting", client_message_id: "card-render-none"

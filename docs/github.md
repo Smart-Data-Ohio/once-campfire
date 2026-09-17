@@ -73,6 +73,46 @@ membership: it appears only while the reviewer is a member of the room the
 event posted into. A login can be linked to only one user. No item is
 recorded for reviewers who are not room members or have no linked login.
 
+## Pull-request threads
+
+A pull request discussed in a room gets one thread that collects its
+conversation and its subscription updates (`github_pull_request_threads`,
+one row per pull request and room). The PR card carries a **Discuss**
+control: when the room already has a thread for that PR it links there,
+otherwise it creates a thread with the card's message as its parent,
+records the mapping, and redirects to it. Creation follows the normal
+thread path — any room member may start one — and concurrent creations
+reuse the single mapping row. Repository identity is case-insensitive:
+links and webhook payloads in any case resolve to the same pull request
+row, which stores its owner and repo lowercased while the card keeps the
+fetched repository name's case.
+
+When a subscription event arrives for a PR the room already discusses,
+the GitHub bot posts into that thread instead of starting a new room
+message, refreshing the thread's activity timestamp. Dedupe rules are
+unchanged, rooms without a PR thread keep today's behaviour, and
+review-request inbox items point at the thread message.
+
+A PR thread renders the PR card above its messages — the same partial,
+with the same live broadcast updates — followed by a **Files changed**
+summary: file path, additions, deletions, and status per file, capped at
+100 files with an "and N more on GitHub" line. The summary comes from
+`GET /repos/{owner}/{repo}/pulls/{number}/files?per_page=100`, fetched
+inside the regular `Github::FetchPullRequestJob` run only for PRs that
+have at least one thread mapping and stored as JSON on the PR row
+(`changed_files`, `changed_files_fetched_at`). Diff bodies are never
+stored. A failed files fetch leaves the previous summary in place and
+records the existing `fetch_error`.
+
+Mentioning an agent in a PR thread gives it the PR context: its delivery
+payload gains a `pull_request` object (`url`, `owner`, `repo`,
+`number`, `title`, `state`, `head_branch`, `base_branch`,
+`review_decision`, `checks_state`), null in other threads. See [AI
+agents](agents.md) for the payload shape.
+
+Visibility follows the same boundary as cards: room membership. A PR
+thread is a normal thread and respects the normal thread rules.
+
 ## Configuration
 
 ### API token (optional, workspace-level)
@@ -91,6 +131,9 @@ Least-privilege scopes, read-only:
 - Classic token (not recommended): `public_repo` for public repositories
   only; `repo` is required for private ones but grants write access, so
   prefer a fine-grained token.
+
+The pull-request threads files call uses the same Pull requests read
+scope, so no additional scopes are needed.
 
 ### Webhook (optional, for live updates)
 

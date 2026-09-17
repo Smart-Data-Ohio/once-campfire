@@ -37,6 +37,10 @@
     <% end %>
   </header>
 
+  <% if (thread_pull_request = github_pr_thread_pull_request(@thread)) %>
+    <%= render "github/pull_requests/thread_header", thread: @thread, pull_request: thread_pull_request %>
+  <% end %>
+
   <% if @thread.parent_message %>
     <article aria-label="Thread starter"><%= render @thread.parent_message %></article>
   <% end %>

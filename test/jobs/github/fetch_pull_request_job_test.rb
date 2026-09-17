@@ -182,7 +182,150 @@ class Github::FetchPullRequestJobTest < ActiveSupport::TestCase
     assert_nil @pull_request.reload.fetch_error
   end
 
+  test "changed files are fetched only for PRs with a thread mapping" do
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    assert_nil @pull_request.reload.changed_files
+    assert_nil @pull_request.changed_files_fetched_at
+    assert_not_requested :get, "https://api.github.com/repos/rails/rails/pulls/123/files?per_page=100"
+  end
+
+  test "mapped PRs store the files summary without diff bodies" do
+    discuss(@pull_request)
+
+    stub_pull_request(state: "open", draft: false, changed_files: 2)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+    stub_changed_files([
+      { "filename" => "app/models/user.rb", "additions" => 10, "deletions" => 2,
+        "status" => "modified", "patch" => "@@ -1 +1 @@\n-old\n+new" },
+      { "filename" => "app/models/new.rb", "additions" => 5, "deletions" => 0,
+        "status" => "added", "patch" => "@@ -0,0 +1 @@\n+new" }
+    ])
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    @pull_request.reload
+    assert_requested :get, "https://api.github.com/repos/rails/rails/pulls/123/files?per_page=100", times: 1
+    assert_equal(
+      { "files" => [
+        { "filename" => "app/models/user.rb", "additions" => 10, "deletions" => 2, "status" => "modified" },
+        { "filename" => "app/models/new.rb", "additions" => 5, "deletions" => 0, "status" => "added" }
+      ], "total_count" => 2 },
+      @pull_request.changed_files_summary
+    )
+    assert_not_includes @pull_request.changed_files, "patch"
+    assert_not_includes @pull_request.changed_files, "@@"
+    assert_not_nil @pull_request.changed_files_fetched_at
+    assert_nil @pull_request.fetch_error
+  end
+
+  test "the files summary caps at 100 files with the PR total" do
+    discuss(@pull_request)
+
+    stub_pull_request(state: "open", draft: false, changed_files: 150)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+    stub_changed_files(
+      101.times.map { |i|
+        { "filename" => "file#{i}.rb", "additions" => 1, "deletions" => 0, "status" => "modified" }
+      }
+    )
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    summary = @pull_request.reload.changed_files_summary
+    assert_equal 100, summary["files"].size
+    assert_equal 150, summary["total_count"]
+  end
+
+  test "a failed files fetch keeps the previous summary and sets fetch_error" do
+    discuss(@pull_request)
+    previous = { "files" => [
+      { "filename" => "old.rb", "additions" => 1, "deletions" => 0, "status" => "modified" }
+    ], "total_count" => 1 }.to_json
+    @pull_request.update!(changed_files: previous, changed_files_fetched_at: 1.day.ago)
+
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+    WebMock.stub_request(:get, "https://api.github.com/repos/rails/rails/pulls/123/files?per_page=100")
+      .to_return(status: 500, body: { message: "boom" }.to_json)
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    @pull_request.reload
+    assert_equal previous, @pull_request.changed_files
+    assert_in_delta 1.day.ago, @pull_request.changed_files_fetched_at, 1.second
+    assert_equal "GitHub returned 500", @pull_request.fetch_error
+    assert_equal "Add shiny things", @pull_request.title
+  end
+
+  test "card updates broadcast the thread header to mapped thread streams" do
+    thread = discuss(@pull_request)
+
+    stub_pull_request(state: "open", draft: false, changed_files: 1)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+    stub_changed_files([
+      { "filename" => "app/models/user.rb", "additions" => 3, "deletions" => 1, "status" => "modified" }
+    ])
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    fragment = Nokogiri::HTML.fragment(thread_stream_broadcasts(thread).join("\n"))
+    header_stream = fragment.at_css(
+      %(turbo-stream[action="replace"][target="#{ActionView::RecordIdentifier.dom_id(thread, :github_pr_header)}"])
+    )
+    assert header_stream, "expected a thread header replace stream, got: #{fragment.to_html}"
+    assert_equal 1, header_stream.css(".github-pr-card").size
+    assert_includes header_stream.at_css(".github-pr-card__title").text, "Add shiny things"
+    assert_includes header_stream.at_css(".github-pr-files__path").text, "app/models/user.rb"
+  end
+
+  test "card updates broadcast nothing without referencing messages or mappings" do
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Turbo::StreamsChannel.expects(:broadcast_replace_to).never
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+  end
+
   private
+    def discuss(pull_request)
+      room = rooms(:designers)
+      parent = room.messages.create!(
+        creator: users(:david),
+        markdown_source: "review https://github.com/#{pull_request.owner}/#{pull_request.repo}/pull/#{pull_request.number}",
+        client_message_id: "fetch-files-#{pull_request.number}"
+      )
+      thread = ChannelThread.create!(room: room, creator: users(:david), name: "PR chat", parent_message: parent)
+      ThreadMembership.join!(thread, users(:david))
+      Github::PullRequestThread.create!(pull_request: pull_request, room: room, channel_thread: thread)
+      thread
+    end
+
+    def stub_changed_files(files)
+      WebMock.stub_request(:get, "https://api.github.com/repos/rails/rails/pulls/123/files?per_page=100")
+        .to_return(status: 200, body: files.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    def thread_stream_broadcasts(thread)
+      ActionCable.server.pubsub.broadcasts([ thread.to_gid_param, :messages ].join(":"))
+        .map { |broadcast| JSON.parse(broadcast) }
+    end
     def stub_pull_request(**overrides)
       body = {
         "number" => 123,
