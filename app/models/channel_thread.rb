@@ -90,7 +90,22 @@ class ChannelThread < ApplicationRecord
   end
 
   def work_owner_active?
-    work_owner.present? && work_owner.active? && !work_owner.bot? && room.memberships.exists?(user_id: work_owner_id)
+    owner = work_owner
+    return false if owner.blank?
+    return agent_work_owner_eligible?(owner) if owner.bot?
+
+    owner.active? && room.memberships.exists?(user_id: owner.id)
+  end
+
+  # A bot user owns work when it has an Agent row that is active, belongs
+  # to the parent room, and may post there. Suspending the agent or
+  # revoking its membership reads exactly like an inactive human owner:
+  # the assignment stays visible as unavailable, with no unassign path.
+  def agent_work_owner_eligible?(user)
+    return false unless room.present? && user&.bot?
+
+    agent = user.agent || Agent.find_by(user_id: user.id)
+    agent.present? && agent.active? && room.memberships.exists?(user_id: user.id) && agent.can?(:post_messages, room)
   end
 
   def auto_archive_at
@@ -207,10 +222,13 @@ class ChannelThread < ApplicationRecord
   # Update work fields in one row-locked transaction and append one durable
   # event for the complete before/after state. The sentinel distinguishes an
   # omitted field from an explicit nil used to clear an assignment or remove
-  # work tracking.
+  # work tracking. When an agent becomes or stops being the owner, its
+  # work_assigned or work_unassigned ledger row is written in the same
+  # transaction; the webhook goes out after, like approval decisions.
   def update_work!(actor:, work_status: UNSET_WORK_VALUE, work_owner_id: UNSET_WORK_VALUE)
     requested_status = work_status
     requested_owner_id = work_owner_id
+    assignment_events = []
 
     self.class.transaction(requires_new: true) do
       with_lock do
@@ -242,6 +260,53 @@ class ChannelThread < ApplicationRecord
             to_status: after_status,
             from_owner: before_owner,
             to_owner: work_owner
+          )
+          assignment_events = record_work_assignment_events!(from_owner: before_owner, to_owner: work_owner, actor: actor)
+        end
+      end
+    end
+
+    deliver_work_assignment_webhooks(assignment_events)
+
+    self
+  end
+
+  # Status update by the owning agent through the Bearer [REDACTED] API. The agent must
+  # already own this work; reassignment, conversion, and untracking stay
+  # human operations. Records a WorkThreadEvent with the agent's user as
+  # actor, so the inbox path is identical to a human owner's update. The
+  # manage_threads grant is checked by the controller, which owns the 403.
+  def update_work_status_by_agent!(agent:, work_status:, note: nil)
+    normalized_status = work_status.to_s.presence
+    unless WORK_STATUSES.include?(normalized_status)
+      errors.add(:work_status, "is invalid")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    normalized_note = note.to_s.presence
+    if normalized_note && normalized_note.length > 500
+      errors.add(:base, "Note is too long (maximum is 500 characters)")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    self.class.transaction(requires_new: true) do
+      with_lock do
+        reload
+        unless work? && work_owner_id == agent.user_id
+          raise ActiveRecord::RecordNotFound, "Work thread is not owned by this agent"
+        end
+
+        before_status = self.work_status
+        if before_status != normalized_status
+          update!(work_status: normalized_status)
+          WorkThreadEvent.create_for_change!(
+            thread: self,
+            actor: agent.user,
+            from_status: before_status,
+            to_status: normalized_status,
+            from_owner: work_owner,
+            to_owner: work_owner,
+            note: normalized_note
           )
         end
       end
@@ -306,7 +371,15 @@ class ChannelThread < ApplicationRecord
 
     def work_owner_must_be_eligible
       owner = User.find_by(id: work_owner_id)
-      return if owner&.active? && !owner.bot? && room&.memberships&.exists?(user_id: owner.id)
+
+      if owner&.bot?
+        return if agent_work_owner_eligible?(owner)
+
+        errors.add :work_owner, "must be an active agent member of the parent room with permission to post"
+        return
+      end
+
+      return if owner&.active? && room&.memberships&.exists?(user_id: owner.id)
 
       errors.add :work_owner, "must be an active human member of the parent room"
     end
@@ -338,6 +411,73 @@ class ChannelThread < ApplicationRecord
       return unless errors.any?
 
       raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    # Ledger rows for the agents affected by an owner change. Runs inside
+    # the caller's locked transaction, on the reloaded row: the previous
+    # agent owner (if any) gets work_unassigned and the new agent owner
+    # (if any) gets work_assigned. Status-only changes notify nobody.
+    # Bots without an Agent row have no ledger to write to and are
+    # skipped. Returns the created rows for webhook delivery after the
+    # transaction commits.
+    def record_work_assignment_events!(from_owner:, to_owner:, actor:)
+      return [] if from_owner&.id == to_owner&.id
+
+      events = []
+      if (previous_agent = agent_for_work_owner(from_owner))
+        events << previous_agent.agent_events.create!(
+          event_type: "work_unassigned",
+          room: room,
+          actor: actor,
+          outcome: "delivered",
+          metadata: {
+            "thread_id" => id,
+            "title" => name,
+            "work_status" => work_status,
+            "assigned_by" => actor&.name
+          }
+        )
+      end
+      if (next_agent = agent_for_work_owner(to_owner))
+        events << next_agent.agent_events.create!(
+          event_type: "work_assigned",
+          room: room,
+          actor: actor,
+          outcome: "delivered",
+          metadata: {
+            "thread_id" => id,
+            "title" => name,
+            "work_status" => work_status,
+            "assigned_by" => actor&.name
+          }
+        )
+      end
+      events
+    end
+
+    def agent_for_work_owner(owner)
+      return unless owner&.bot?
+
+      owner.agent || Agent.find_by(user_id: owner.id)
+    end
+
+    # Posts assignment webhooks after the transaction. Gated on
+    # read_messages like every other delivery: an agent that cannot read
+    # the room learns nothing until it can.
+    def deliver_work_assignment_webhooks(events)
+      events.each do |event|
+        agent = event.agent
+        next unless agent.can?(:read_messages, room)
+
+        webhook = agent.user.webhook
+        next unless webhook
+
+        begin
+          Agent::Delivery.post_work_webhook!(webhook, event, thread: self, agent: agent)
+        rescue StandardError => error
+          Rails.logger.warn "Agent work webhook delivery #{event.id} failed: #{error.class}"
+        end
+      end
     end
 
     def mark_memberships_unread(message)

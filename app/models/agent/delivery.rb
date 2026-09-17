@@ -68,6 +68,43 @@ class Agent::Delivery
       end
     end
 
+    # Shared work payload for event polling, the agent work API, and the
+    # webhook. The url is the workspace permalink path for the thread, the
+    # same form thread push notifications use; agents combine it with
+    # their configured host.
+    def work_payload(thread, assigned_by:)
+      room = thread.room
+      {
+        thread_id: thread.id,
+        room_id: room.id,
+        title: thread.name,
+        status: thread.work_status,
+        url: Rails.application.routes.url_helpers.room_path(room, thread: thread.id),
+        assigned_by: assigned_by
+      }
+    end
+
+    # Posts a work assignment change to the agent's webhook. The payload
+    # carries the same additive agent key as other deliveries plus the
+    # event type (work_assigned or work_unassigned) and a work key with
+    # the thread fields. Response bodies are ignored: an assignment
+    # notification never creates a reply message.
+    def post_work_webhook!(webhook, event, thread:, agent:)
+      uri = URI(webhook.url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = (uri.scheme == "https")
+      http.open_timeout = Webhook::ENDPOINT_TIMEOUT
+      http.read_timeout = Webhook::ENDPOINT_TIMEOUT
+
+      payload = {
+        agent: { id: agent.id, name: agent.user.name, owner: agent.owner&.name, delivery_id: event.id },
+        event_type: event.event_type,
+        work: work_payload(thread, assigned_by: event.metadata.is_a?(Hash) ? event.metadata["assigned_by"] : nil)
+      }.to_json
+
+      http.request(Net::HTTP::Post.new(uri, "Content-Type" => "application/json").tap { |request| request.body = payload })
+    end
+
     # Posts an approval decision to the agent's webhook. The payload carries
     # the same additive agent key as message deliveries plus an approval key
     # with the decision fields. Response bodies are ignored: a decision
