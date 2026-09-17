@@ -30,6 +30,21 @@ class RoomAndBotIconsTest < ActionDispatch::IntegrationTest
     assert_select ".room-header__identity img", count: 0
   end
 
+  test "a deleted workspace icon falls back to the plain marker without raising" do
+    create_workspace_icon(name: "acme")
+    rooms(:pets).update!(icon_name: "acme")
+    WorkspaceIcon.find_by!(name: "acme").destroy
+
+    get user_sidebar_url
+    assert_response :success
+    assert_select "##{dom_id(rooms(:pets), :list)} .sidebar-item__icon:not(.sidebar-item__icon--custom)"
+    assert_select "##{dom_id(rooms(:pets), :list)} img", count: 0
+
+    get room_url(rooms(:pets))
+    assert_response :success
+    assert_select ".room-header__hash", text: "#"
+  end
+
   test "search results show the room icon in place of the arrow marker" do
     rooms(:designers).update!(icon_name: "openai")
     rooms(:designers).messages.create!(body: "Hello world!", client_message_id: "search-icon", creator: users(:david))
