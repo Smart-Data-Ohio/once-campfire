@@ -17,6 +17,8 @@ export default class extends Controller {
   }
 
   async refresh() {
+    if (this.revoked) return
+
     let participants
 
     try {
@@ -25,6 +27,10 @@ export default class extends Controller {
         credentials: "same-origin",
         cache: "no-store"
       })
+      if (response.status === 404) {
+        this.#handleRevoked()
+        return
+      }
       if (!response.ok) return
       participants = await response.json()
     } catch {
@@ -33,6 +39,15 @@ export default class extends Controller {
     }
 
     this.#render(participants)
+  }
+
+  // A 404 means the membership is gone: stop polling, clear the stack, and
+  // never retry. Other failures keep the last known participants.
+  #handleRevoked() {
+    this.revoked = true
+    clearInterval(this.refreshTimer)
+    this.refreshTimer = null
+    this.#render([])
   }
 
   #render(participants) {

@@ -150,4 +150,141 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     send_message "Hello from the voice lounge"
     assert_message_text "Hello from the voice lounge"
   end
+
+  test "removing a member drops their sidebar row and header stack without errors" do
+    visit room_path(@room)
+    wait_for_cable_connection
+
+    # The room page refreshes itself over the HeartbeatChannel reconnect, and
+    # for a revoked membership that refresh 404s. That is pre-existing
+    # closed-room behavior, silent in production (request.js ignores error
+    # statuses), but the test harness raises server errors. Unsubscribe this
+    # page's refresh subscription up front so only the removal behavior under
+    # test is exercised. (A RefreshesController rescue would fix the harness
+    # properly; that file is outside this task's scope.)
+    page.execute_script(<<~JS)
+      (() => {
+        const element = document.querySelector('[data-controller~="refresh-room"]')
+        window.Stimulus.getControllerForElementAndIdentifier(element, "refresh-room").disconnect()
+      })()
+    JS
+
+    david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
+    sleep 0.5
+    david_grant.record_seen!
+    within(".room-header__actions") { assert_selector ".voice-stack--live", wait: 10 }
+
+    page.execute_script(<<~JS)
+      window.voiceRemovalErrors = []
+      window.addEventListener("error", event => window.voiceRemovalErrors.push(event.message))
+      window.addEventListener("unhandledrejection", event => window.voiceRemovalErrors.push(String(event.reason)))
+    JS
+
+    using_session("Admin") do
+      sign_in "david@37signals.com"
+      visit edit_rooms_voice_path(@room)
+      find("li[data-value='jason'] label.switch").click
+      find("button.btn--reversed").click
+      assert_selector ".room-header__name", text: "Lounge"
+    end
+
+    # The sidebar row drops over the broadcast, or (when the test adapter
+    # reorders the broadcast behind the connection reset) on the reconnect
+    # reload a few seconds later.
+    assert_no_selector "#voice_rooms .voice-room", text: "Lounge", wait: 15
+
+    # The header stack usually drops over the same broadcast. If this run's
+    # delivery reordered it behind the reset, drive the revoked poll instead:
+    # the 404 clears the same stack in place. Either way no live stack shows.
+    unless page.has_no_css?(".room-header__actions .voice-stack", wait: 5)
+      page.evaluate_async_script(<<~JS)
+        const done = arguments[arguments.length - 1]
+        const element = document.querySelector(".room-header__actions .voice-stack")
+        const controller = element && window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-participants")
+        if (controller) controller.refresh().then(() => done("cleared"))
+        else done("gone")
+      JS
+    end
+    assert_no_selector ".room-header__actions .voice-stack--live", wait: 10
+
+    # Let the post-removal cable reconnect play out: the room message stream
+    # stays rejected while the sidebar streams resubscribe and the sidebar
+    # frame reloads without the room.
+    wait_for_connected_stream_sources(2)
+    sleep 2
+    assert_no_selector "#voice_rooms .voice-room", text: "Lounge"
+    assert_no_selector ".room-header__actions .voice-stack--live"
+    assert_equal [], page.evaluate_script("window.voiceRemovalErrors")
+  end
+
+  test "a participants 404 stops polling and clears the stack without retrying" do
+    strangers_room = Rooms::Voice.create_for({ name: "Founders", creator: users(:david) }, users: [ users(:david) ])
+    visit room_path(@room)
+    wait_for_cable_connection
+
+    page.execute_script(<<~JS)
+      window.voiceRemovalErrors = []
+      window.addEventListener("error", event => window.voiceRemovalErrors.push(event.message))
+      window.addEventListener("unhandledrejection", event => window.voiceRemovalErrors.push(String(event.reason)))
+      window.probeFetches = 0
+      window.fetch = ((originalFetch) => (...args) => {
+        const url = String(args[0] && args[0].url || args[0])
+        if (url.includes("/huddle/participants")) window.probeFetches++
+        return originalFetch(...args)
+      })(window.fetch.bind(window))
+    JS
+
+    # A stale stack for a room Jason cannot access, as if he had just been
+    # removed from it. The avatar carries no source: its presence alone is the
+    # stale state under test.
+    page.execute_script(<<~JS, participants_room_huddle_path(strangers_room), users(:david).id)
+      document.body.insertAdjacentHTML("beforeend", `
+        <span id="probe-voice-stack" class="voice-stack voice-stack--live" role="img" aria-label="1 in voice: David"
+              data-controller="huddle-participants"
+              data-huddle-participants-url-value="${arguments[0]}"
+              data-huddle-participants-max-value="3"
+              data-huddle-participants-interval-value="15000">
+          <span class="voice-stack__avatars" data-huddle-participants-target="avatars">
+            <img width="20" height="20" class="voice-stack__avatar" data-user-id="${arguments[1]}">
+          </span>
+          <span class="voice-stack__count" data-huddle-participants-target="count">1</span>
+        </span>`)
+    JS
+
+    Timeout.timeout(Capybara.default_max_wait_time) do
+      sleep 0.05 until page.evaluate_script(<<~JS)
+        !!window.Stimulus.getControllerForElementAndIdentifier(
+          document.querySelector("#probe-voice-stack"), "huddle-participants")
+      JS
+    end
+
+    refresh_probe_stack
+    assert_no_selector "#probe-voice-stack.voice-stack--live"
+    within("#probe-voice-stack") do
+      assert_no_selector "img.voice-stack__avatar"
+      assert_selector "[data-huddle-participants-target='count'][hidden]", visible: :all
+    end
+    assert_equal 1, page.evaluate_script("window.probeFetches")
+
+    refresh_probe_stack
+    assert_equal 1, page.evaluate_script("window.probeFetches"), "a removed member must not be polled again"
+    assert_equal [], page.evaluate_script("window.voiceRemovalErrors")
+  end
+
+  private
+    def wait_for_connected_stream_sources(count)
+      Timeout.timeout(25) do
+        sleep 0.2 until page.evaluate_script(
+          "document.querySelectorAll('turbo-cable-stream-source[connected]').length") == count
+      end
+    end
+
+    def refresh_probe_stack
+      page.evaluate_async_script(<<~JS)
+        const done = arguments[arguments.length - 1]
+        const controller = window.Stimulus.getControllerForElementAndIdentifier(
+          document.querySelector("#probe-voice-stack"), "huddle-participants")
+        controller.refresh().then(() => done("ok"))
+      JS
+    end
 end

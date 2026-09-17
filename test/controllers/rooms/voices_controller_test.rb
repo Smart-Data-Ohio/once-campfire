@@ -64,6 +64,27 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "New Name", room.reload.name
   end
 
+  test "removing a member tells them to drop the sidebar row and header stack" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    put rooms_voice_url(room), params: {
+      room: { name: "Lounge" }, user_ids: [ users(:david).id ]
+    }
+    assert_redirected_to room_url(room)
+
+    removed_streams = capture_turbo_stream_broadcasts([ users(:jason), :rooms ])
+    assert_equal [ "remove", "remove" ], removed_streams.map { |stream| stream["action"] }
+    # Header first: the sidebar row also drops on the reconnect reload, but
+    # nothing else refreshes the header stack.
+    assert_equal [
+      ActionView::RecordIdentifier.dom_id(room, :header_voice_participants),
+      ActionView::RecordIdentifier.dom_id(room, :list)
+    ], removed_streams.map { |stream| stream["target"] }
+
+    remaining_streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+    assert_equal [ "replace" ], remaining_streams.map { |stream| stream["action"] }
+  end
+
   test "only admins or creators can update" do
     room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jz) ])
     sign_in :jz
