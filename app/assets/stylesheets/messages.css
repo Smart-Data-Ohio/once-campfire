@@ -767,6 +767,12 @@ img.message__attachment {
   }
 }
 
+/* Emoji-only messages render large; em-sized icons scale along. */
+.message--emoji:not(:has(.composer--edit)) .message__body-content .markdown-body {
+  font-size: 2.4em;
+  line-height: 1.4;
+}
+
 .message.search-highlight {
   .message__body-content {
     border: 2px solid var(--color-text);
