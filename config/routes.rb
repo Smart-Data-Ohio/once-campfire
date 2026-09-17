@@ -106,6 +106,7 @@ Rails.application.routes.draw do
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
+      resources :github_subscriptions, only: %i[ create update destroy ]
     end
 
     get "@:message_id", to: "rooms#show", as: :at_message

@@ -36,6 +36,8 @@ module ActivityItemsHelper
       "Incoming huddle"
     when "huddle_missed"
       "Missed huddle"
+    when "pr_review_request"
+      "Review requested"
     else
       item.event_type.humanize
     end

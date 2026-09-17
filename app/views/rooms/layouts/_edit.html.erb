@@ -10,6 +10,8 @@
   <%= yield %>
 </section>
 
+<%= render "rooms/github_subscriptions/section", room: room %>
+
 <% if Current.user.can_administer?(@room) %>
   <section class="panel txt-align-center">
     <%= button_to_delete_room room %>
