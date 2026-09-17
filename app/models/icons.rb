@@ -160,8 +160,13 @@ module Icons
         @custom_cache_at = now
       end
 
+      # One query for both halves of the stamp: row count plus the newest
+      # update time. Either half changes on upload, rename, or delete.
       def custom_stamp
-        [ WorkspaceIcon.count, WorkspaceIcon.maximum(:updated_at) ]
+        count, newest = WorkspaceIcon.pick(
+          Arel.sql("COUNT(*)"), Arel.sql("MAX(#{WorkspaceIcon.connection.quote_column_name("updated_at")})")
+        )
+        [ count, newest ]
       rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
         :unavailable
       end
