@@ -84,4 +84,107 @@ class Rooms::StageViewTest < ActionDispatch::IntegrationTest
     assert_match(/Invite to speak/, response.body)
     assert_match(/Make host/, response.body)
   end
+
+  test "the header Live badge renders only while live" do
+    sign_in :kevin
+    get room_url(@room)
+
+    assert_response :success
+    assert_no_match(/Live: David/, response.body)
+
+    Stream.create!(room: @room, membership: @room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Live: David/, response.body)
+    assert_match(/data-live-stream-presenter-name="David"/, response.body)
+  end
+
+  test "the sidebar live dot renders only while live" do
+    sign_in :kevin
+    get user_sidebar_url
+
+    assert_response :success
+    assert_no_match(/stage-live-dot__pip/, response.body)
+
+    Stream.create!(room: @room, membership: @room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    get user_sidebar_url
+
+    assert_response :success
+    assert_match(/stage-live-dot__pip/, response.body)
+  end
+
+  test "the Go live form renders for hosts and speakers" do
+    sign_in :david
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Stream quality/, response.body)
+    assert_match(/Go live/, response.body)
+
+    @room.memberships.find_by!(user: users(:kevin)).change_stage_role!("speaker")
+
+    sign_in :kevin
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Stream quality/, response.body)
+    assert_match(/Go live/, response.body)
+  end
+
+  test "the Go live form renders for no listener and never while live" do
+    sign_in :kevin
+    get room_url(@room)
+
+    assert_response :success
+    assert_no_match(/Go live/, response.body)
+
+    Stream.create!(room: @room, membership: @room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+
+    sign_in :david
+    get room_url(@room)
+
+    assert_response :success
+    assert_no_match(/Go live/, response.body)
+    assert_match(/Live: David/, response.body)
+  end
+
+  test "Stop stream renders for the presenter but not for listeners" do
+    Stream.create!(room: @room, membership: @room.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+
+    sign_in :david
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Stop stream/, response.body)
+
+    sign_in :kevin
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Live: David/, response.body)
+    assert_no_match(/Stop stream/, response.body)
+  end
+
+  test "Stop stream renders for hosts and the presenting speaker" do
+    speaker = @room.memberships.find_by!(user: users(:kevin))
+    speaker.change_stage_role!("speaker")
+    Stream.create!(room: @room, membership: speaker, user: users(:kevin), quality: "1080p15")
+
+    sign_in :kevin
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Stop stream/, response.body)
+
+    sign_in :david
+    get room_url(@room)
+
+    assert_response :success
+    assert_match(/Stop stream/, response.body)
+  end
 end

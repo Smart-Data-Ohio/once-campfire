@@ -21,8 +21,10 @@ class Stream < ApplicationRecord
 
   scope :live, -> { where(ended_at: nil) }
 
-  after_create_commit :broadcast_stream_changed
-  after_update_commit :broadcast_stream_changed, if: :saved_change_to_ended_at?
+  # Create and update need distinct callback filters: registering the same
+  # method twice on the commit chain keeps only one registration.
+  after_create_commit :broadcast_stream_started
+  after_update_commit :broadcast_stream_ended, if: :saved_change_to_ended_at?
 
   class << self
     # Ends the membership's live stream in its room, if any. Called from the
@@ -60,6 +62,14 @@ class Stream < ApplicationRecord
   private
     def set_started_at
       self.started_at ||= Time.current
+    end
+
+    def broadcast_stream_started
+      broadcast_stream_changed
+    end
+
+    def broadcast_stream_ended
+      broadcast_stream_changed
     end
 
     # The header badge is identical for every viewer, so it goes to the
