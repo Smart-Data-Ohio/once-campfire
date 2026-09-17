@@ -209,3 +209,80 @@
   padding: 0.5rem 0.25rem;
   text-align: center;
 }
+
+/* Streaming: a Live badge in the room header, a dot in the sidebar row, and
+   the Go live / Stop stream controls in the stage panel. */
+.stage-live__badge {
+  align-items: center;
+  background: color-mix(in srgb, var(--color-negative) 14%, transparent);
+  border-radius: 999px;
+  color: var(--color-negative);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  gap: 0.35rem;
+  line-height: 1;
+  max-inline-size: 12rem;
+  overflow: hidden;
+  padding: 0.4rem 0.6rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-live__pip {
+  background: var(--color-negative);
+  block-size: 0.5rem;
+  border-radius: 50%;
+  flex: none;
+  inline-size: 0.5rem;
+}
+
+/* The wrapper stays in the page while no stream is live so the broadcast
+   always has a replace target; it takes no space until it holds a badge. */
+.stage-live:not(:has(.stage-live__badge)),
+.stage-live-dot:not(:has(.stage-live-dot__pip)) {
+  display: none;
+}
+
+.stage-live-dot {
+  display: inline-flex;
+}
+
+.stage-live-dot__pip {
+  background: var(--color-negative);
+  block-size: 0.5rem;
+  border-radius: 50%;
+  display: inline-block;
+  inline-size: 0.5rem;
+}
+
+.stage-panel__live {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+}
+
+.stage-panel__note--live {
+  color: var(--color-negative);
+  font-weight: 700;
+}
+
+.stage-panel__stream-form {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.stage-panel__stream-quality {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.stage-panel__stream-quality label {
+  color: var(--workspace-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

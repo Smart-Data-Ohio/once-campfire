@@ -50,6 +50,7 @@
 
     <% stage_membership = room.stage? ? room.memberships.find_by(user: Current.user) : nil %>
     <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
+      <%= render "rooms/stage/live_badge", room: room if room.stage? %>
       <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
             aria: { label: "View shared screen" }, title: "View shared screen",
             data: {

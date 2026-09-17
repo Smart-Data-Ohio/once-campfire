@@ -1,0 +1,10 @@
+<% stream = room.live_stream %>
+<%= tag.span id: dom_id(room, :stage_live_badge), class: "stage-live",
+      data: { live_stream_badge: true, room_id: room.id, live_stream_presenter_name: stream&.user&.name } do %>
+  <% if stream %>
+    <span class="stage-live__badge" role="status">
+      <span class="stage-live__pip" aria-hidden="true"></span>
+      Live: <%= stream.user.name %>
+    </span>
+  <% end %>
+<% end %>
