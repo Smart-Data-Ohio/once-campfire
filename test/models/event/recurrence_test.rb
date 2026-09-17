@@ -222,6 +222,30 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_nil single.reload.recurrence_rule
   end
 
+  test "recurrence fields cannot be changed by injecting the guard flag" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+
+    assert_raises(ActiveModel::UnknownAttributeError) do
+      head.update!(allow_recurrence_mutation: true, recurrence_rule: "daily")
+    end
+    assert_equal "weekly", head.reload.recurrence_rule
+  end
+
+  test "the recurrence guard does not persist past a scoped update" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+    head.update_with_scope!({ title: "Renamed" }, scope: "this_and_following", actor: @organizer)
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      head.update!(recurrence_rule: "daily")
+    end
+    assert_match(/first event/, error.record.errors[:recurrence_rule].join)
+    assert_equal "weekly", head.reload.recurrence_rule
+  end
+
   test "a series sends one invitation per invitee, attached to the first event" do
     head = create_series!(rule: "weekly", until_date: Date.current + 1 + 14)
     occurrences = head.series_events.to_a
@@ -371,22 +395,116 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_equal utc(2027, 2, 3, 9, 0), occurrences.fourth.reload.starts_at
   end
 
-  test "moving an occurrence earlier never touches previous occurrences" do
+  test "moving an occurrence onto its head's slot is rejected in either scope" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrence = head.series_events.second
+
+    %w[ this_event this_and_following ].each do |scope|
+      error = assert_raises(ActiveRecord::RecordInvalid) do
+        occurrence.update_with_scope!(
+          { starts_at: utc(2027, 1, 1, 9, 0), ends_at: utc(2027, 1, 1, 10, 0) },
+          scope:, actor: @organizer
+        )
+      end
+      assert_equal [ "must stay between the neighbouring occurrences in its series" ], error.record.errors[:starts_at]
+      assert_equal utc(2027, 1, 8, 9, 0), occurrence.reload.starts_at
+    end
+  end
+
+  test "moving an occurrence before its previous sibling is rejected in either scope" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    before = head.series_events.map(&:starts_at)
+    occurrence = head.series_events.second
+
+    %w[ this_event this_and_following ].each do |scope|
+      error = assert_raises(ActiveRecord::RecordInvalid) do
+        occurrence.update_with_scope!(
+          { starts_at: utc(2026, 12, 31, 9, 0), ends_at: utc(2026, 12, 31, 10, 0) },
+          scope:, actor: @organizer
+        )
+      end
+      assert_equal [ "must stay between the neighbouring occurrences in its series" ], error.record.errors[:starts_at]
+    end
+
+    assert_equal before, head.reload.series_events.map(&:starts_at)
+  end
+
+  test "a single-occurrence edit past the next sibling is rejected but this and following allows it" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrence = head.series_events.second
+
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      occurrence.update_with_scope!(
+        { starts_at: utc(2027, 1, 16, 9, 0), ends_at: utc(2027, 1, 16, 10, 0) },
+        scope: "this_event", actor: @organizer
+      )
+    end
+    assert_equal [ "must stay between the neighbouring occurrences in its series" ], error.record.errors[:starts_at]
+    assert_equal utc(2027, 1, 8, 9, 0), occurrence.reload.starts_at
+
+    occurrence.update_with_scope!(
+      { starts_at: utc(2027, 1, 16, 9, 0), ends_at: utc(2027, 1, 16, 10, 0) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    assert_equal [ utc(2027, 1, 1, 9, 0), utc(2027, 1, 16, 9, 0), utc(2027, 1, 23, 9, 0), utc(2027, 1, 30, 9, 0) ],
+      head.reload.series_events.map(&:starts_at)
+  end
+
+  test "a re-time between the neighbouring occurrences still passes" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
+    )
+    occurrence = head.series_events.second
+
+    occurrence.update_with_scope!(
+      { starts_at: utc(2027, 1, 9, 9, 0), ends_at: utc(2027, 1, 9, 10, 0) },
+      scope: "this_event", actor: @organizer
+    )
+
+    assert_equal [ utc(2027, 1, 1, 9, 0), utc(2027, 1, 9, 9, 0), utc(2027, 1, 15, 9, 0), utc(2027, 1, 22, 9, 0) ],
+      head.reload.series_events.map(&:starts_at)
+  end
+
+  test "moving an occurrence earlier with this and following never touches previous occurrences" do
     head = create_series!(
       starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 22)
     )
     occurrences = head.series_events.to_a
     assert_equal 4, occurrences.size
 
-    occurrences.second.update_with_scope!(
-      { starts_at: utc(2026, 12, 28, 9, 0), ends_at: utc(2026, 12, 28, 10, 0) },
+    occurrences.third.update_with_scope!(
+      { starts_at: utc(2027, 1, 10, 9, 0), ends_at: utc(2027, 1, 10, 10, 0) },
       scope: "this_and_following", actor: @organizer
     )
 
-    assert_equal utc(2027, 1, 1, 9, 0), occurrences.first.reload.starts_at
-    assert_equal utc(2026, 12, 28, 9, 0), occurrences.second.reload.starts_at
-    assert_equal utc(2027, 1, 4, 9, 0), occurrences.third.reload.starts_at
-    assert_equal utc(2027, 1, 11, 9, 0), occurrences.fourth.reload.starts_at
+    assert_equal [ utc(2027, 1, 1, 9, 0), utc(2027, 1, 8, 9, 0), utc(2027, 1, 10, 9, 0), utc(2027, 1, 17, 9, 0) ],
+      head.reload.series_events.map(&:starts_at)
+  end
+
+  test "series slots are unique among uncancelled occurrences" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+
+    index = ActiveRecord::Base.connection.indexes(:events).find { |candidate| candidate.name == "index_events_on_series_slot" }
+    assert index, "expected the index_events_on_series_slot index to exist"
+    assert index.unique
+
+    taken = head.series_events.second
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      @room.events.create!(
+        organizer: @organizer, title: "Duplicate slot",
+        starts_at: taken.starts_at, ends_at: taken.ends_at, time_zone: "UTC",
+        series_id: head.id, recurrence_rule: "weekly", recurrence_until: head.recurrence_until
+      )
+    end
   end
 
   test "a starts-only change preserves later durations and an ends-only change extends them" do
@@ -589,6 +707,28 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_not Event.exists?(occurrences.fourth.id)
   end
 
+  test "a declined attendee gets no cancellation item when an excess occurrence is cancelled" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 26)
+    )
+    occurrences = head.series_events.to_a
+    assert_equal 4, occurrences.size
+    head.respond!(users(:jason), "going")
+    occurrences.second.respond!(users(:jason), "declined")
+    occurrences.third.respond!(users(:jz), "going")
+    occurrences.third.respond!(users(:kevin), "declined")
+
+    occurrences.first.update_with_scope!(
+      { recurrence_rule: "daily", recurrence_until: Date.new(2026, 10, 6) },
+      scope: "this_and_following", actor: @organizer
+    )
+
+    excess = Event.find(occurrences.third.id)
+    assert_predicate excess, :cancelled?
+    assert_equal "event_cancelled", ActivityItem.find_by!(user: users(:jz), source: excess).event_type
+    assert_not ActivityItem.exists?(user: users(:kevin), source: excess, event_type: "event_cancelled")
+  end
+
   test "a rule change with a time change re-times kept occurrences by the same offset" do
     head = create_series!(
       starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
@@ -647,6 +787,49 @@ class Event::RecurrenceTest < ActiveSupport::TestCase
     assert_equal [ occurrences.first.id, occurrences.second.id ], head.reload.series_events.ids
     assert_not Event.exists?(occurrences.third.id)
     assert_not Event.exists?(occurrences.fourth.id)
+  end
+
+  test "a cancelled occurrence keeps its slot when the series shrinks" do
+    head = create_series!(
+      starts_at: utc(2026, 10, 5, 9, 0), rule: "weekly", until_date: Date.new(2026, 10, 19)
+    )
+    occurrences = head.series_events.to_a
+    head.respond!(users(:jason), "going")
+    occurrences.third.respond!(users(:jason), "declined")
+    occurrences.third.respond!(users(:jz), "going")
+    occurrences.second.cancel_with_scope!(scope: "this_event", actor: @organizer)
+
+    occurrences.first.update_with_scope!(
+      { recurrence_until: Date.new(2026, 10, 12) }, scope: "this_and_following", actor: @organizer
+    )
+
+    kept = Event.find(occurrences.second.id)
+    assert_predicate kept, :cancelled?
+    assert_equal utc(2026, 10, 12, 9, 0), kept.starts_at
+
+    excess = Event.find(occurrences.third.id)
+    assert_predicate excess, :cancelled?
+    assert_equal "event_cancelled", ActivityItem.find_by!(user: users(:jz), source: excess).event_type
+
+    starts = head.reload.series_events.map(&:starts_at)
+    assert_equal starts.uniq, starts
+  end
+
+  test "series order puts uncancelled occurrences first at equal times" do
+    head = create_series!(
+      starts_at: utc(2027, 1, 1, 9, 0), rule: "weekly", until_date: Date.new(2027, 1, 15)
+    )
+    occurrences = head.series_events.to_a
+    occurrences.second.cancel_with_scope!(scope: "this_event", actor: @organizer)
+
+    occurrences.third.update_with_scope!(
+      { starts_at: utc(2027, 1, 8, 9, 0), ends_at: utc(2027, 1, 8, 10, 0) },
+      scope: "this_event", actor: @organizer
+    )
+
+    current = head.reload.series_events.to_a
+    assert_equal [ occurrences.first.id, occurrences.third.id, occurrences.second.id ], current.map(&:id)
+    assert_equal occurrences.third.id, occurrences.first.next_occurrence.id
   end
 
   test "a rule change beyond the cap is rejected and leaves the series alone" do
