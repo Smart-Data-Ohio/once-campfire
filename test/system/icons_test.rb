@@ -27,6 +27,10 @@ class IconsTest < ApplicationSystemTestCase
     sleep 0.5
     assert_no_selector "suggestion-option"
 
+    editor.set "http://"
+    sleep 0.5
+    assert_no_selector "suggestion-option"
+
     editor.set ":open"
     assert_selector "suggestion-option", text: "OpenAI"
     editor.send_keys :enter
