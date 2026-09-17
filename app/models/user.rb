@@ -27,6 +27,7 @@ class User < ApplicationRecord
   normalizes :github_login, with: ->(login) { login.to_s.strip.downcase.presence }
 
   validates :github_login, uniqueness: { case_sensitive: false, message: "is already linked to another user" }, allow_nil: true
+  validate :inbox_preferences_must_be_boolean
 
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
@@ -43,6 +44,24 @@ class User < ApplicationRecord
 
   scope :ordered, -> { order("LOWER(name)") }
   scope :filtered_by, ->(query) { where("name like ?", "%#{query}%") }
+
+  # Per-integration inbox switches. Missing keys read as true so existing
+  # users keep today's behavior; only explicit false suppresses an item.
+  def inbox_preferences
+    User::InboxPreferences.new(self[:inbox_preferences])
+  end
+
+  def inbox_preferences=(value)
+    hash = value.is_a?(ActionController::Parameters) ? value.to_unsafe_h : value
+    unless hash.nil? || hash.is_a?(Hash)
+      self[:inbox_preferences] = value
+      return
+    end
+
+    existing = self[:inbox_preferences]
+    existing = {} unless existing.is_a?(Hash)
+    self[:inbox_preferences] = existing.merge((hash || {}).stringify_keys.slice(*User::InboxPreferences::KEYS))
+  end
 
   def initials
     name.scan(/\b\w/).join
@@ -78,6 +97,20 @@ class User < ApplicationRecord
   end
 
   private
+    def inbox_preferences_must_be_boolean
+      raw = self[:inbox_preferences]
+      unless raw.nil? || raw.is_a?(Hash)
+        errors.add(:inbox_preferences, "is invalid")
+        return
+      end
+
+      (raw || {}).each do |key, value|
+        unless User::InboxPreferences.boolean_value?(value)
+          errors.add(:"inbox_preferences.#{key}", "must be true or false")
+        end
+      end
+    end
+
     def grant_membership_to_open_rooms
       Membership.insert_all(Rooms::Open.pluck(:id).collect { |room_id| { room_id: room_id, user_id: id } })
     end

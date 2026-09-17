@@ -104,7 +104,7 @@ Done for the first slice when one Drive workflow and one selected Smart App work
 
 ### 7. Unified activity inbox
 
-The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Other agent and GitHub sources follow their integrations.
+The first messaging and human-work slice is live, with event invitations, updates, cancellations, and reminders as inbox sources; PR review requests already land in the reviewer's inbox and agent approval requests (`agent_approval_request`) already land in each decider's inbox. Per-channel involvement controls, per-integration notification switches, thread-update grouping, and type filters have shipped as well. Other agent and GitHub sources follow their integrations.
 
 - One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations.
 - Clear unread/read and handled states, links to the source conversation or object, and filters that make the next useful action easy to find.

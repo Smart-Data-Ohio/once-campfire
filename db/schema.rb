@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022902) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -73,6 +73,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+    t.index ["user_id", "updated_at"], name: "index_activity_items_on_user_id_and_updated_at"
   end
 
   create_table "agent_approvals", force: :cascade do |t|
@@ -447,6 +448,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.datetime "created_at", null: false
     t.string "email_address"
     t.string "github_login"
+    t.json "inbox_preferences", default: {}
     t.string "name", null: false
     t.string "password_digest"
     t.integer "role", default: 0, null: false

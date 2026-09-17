@@ -1,5 +1,5 @@
 <% if item.event_type == "agent_approval_request" && item.source.is_a?(AgentApproval) %>
-  <%= render "activity_items/agent_approval_request", item: item, approval: item.source, filter: filter %>
+  <%= render "activity_items/agent_approval_request", item: item, approval: item.source, filter: filter, type_filter: type_filter %>
 <% else %>
 <article id="<%= dom_id(item) %>" class="activity-item activity-item--<%= item.state %>">
   <div class="activity-item__meta">
@@ -23,15 +23,15 @@
     <% end %>
 
     <% if item.unread? %>
-      <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% else %>
-      <%= button_to "Mark unread", read_activity_item_path(item), method: :patch, params: { state: "unread", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark unread", read_activity_item_path(item), method: :patch, params: { state: "unread", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% end %>
 
     <% if item.handled? %>
-      <%= button_to "Clear handled", handled_activity_item_path(item), method: :patch, params: { state: "unhandled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Clear handled", handled_activity_item_path(item), method: :patch, params: { state: "unhandled", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% else %>
-      <%= button_to "Mark handled", handled_activity_item_path(item), method: :patch, params: { state: "handled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark handled", handled_activity_item_path(item), method: :patch, params: { state: "handled", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% end %>
   </div>
 </article>

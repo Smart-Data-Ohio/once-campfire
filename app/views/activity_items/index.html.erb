@@ -18,7 +18,7 @@
 
 <section class="activity-inbox__page" aria-labelledby="activity-inbox-title"
          data-controller="activity-inbox"
-         data-activity-inbox-url-value="<%= activity_items_path(status: @filter, before: params[:before], format: :turbo_stream) %>">
+         data-activity-inbox-url-value="<%= activity_items_path(status: @filter, type: @type_filter, before: params[:before], format: :turbo_stream) %>">
   <header class="activity-inbox__header">
     <div>
       <p class="activity-inbox__kicker">Your conversations</p>
@@ -29,15 +29,21 @@
 
   <nav class="activity-inbox__filters" aria-label="Activity filters">
     <% ActivityItem::FILTERS.each do |filter| %>
-      <%= link_to filter.capitalize, activity_items_path(status: filter), class: [ "btn", "activity-inbox__filter", ("is-active" if @filter == filter) ], aria: { current: ("page" if @filter == filter) } %>
+      <%= link_to filter.capitalize, activity_items_path(status: filter, type: @type_filter), class: [ "btn", "activity-inbox__filter", ("is-active" if @filter == filter) ], aria: { current: ("page" if @filter == filter) } %>
+    <% end %>
+  </nav>
+
+  <nav class="activity-inbox__filters" aria-label="Activity type filters">
+    <% ActivityItem::TYPE_FILTERS.each do |type_filter, label| %>
+      <%= link_to label, activity_items_path(status: @filter, type: type_filter), class: [ "btn", "activity-inbox__filter", ("is-active" if @type_filter == type_filter) ], aria: { current: ("page" if @type_filter == type_filter) } %>
     <% end %>
   </nav>
 
   <div id="activity-items-list" class="activity-inbox__list" aria-live="polite">
-    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter %>
+    <%= render "activity_items/list", activity_items: @activity_items, filter: @filter, type_filter: @type_filter %>
   </div>
 
   <div id="activity-items-pagination">
-    <%= render "activity_items/pagination", filter: @filter, next_cursor: @next_cursor %>
+    <%= render "activity_items/pagination", filter: @filter, type_filter: @type_filter, next_cursor: @next_cursor %>
   </div>
 </section>
