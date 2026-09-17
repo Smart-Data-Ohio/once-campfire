@@ -23,11 +23,16 @@ class Rooms::StagesController < RoomsController
   end
 
   def edit
-    selected_user_ids = @room.users.pluck(:id)
-    @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    set_member_lists
   end
 
   def update
+    if removed_sole_host = sole_host_removed_by_update
+      set_member_lists
+      @room.errors.add(:base, "Promote another host before removing #{removed_sole_host.user.name}")
+      return render :edit, status: :unprocessable_entity
+    end
+
     @room.update! room_params
     @room.memberships.revise(granted: grantees, revoked: revokees)
     @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
@@ -41,6 +46,27 @@ class Rooms::StagesController < RoomsController
     # open/closed/voice namespaces keep stage rooms out of reach in return.
     def room_scope
       Current.user.rooms.where(type: "Rooms::Stage")
+    end
+
+    def set_member_lists
+      selected_user_ids = @room.users.pluck(:id)
+      @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    end
+
+    # Removing the last host while members remain strands the room: the rest
+    # get 403 from role management while non-member administrators get 404,
+    # leaving no recovery path. Returns the removed host when the revised
+    # membership set would leave members but no host. Emptying the room
+    # entirely stays allowed, as does removing a host while another remains.
+    def sole_host_removed_by_update
+      remaining_ids = grantee_ids.map(&:to_i)
+      return if remaining_ids.empty?
+
+      hosts = @room.memberships.includes(:user).where(stage_role: :host).to_a
+      removed_hosts = hosts.reject { |membership| remaining_ids.include?(membership.user_id) }
+      return if removed_hosts.empty?
+
+      removed_hosts.first unless hosts.any? { |membership| remaining_ids.include?(membership.user_id) }
     end
 
     def grantees

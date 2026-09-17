@@ -120,8 +120,23 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Town Hall", room.reload.name
   end
 
-  test "remove yourself" do
+  test "the sole host cannot remove themselves while others remain" do
     room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    assert_no_difference -> { users(:david).rooms.count } do
+      put rooms_stage_url(room, params: { room: { name: "New Name" }, user_ids: [ users(:jason).id ] })
+
+      assert_response :unprocessable_entity
+      assert_match "Promote another host before removing David", response.body
+    end
+
+    assert_equal "Town Hall", room.reload.name
+    assert_equal [ users(:david).id, users(:jason).id ].sort, room.reload.user_ids.sort
+  end
+
+  test "a host removes themselves once another host exists" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    room.memberships.find_by!(user: users(:jason)).change_stage_role!("host")
 
     assert_difference -> { users(:david).rooms.count }, -1 do
       put rooms_stage_url(room, params: { room: { name: "Town Hall" }, user_ids: [ users(:jason).id ] })
@@ -130,6 +145,15 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
       follow_redirect!
       assert_redirected_to root_url
     end
+  end
+
+  test "removing everyone including the last host empties the room" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    put rooms_stage_url(room, params: { room: { name: "Town Hall" }, user_ids: [] })
+
+    assert_redirected_to room_url(room)
+    assert_empty room.reload.users
   end
 
   test "non-members cannot see the room page or its messages" do
