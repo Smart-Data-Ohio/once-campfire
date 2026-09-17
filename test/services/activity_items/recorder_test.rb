@@ -239,12 +239,19 @@ class ActivityItems::RecorderTest < ActiveSupport::TestCase
     assert_not ActivityItem.exists?(user: @recipient)
 
     WorkThreadEvent.create!(
+      thread:, actor: users(:bender), event_type: "work_update",
+      from_status: "planned", to_status: "in_progress"
+    )
+    assert_equal "work_update", ActivityItem.find_by!(user: @recipient).event_type
+    ActivityItem.find_by!(user: @recipient).mark_handled!
+
+    WorkThreadEvent.create!(
       thread:, actor: @author, event_type: "work_assignment",
       from_status: "planned", to_status: "planned",
       from_owner_id: @recipient.id, from_owner_name: @recipient.name,
       to_owner_id: users(:jason).id, to_owner_name: "Jason"
     )
-    assert_equal "work_assignment", ActivityItem.find_by!(user: @recipient).event_type
+    assert_equal "work_assignment", ActivityItem.find_by!(user: @recipient, handled_at: nil).event_type
   end
 
   test "work assigned by a bot without an agent ignores the agent_work switch" do

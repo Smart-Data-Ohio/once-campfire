@@ -116,6 +116,13 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
         Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "review_requested", reviewer: "kevin-gh"))
       end
     end
+
+    mention = @room.messages.create!(
+      creator: users(:david),
+      body: "Hey #{mention_attachment_for(:kevin)}",
+      client_message_id: "review-switch-neighbour"
+    )
+    assert_equal "mention", ActivityItem.find_by!(user: users(:kevin), source: mention).event_type
   end
 
   test "review_requested still notifies a member with notifications off but not an invisible one" do

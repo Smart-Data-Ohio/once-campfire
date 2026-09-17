@@ -48,6 +48,11 @@ class Event::ReminderDispatcherTest < ActiveSupport::TestCase
 
     @event.update_with_announcement!({ starts_at: 2.days.from_now }, actor: @organizer)
     assert_equal "event_update", ActivityItem.find_by!(user: users(:jason), source: @event).event_type
+
+    follow_up = @room.events.create!(
+      organizer: @organizer, title: "Follow-up", starts_at: 2.days.from_now, time_zone: "UTC"
+    )
+    assert_equal "event_invitation", ActivityItem.find_by!(user: users(:jason), source: follow_up).event_type
   end
 
   test "declined attendees keep their invitation and get no reminder" do
