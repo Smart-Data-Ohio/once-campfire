@@ -110,7 +110,9 @@ Rails.application.routes.draw do
         patch :cancel, on: :member
         resource :attendance, only: :update, controller: "events/attendances"
       end
-      resource :huddle, only: %i[ show create ]
+      resource :huddle, only: %i[ show create ] do
+        get :participants
+      end
       resource :refresh, only: :show
       resource :settings, only: :show
       resource :involvement, only: %i[ show update ]
@@ -124,6 +126,7 @@ Rails.application.routes.draw do
     resources :opens
     resources :closeds
     resources :directs
+    resources :voices
   end
 
   resources :messages do

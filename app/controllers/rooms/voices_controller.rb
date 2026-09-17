@@ -1,23 +1,22 @@
-class Rooms::ClosedsController < RoomsController
+class Rooms::VoicesController < RoomsController
   before_action :set_room, only: %i[ show edit update ]
   before_action :ensure_can_administer, only: %i[ update ]
   before_action :remember_last_room_visited, only: :show
-  before_action :force_room_type, only: %i[ edit update ]
   before_action :ensure_permission_to_create_rooms, only: %i[ new create ]
 
-  DEFAULT_ROOM_NAME = "New room"
+  DEFAULT_ROOM_NAME = "New voice channel"
 
   def show
     redirect_to room_url(@room)
   end
 
   def new
-    @room  = Rooms::Closed.new(name: DEFAULT_ROOM_NAME)
+    @room  = Rooms::Voice.new(name: DEFAULT_ROOM_NAME)
     @users = User.active.ordered
   end
 
   def create
-    room = Rooms::Closed.create_for(room_params, users: grantees)
+    room = Rooms::Voice.create_for(room_params, users: grantees)
 
     broadcast_create_room(room)
     redirect_to room_url(room)
@@ -37,15 +36,10 @@ class Rooms::ClosedsController < RoomsController
   end
 
   private
-    # Allows us to edit an open room and turn it into a closed one on saving.
-    def force_room_type
-      @room = @room.becomes!(Rooms::Closed)
-    end
-
-    # Open and closed rooms convert into each other, so both are in reach here. Direct
-    # and voice rooms never are: converting one would let its creator revise who's in it.
+    # Voice rooms keep their type: only voice rooms are in reach here, and the
+    # open/closed namespaces keep voice rooms out of reach in return.
     def room_scope
-      Current.user.rooms.where(type: %w[ Rooms::Open Rooms::Closed ])
+      Current.user.rooms.voices
     end
 
     def grantees
@@ -62,7 +56,7 @@ class Rooms::ClosedsController < RoomsController
 
     def broadcast_create_room(room)
       each_user_and_html_for(room) do |user, html|
-        broadcast_prepend_to user, :rooms, target: :shared_rooms, html: html
+        broadcast_prepend_to user, :rooms, target: :voice_rooms, html: html
       end
     end
 
@@ -74,7 +68,7 @@ class Rooms::ClosedsController < RoomsController
 
     def each_user_and_html_for(room)
       # Optimization to avoid rendering the same partial for every user
-      html = render_to_string(partial: "users/sidebars/rooms/shared", locals: { room: room })
+      html = render_to_string(partial: "users/sidebars/rooms/voice", locals: { room: room })
 
       room.users.each { |user| yield user, html }
     end

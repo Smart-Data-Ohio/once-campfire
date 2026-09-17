@@ -4,10 +4,18 @@ class Rooms::HuddlesController < ApplicationController
   before_action :ensure_human_user
   before_action :ensure_active_user
   before_action :set_room
-  before_action :ensure_one_to_one_direct_room
+  before_action :ensure_one_to_one_direct_room, except: :participants
 
   def show
     render json: { room: room_json }
+  end
+
+  # Who is currently in the room's huddle. Presence is a member-only liveness
+  # signal, so unlike joining it is reported for every room type.
+  def participants
+    render json: HuddleGrant.participants_for(@room).map { |user|
+      { id: user.id, name: user.name, avatar_url: helpers.fresh_user_avatar_url(user) }
+    }
   end
 
   def create
