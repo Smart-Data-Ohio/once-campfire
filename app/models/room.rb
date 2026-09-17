@@ -38,6 +38,7 @@ class Room < ApplicationRecord
   scope :closeds,         -> { where(type: "Rooms::Closed") }
   scope :directs,         -> { where(type: "Rooms::Direct") }
   scope :voices,          -> { where(type: "Rooms::Voice") }
+  scope :boards,          -> { where(type: "Rooms::Board") }
   scope :without_directs, -> { where.not(type: "Rooms::Direct") }
 
   scope :ordered, -> { order("LOWER(name)") }
@@ -79,6 +80,10 @@ class Room < ApplicationRecord
 
   def stage?
     is_a?(Rooms::Stage)
+  end
+
+  def board?
+    is_a?(Rooms::Board)
   end
 
   def default_involvement

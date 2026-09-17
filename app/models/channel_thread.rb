@@ -2,6 +2,10 @@ class ChannelThread < ApplicationRecord
   AUTO_ARCHIVE_OPTIONS = [ 60, 1_440, 4_320, 10_080 ].freeze
   DEFAULT_AUTO_ARCHIVE_AFTER_MINUTES = 4_320
   NAME_LIMIT = 100
+  TAG_LIMIT = 5
+  RESULT_LIMIT = 20_000
+  RUN_URL_LIMIT = 500
+  BOARD_ROW_BROADCAST_ATTRIBUTES = %w[ name work_status work_owner_id last_activity_at ].freeze
   WORK_STATUSES = %w[ planned in_progress blocked done ].freeze
   WORK_STATUS_LABELS = {
     "planned" => "Planned",
@@ -15,7 +19,10 @@ class ChannelThread < ApplicationRecord
   belongs_to :creator, class_name: "User"
   belongs_to :parent_message, class_name: "Message", optional: true
   belongs_to :work_owner, class_name: "User", optional: true
+  belongs_to :result_updated_by, class_name: "User", optional: true
 
+  has_many :tags, -> { order(:name) }, class_name: "ThreadTag", foreign_key: :channel_thread_id,
+    inverse_of: :channel_thread, dependent: :destroy, autosave: true
   has_many :messages, -> { ordered }, foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
   has_one :pull_request_thread, class_name: "Github::PullRequestThread",
     foreign_key: :channel_thread_id, dependent: :destroy, inverse_of: :channel_thread
@@ -30,13 +37,22 @@ class ChannelThread < ApplicationRecord
   validates :name, presence: true, length: { maximum: NAME_LIMIT }
   validates :auto_archive_after_minutes, inclusion: { in: AUTO_ARCHIVE_OPTIONS }
   validates :work_status, inclusion: { in: WORK_STATUSES, allow_nil: true }
+  validates :result_markdown, length: { maximum: RESULT_LIMIT }, allow_nil: true
+  validates :run_url, length: { maximum: RUN_URL_LIMIT }, allow_nil: true
   validate :work_owner_requires_work
   validate :work_owner_must_be_eligible, if: :work_owner_assignment_changed?
   validate :room_cannot_be_direct
   validate :parent_message_belongs_to_room
+  validate :work_status_required_in_boards
+  validate :run_url_must_be_https, if: -> { run_url.present? }
+  validate :tag_names_within_limits
 
   before_validation :set_default_name, on: :create
   before_validation :set_default_last_activity_at, on: :create
+  before_save :apply_pending_tag_names, if: :pending_tag_names?
+
+  after_create_commit :announce_board_post, if: :board_post?
+  after_update_commit :broadcast_board_row_replace_on_change, if: :board_post?
 
   scope :ordered, -> { order(last_activity_at: :desc, id: :desc) }
   scope :active, -> { where(closed_at: nil, locked_at: nil) }
@@ -59,9 +75,51 @@ class ChannelThread < ApplicationRecord
     # There is no scheduled-job facility in this Campfire deployment. Expire
     # stale conversations whenever the thread surface is consulted, and take a
     # row lock for the final decision so a concurrent post always wins.
+    # Board posts never auto-archive: closing stays a moderator action.
     def close_stale_in(room: nil)
       scope = room ? room.channel_threads : all
+      scope = scope.where.not(room_id: Room.boards.select(:id))
       scope.active.find_each(&:close_if_stale!)
+    end
+
+    # The board index query behind GET /rooms/:id for a board room. Filters
+    # arrive as query parameters and are remembered nowhere else.
+    def board_posts_for(room, status: nil, owner: nil, tag: nil, viewer: nil)
+      scope = room.channel_threads.ordered.includes(:creator, :work_owner, :tags,
+        work_thread_links: %i[ github_pull_request event ])
+
+      scope = case status.to_s
+      when "done"
+        scope.work.where(work_status: "done")
+      when "all"
+        scope
+      else
+        scope.work.where.not(work_status: "done")
+      end
+
+      scope = case owner.to_s
+      when "me"
+        scope.where(work_owner_id: viewer&.id)
+      when "agents"
+        scope.where(work_owner_id: Agent.select(:user_id))
+      when /\A\d+\z/
+        scope.where(work_owner_id: owner.to_i)
+      else
+        scope
+      end
+
+      if tag.to_s.strip.present?
+        scope = scope.where(id: ThreadTag.where(name: tag.to_s.strip.downcase).select(:channel_thread_id))
+      end
+
+      scope
+    end
+
+    # The board's tag filter options: distinct tag names across its posts
+    # with post counts, so drift ("bug" versus "bugs") stays visible.
+    def board_tag_counts(room)
+      ThreadTag.where(channel_thread_id: room.channel_threads.select(:id))
+        .group(:name).order(:name).count
     end
   end
 
@@ -86,6 +144,26 @@ class ChannelThread < ApplicationRecord
 
   def work?
     work_status.present?
+  end
+
+  def board_post?
+    room&.board?
+  end
+
+  # Tags are stored one row per name in thread_tags. The writer normalises
+  # (downcase, strip, dedupe, drop blanks) and stages the names; records are
+  # rearranged in a before_save hook, so a rejected edit cannot destroy the
+  # post's existing tags and repeated assignments stay idempotent.
+  def tag_names
+    @pending_tag_names || tags.map(&:name)
+  end
+
+  def tag_names=(value)
+    @pending_tag_names = value.to_s.split(",").map { |name| name.strip.downcase }.reject(&:blank?).uniq
+  end
+
+  def run_link?
+    run_url.to_s.start_with?("https://")
   end
 
   def work_status_label
@@ -326,6 +404,61 @@ class ChannelThread < ApplicationRecord
     self
   end
 
+  # Replace the pinned result and record a result_updated event for Work
+  # history and the activity inbox. Blank clears the result. Anyone who can
+  # change the status can edit the result; an unchanged value writes nothing.
+  def update_result!(actor:, markdown:)
+    normalized = markdown.presence
+    return self if normalized == result_markdown
+
+    if normalized && normalized.length > RESULT_LIMIT
+      errors.add(:result_markdown, "is too long (maximum is #{RESULT_LIMIT} characters)")
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+
+    self.class.transaction(requires_new: true) do
+      with_lock do
+        reload
+        raise WorkUpdateForbidden, "You cannot edit the result in this thread" unless work_status_manageable_by?(actor)
+
+        update!(
+          result_markdown: normalized,
+          result_updated_at: Time.current,
+          result_updated_by_id: actor&.id
+        )
+        WorkThreadEvent.create_for_result!(thread: self, actor: actor, excerpt: normalized.to_s.first(200))
+      end
+    end
+
+    self
+  end
+
+  # People who may own a board post through the new-post form or the owner
+  # control: active human members plus eligible agents, the same set the
+  # Update work control offers.
+  def work_owner_candidates
+    memberships = room.memberships.includes(:user).to_a
+    agents_by_user_id = Agent.where(user_id: memberships.map(&:user_id)).index_by(&:user_id)
+    humans = []
+    agents = []
+
+    memberships.each do |membership|
+      user = membership.user
+      next unless user&.active?
+
+      if user.bot?
+        agent = agents_by_user_id[user.id]
+        agents << user if agent&.active? && agent.can?(:post_messages, room)
+      else
+        humans << user
+      end
+    end
+
+    humans.sort_by! { |user| user.name.to_s.downcase }
+    agents.sort_by! { |user| user.name.to_s.downcase }
+    [ humans, agents ]
+  end
+
   def creator_or_manager?(user)
     settings_manageable_by?(user)
   end
@@ -348,7 +481,49 @@ class ChannelThread < ApplicationRecord
     ChannelThread::PushMessageJob.perform_later(self, message)
   end
 
+  # Replace this post's row on the board index over the room's existing
+  # message stream. Both renderings use the same row id, so one replace
+  # refreshes whichever rendering a viewer has open.
+  def broadcast_board_row_replace
+    broadcast_replace_to room, :messages,
+      target: ActionView::RecordIdentifier.dom_id(self, :board_row),
+      partial: "rooms/boards/row", locals: { thread: self }
+  end
+
   private
+    def pending_tag_names?
+      defined?(@pending_tag_names) && @pending_tag_names
+    end
+
+    def apply_pending_tag_names
+      names = @pending_tag_names
+      @pending_tag_names = nil
+
+      tags.where.not(name: names).destroy_all
+      existing = tags.reload.map(&:name)
+      (names - existing).each { |name| tags.build(name:) }
+    end
+
+    # A new post prepends into the board list and, having no root message
+    # to do it, marks the board unread for its members itself.
+    def announce_board_post
+      broadcast_prepend_to room, :messages, target: "board_posts",
+        partial: "rooms/boards/row", locals: { thread: self }
+
+      now = Time.current
+      room.memberships.visible.disconnected.where.not(user_id: creator_id)
+        .update_all(unread_at: now, updated_at: now)
+      room.memberships.pluck(:user_id).each do |user_id|
+        ActionCable.server.broadcast UnreadRoomsChannel.stream_name_for(user_id), { roomId: room_id }
+      end
+    end
+
+    def broadcast_board_row_replace_on_change
+      return unless (BOARD_ROW_BROADCAST_ATTRIBUTES & previous_changes.keys).any?
+
+      broadcast_board_row_replace
+    end
+
     def set_default_name
       return if name.present?
 
@@ -362,6 +537,27 @@ class ChannelThread < ApplicationRecord
 
     def room_cannot_be_direct
       errors.add :room, "can't be a direct room" if room&.direct?
+    end
+
+    def work_status_required_in_boards
+      errors.add :work_status, "must be tracked in a board" if room&.board? && work_status.blank?
+    end
+
+    def run_url_must_be_https
+      errors.add :run_url, "must be an https URL" unless run_url.start_with?("https://")
+    end
+
+    def tag_names_within_limits
+      names = tag_names
+      errors.add :tags, "are limited to #{TAG_LIMIT} per post" if names.size > TAG_LIMIT
+
+      names.each do |name|
+        if name.length > ThreadTag::NAME_LIMIT
+          errors.add :tags, "must be at most #{ThreadTag::NAME_LIMIT} characters"
+        elsif !name.match?(ThreadTag::NAME_FORMAT)
+          errors.add :tags, "use lowercase letters, digits, and hyphens"
+        end
+      end
     end
 
     def parent_message_belongs_to_room

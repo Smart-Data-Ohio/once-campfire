@@ -17,6 +17,10 @@ class Messages::ByBotsController < MessagesController
   end
 
   def create
+    # Boards hold posts, not root messages; agents reply inside posts from
+    # the next slice on.
+    return head :unprocessable_content if @room.board?
+
     super
     head :created, location: message_url(@message)
   end

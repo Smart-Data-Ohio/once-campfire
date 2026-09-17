@@ -81,7 +81,12 @@ class Agent::Delivery
         status: thread.work_status,
         url: Rails.application.routes.url_helpers.room_path(room, thread: thread.id),
         assigned_by: assigned_by,
-        links: WorkThreadLink.agent_payloads_for(thread)
+        links: WorkThreadLink.agent_payloads_for(thread),
+        board_id: room.board? ? room.id : nil,
+        board_name: room.board? ? room.name : nil,
+        tags: thread.tag_names,
+        result: thread.result_markdown,
+        run_url: thread.run_url
       }
     end
 
