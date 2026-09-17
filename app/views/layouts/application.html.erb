@@ -94,6 +94,8 @@
 
     <%= render "layouts/huddle" if Current.user && Huddle.configured? %>
 
+    <%= render "layouts/huddle_invitation" if Current.user && Huddle.configured? %>
+
     <%= render "layouts/lightbox" %>
 
     <a href="https://once.com" id="app-logo" target="_blank" aria-label="Once software from 37signals home page">

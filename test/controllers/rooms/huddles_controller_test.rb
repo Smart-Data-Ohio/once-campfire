@@ -1,6 +1,8 @@
 require "test_helper"
 
 class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
   setup do
     @environment_names = Huddle::REQUIRED_ENVIRONMENT
     @original_livekit_environment = ENV.values_at(*@environment_names)
@@ -78,6 +80,30 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal "Jason", response.parsed_body.dig("room", "name")
+  end
+
+  test "starting a one-to-one DM huddle invites only the other participant" do
+    sign_in :david
+
+    assert_enqueued_with(job: Huddle::PushInvitationJob) do
+      post room_huddle_url(rooms(:david_and_jason))
+    end
+
+    assert_response :success
+    item = ActivityItem.find_by!(user: users(:jason), event_type: "huddle_started")
+    assert_equal response.parsed_body.fetch("grant_id"), item.source_id
+    assert_equal "huddle_started", item.event_type
+    assert_not ActivityItem.exists?(user: users(:david), event_type: "huddle_started")
+  end
+
+  test "starting a channel huddle creates no invitation" do
+    sign_in :david
+
+    assert_no_difference -> { ActivityItem.count } do
+      post room_huddle_url(rooms(:watercooler))
+    end
+
+    assert_response :success
   end
 
   test "group direct rooms cannot start a huddle" do
