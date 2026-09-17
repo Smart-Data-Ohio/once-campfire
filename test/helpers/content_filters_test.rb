@@ -10,6 +10,17 @@ class ContentFiltersTest < ActionView::TestCase
     assert_match /<div><action-text-attachment/, filtered.to_html
   end
 
+  test "a solo unfurled link with a sibling attachment renders one box" do
+    text = "https://basecamp.com/"
+    body = "<div>#{text}</div>#{unfurled_link_trix_attachment_for_basecamp}"
+    message = Message.create! room: rooms(:pets), body: body, client_message_id: "0016", creator: users(:jason)
+
+    filtered = ContentFilters::TextMessagePresentationFilters.apply(message.body.body)
+
+    assert_equal 1, filtered.to_html.scan("<action-text-attachment").size
+    assert_no_match %r{>#{Regexp.escape(text)}<}, filtered.to_html
+  end
+
   test "message includes additional text besides an unfurled URL" do
     text = "Hello https://basecamp.com/"
     message = Message.create! room: rooms(:pets), body: unfurled_message_body_for_basecamp(text), client_message_id: "0015", creator: users(:jason)
