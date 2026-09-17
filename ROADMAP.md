@@ -23,7 +23,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 
 The first activity inbox, human-owned work threads, one-to-one DM Huddles, and neutral gray/charcoal palette are live as of September 15, 2026. See [Activity inbox and work threads](docs/activity-workspace.md) for the initial behavior and boundaries and [the release record](docs/releases/2026-09-15-activity-workspace.md) for validation and rollback details.
 
-The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video. Ringing, invitations, and missed-call notifications follow separately. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
+The first DM Huddle slice uses a shared join control with audio, screen sharing, and camera video, and the invitation slice adds ringing through an incoming-huddle banner, push notifications, and missed-call inbox items. The inbox starts with new messaging and work events; agent, GitHub, and event sources follow their integrations.
 
 ## Planned
 
@@ -39,9 +39,9 @@ Done when a contributor can clone the default branch, run the app and checks, an
 
 ### 2. Channel types and richer real-time spaces
 
-The one-to-one DM audio/screen-sharing/camera slice is live. Invitations, ringing, and missed-call notifications remain planned.
+The one-to-one DM audio/screen-sharing/camera slice is live, including invitations, ringing, and missed-call notifications.
 
-- One-to-one Huddles directly inside a DM, with a discoverable start/join control, a way to notify the other participant, audio, screen sharing, and camera video, reconnect, and leave/end behavior. Only the two DM participants can access the call or its activity; define invitation, missed-call, and notification behavior in the feature design.
+- One-to-one Huddles directly inside a DM, with a discoverable start/join control, a way to notify the other participant, audio, screen sharing, and camera video, reconnect, and leave/end behavior. Only the two DM participants can access the call or its activity; invitation, missed-call, and notification behavior is defined in the feature design.
 - Persistent voice channels with visible participants, join/leave controls, and reconnect behavior.
 - Voice-channel text chat with durable history and clear access rules for people who are not currently in the call.
 - Stage channels with hosts, speakers, listeners, hand raising, and moderation.
@@ -50,7 +50,7 @@ The one-to-one DM audio/screen-sharing/camera slice is live. Invitations, ringin
 
 Follow the live one-to-one DM Huddles slice with one persistent voice-channel experience before Stage and streaming expansion. Reuse the existing Huddles media and access-enforcement foundation. Define channel membership, roles, notifications, and archive behavior once, then reuse those rules across channel types. Test expected concurrent participation and network conditions before setting capacity expectations.
 
-Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call. The next slice adds a discoverable persistent voice channel and its text chat, with access removal enforced throughout.
+Done for the first slice when two members can start and join a Huddle from their DM, communicate, share a screen, show camera video, reconnect, and leave, while a third member cannot access the call; the starter's call rings the other participant, and an unanswered call leaves a missed-call item. The next slice adds a discoverable persistent voice channel and its text chat, with access removal enforced throughout.
 
 ### 3. AI agents as first-class participants
 

@@ -1,0 +1,53 @@
+.huddle-invitation {
+  align-items: center;
+  background: var(--workspace-surface, var(--color-bg));
+  border: 1px solid var(--workspace-border, var(--color-border-darker));
+  border-radius: 0.8em;
+  color: var(--workspace-text, var(--color-text));
+  display: flex;
+  gap: var(--inline-space);
+  inset-block-start: var(--block-space);
+  inset-inline-start: 50%;
+  justify-content: space-between;
+  max-inline-size: min(28rem, calc(100dvw - var(--inline-space-double)));
+  padding-block: var(--block-space-half);
+  padding-inline: var(--inline-space);
+  position: fixed;
+  transform: translate(-50%);
+  z-index: 13;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.huddle-invitation__text {
+  display: grid;
+  gap: 0.15em;
+}
+
+.huddle-invitation__kicker,
+.huddle-invitation__title,
+.huddle-invitation__description {
+  margin: 0;
+}
+
+.huddle-invitation__kicker {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.huddle-invitation__title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.huddle-invitation__description {
+  font-size: 0.875rem;
+}
+
+.huddle-invitation__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--inline-space-half);
+}
