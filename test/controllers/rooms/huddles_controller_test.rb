@@ -46,7 +46,7 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, grant.fetch("canPublish")
     assert_equal true, grant.fetch("canSubscribe")
     assert_equal false, grant.fetch("canPublishData")
-    assert_equal %w[ microphone screen_share screen_share_audio ], grant.fetch("canPublishSources")
+    assert_equal %w[ microphone screen_share screen_share_audio camera ], grant.fetch("canPublishSources")
     assert_equal false, grant.fetch("roomCreate")
     assert_equal false, grant.fetch("roomList")
     assert_equal false, grant.fetch("roomAdmin")

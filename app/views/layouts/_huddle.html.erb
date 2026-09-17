@@ -36,6 +36,8 @@
 
   <div class="huddle__screens" data-huddle-target="screens" aria-label="Shared screens" hidden></div>
 
+  <div class="huddle__cameras" data-huddle-target="cameras" aria-label="Cameras" hidden></div>
+
   <div class="huddle__people" data-huddle-target="people" hidden>
     <div class="huddle__people-heading">
       <h3>People</h3>
@@ -50,6 +52,9 @@
     </button>
     <button type="button" class="btn" data-huddle-target="share" data-action="huddle#toggleScreenShare" aria-pressed="false">
       <span data-huddle-target="shareLabel">Share screen</span>
+    </button>
+    <button type="button" class="btn" data-huddle-target="camera" data-action="huddle#toggleCamera" aria-pressed="false">
+      <span data-huddle-target="cameraLabel">Camera off</span>
     </button>
   </div>
 

@@ -40,7 +40,7 @@ This first version supports human ownership and progress. Agent assignment and r
 
 ## Huddles in direct messages
 
-Open a one-to-one DM and choose **Join huddle**. The other person joins from the same DM. Audio, screen sharing, mute, reconnect, and leaving use the existing Huddles controls; moving to another channel keeps the call connected.
+Open a one-to-one DM and choose **Join huddle**. The other person joins from the same DM. Audio, screen sharing, camera video, mute, reconnect, and leaving use the existing Huddles controls; moving to another channel keeps the call connected.
 
 Group DMs do not expose this one-to-one control.
 
