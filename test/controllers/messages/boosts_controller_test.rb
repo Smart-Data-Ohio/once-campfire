@@ -35,6 +35,16 @@ class Messages::BoostsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a quick reaction sent as a shortcode toggles instead of duplicating" do
+    assert_difference -> { @message.boosts.where(content: "👍").count }, 1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":thumbsup:" } }
+    end
+
+    assert_difference -> { @message.boosts.where(content: "👍").count }, -1 do
+      post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":thumbsup:" } }
+    end
+  end
+
   test "create accepts a brand shortcode and renders its icon" do
     assert_difference -> { @message.boosts.count }, 1 do
       post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":openai:" } }

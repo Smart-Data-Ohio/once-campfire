@@ -6,22 +6,29 @@ class Boost < ApplicationRecord
 
   before_validation :resolve_shortcode_content
 
+  SHORTCODE_CONTENT_PATTERN = /\A:[a-z0-9_]+:\z/
+
+  # Emoji shortcodes resolve to the character itself, so they render and
+  # count exactly like an emoji typed directly. Brand shortcodes stay as
+  # :name:, canonicalised so aliases share one reaction chip, and render
+  # through BoostsHelper. Unknown shortcodes stay literal text, as before.
+  def self.resolve_content(content)
+    return content unless content.to_s.match?(SHORTCODE_CONTENT_PATTERN)
+
+    case (icon = Icons.find(content.to_s[1...-1]))
+    when Icons::Emoji then icon.character
+    when Icons::Brand then ":#{icon.name}:"
+    else content
+    end
+  end
+
   # Content that is exactly a :shortcode: (for example from icon autocomplete).
   def shortcode_content?
-    content.to_s.match?(/\A:[a-z0-9_]+:\z/)
+    content.to_s.match?(SHORTCODE_CONTENT_PATTERN)
   end
 
   private
-    # Emoji shortcodes are stored as the character itself, so they render and
-    # count exactly like an emoji typed directly. Brand shortcodes stay as
-    # :name:, canonicalised so aliases share one reaction chip, and render
-    # through BoostsHelper. Unknown shortcodes stay literal text, as before.
     def resolve_shortcode_content
-      return unless shortcode_content?
-
-      case (icon = Icons.find(content.to_s[1...-1]))
-      when Icons::Emoji then self.content = icon.character
-      when Icons::Brand then self.content = ":#{icon.name}:"
-      end
+      self.content = self.class.resolve_content(content)
     end
 end

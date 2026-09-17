@@ -76,17 +76,28 @@ class Message::Markdown
         icon if icon.is_a?(Icons::Brand)
       end
 
+      # A same-origin avatar path, or the same path served from the configured
+      # asset host (plain string, trailing slash, protocol-relative, %d
+      # wildcard, or Proc alike). Anything else is dropped.
       def avatar_src?(src)
-        path = src.to_s
-        path = path.delete_prefix(asset_host_prefix) if asset_host_prefix && path.start_with?(asset_host_prefix)
+        uri = URI.parse(src.to_s)
+        return false unless uri.path.to_s.match?(AVATAR_SRC_PATTERN)
+        return true if uri.scheme.nil? && uri.host.nil?
 
-        path.match?(AVATAR_SRC_PATTERN)
+        uri.scheme.to_s.downcase.in?(%w[ http https ]) && asset_host_pattern&.match?(uri.host.to_s) || false
+      rescue URI::InvalidURIError
+        false
       end
 
-      def asset_host_prefix
-        host = Rails.configuration.action_controller.asset_host
+      def asset_host_pattern
+        configured = Rails.configuration.action_controller.asset_host
+        configured = configured.arity.abs >= 2 ? configured.call("/users/x/avatar", nil) : configured.call("/users/x/avatar") if configured.respond_to?(:call)
+        return if configured.blank?
 
-        host if host.is_a?(String) && host.present?
+        host = configured.to_s.sub(%r{\A(https?:)?//}i, "").sub(%r{[/?#].*\z}, "")
+        Regexp.new("\\A#{Regexp.escape(host).gsub("%d", "\\d+")}\\z", Regexp::IGNORECASE)
+      rescue StandardError
+        nil
       end
 
       def sanitize(html, tags:, attributes:)
@@ -100,7 +111,7 @@ class Message::Markdown
       def plain_text_from(node)
         return node.text if node.text?
         return "\n" if node.name == "br"
-        return node["alt"].to_s if node.name == "img" && node["class"].to_s.split.include?("icon--brand")
+        return node["alt"].to_s if node.name == "img" && (brand_from_alt(node["alt"]) || node["class"].to_s.split.include?("icon--brand"))
 
         text = node.children.map { |child| plain_text_from(child) }.join
         return "#{text}\t" if CELL_TAGS.include?(node.name)

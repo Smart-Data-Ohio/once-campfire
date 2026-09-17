@@ -107,6 +107,26 @@ class Message::MarkdownIconsTest < ActiveSupport::TestCase
     end
   end
 
+  test "presentation keeps avatars for every asset host shape and drops other hosts" do
+    html = %(<p><img src="https://cdn.example.com/users/TOKEN/avatar?v=1" width="48" height="48"></p>)
+
+    [ "https://cdn.example.com/", "//cdn.example.com", "cdn.example.com", ->(_source) { "https://cdn.example.com" } ].each do |host|
+      with_asset_host host do
+        assert_equal 1, Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(html)).css("img").size, "expected the avatar to survive with asset host #{host.inspect}"
+      end
+    end
+
+    with_asset_host "https://assets%d.example.com" do
+      wildcard = %(<p><img src="https://assets3.example.com/users/TOKEN/avatar" width="48" height="48"></p>)
+      assert_equal 1, Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(wildcard)).css("img").size
+    end
+
+    with_asset_host "https://cdn.example.com" do
+      foreign = %(<p><img src="https://cdn.example.com.evil.test/users/TOKEN/avatar" width="48" height="48"></p>)
+      assert_equal 0, Nokogiri::HTML5.fragment(Message::Markdown.sanitize_presentation(foreign)).css("img").size
+    end
+  end
+
   test "plain text keeps brand shortcodes and expands emoji shortcodes" do
     message = create_markdown_message(":openai: shipped :tada:")
 
