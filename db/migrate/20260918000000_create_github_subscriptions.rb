@@ -26,6 +26,6 @@ class CreateGithubSubscriptions < ActiveRecord::Migration[8.2]
       unique: true, name: "index_github_notifications_on_subscription_and_key"
 
     add_column :users, :github_login, :string
-    add_index :users, :github_login, unique: true
+    add_index :users, "LOWER(github_login)", unique: true, where: "github_login IS NOT NULL", name: "index_users_on_lower_github_login"
   end
 end

@@ -366,7 +366,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_000000) do
     t.datetime "updated_at", null: false
     t.index ["bot_token"], name: "index_users_on_bot_token", unique: true
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
-    t.index ["github_login"], name: "index_users_on_github_login", unique: true
+    t.index "LOWER(github_login)", name: "index_users_on_lower_github_login", unique: true, where: "github_login IS NOT NULL"
   end
 
   create_table "webhooks", force: :cascade do |t|

@@ -22,6 +22,17 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_equal [ 12 ], message.github_pull_requests.map(&:number)
   end
 
+  test "the posted url is built from the subscribed repository, not the payload" do
+    payload = pull_request_payload(action: "opened")
+    payload["pull_request"]["html_url"] = "https://github.com/evil/other/pull/99"
+
+    Github::DeliverSubscriptionEventJob.perform_now("pull_request", payload)
+
+    message = @room.messages.order(:created_at).last
+    assert_includes message.markdown_source, "https://github.com/rails/rails/pull/12"
+    assert_not_includes message.markdown_source, "evil/other"
+  end
+
   test "reopened, ready for review, and synchronize post nothing after opened" do
     Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
 

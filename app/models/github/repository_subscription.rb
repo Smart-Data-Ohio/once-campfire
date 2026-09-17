@@ -21,6 +21,7 @@ class Github::RepositorySubscription < ApplicationRecord
   validates :repo, presence: true, format: { with: NAME_PATTERN }
   validates :owner, uniqueness: { scope: %i[ room_id repo ], case_sensitive: false }
   validate :events_are_known
+  validates :events, presence: { message: "must include at least one event" }, on: :update
   validate :room_is_subscribable
 
   after_create :add_bot_to_room

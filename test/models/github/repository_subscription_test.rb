@@ -58,6 +58,14 @@ class Github::RepositorySubscriptionTest < ActiveSupport::TestCase
     assert other_room.valid?
   end
 
+  test "clearing every event on an existing subscription is rejected" do
+    subscription = Github::RepositorySubscription.create!(room: @room, owner: "rails", repo: "rails", created_by: users(:david))
+
+    assert_not subscription.update(events: [])
+    assert_equal [ "must include at least one event" ], subscription.errors[:events]
+    assert_equal Github::RepositorySubscription::DEFAULT_EVENTS, subscription.reload.events
+  end
+
   test "direct rooms cannot be subscribed" do
     subscription = Github::RepositorySubscription.new(room: rooms(:david_and_jason), owner: "rails", repo: "rails", events: [])
 

@@ -106,7 +106,7 @@ module Github
 
           number = pr["number"]
           title = pr["title"]
-          url = pr["html_url"].presence || "https://github.com/#{owner}/#{repo}/pull/#{number}"
+          url = "https://github.com/#{owner}/#{repo}/pull/#{number}"
           sender = payload.dig("sender", "login")
 
           case payload["action"]
@@ -157,7 +157,7 @@ module Github
 
           number = pr["number"]
           title = pr["title"]
-          url = pr["html_url"].presence || "https://github.com/#{owner}/#{repo}/pull/#{number}"
+          url = "https://github.com/#{owner}/#{repo}/pull/#{number}"
           actor = review.dig("user", "login") || payload.dig("sender", "login")
 
           [ Post.new(event_key: "review_submitted", owner:, repo:, number:, title:, url:,
