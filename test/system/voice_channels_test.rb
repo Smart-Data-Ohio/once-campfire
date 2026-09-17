@@ -440,6 +440,8 @@ class VoiceChannelsTest < ApplicationSystemTestCase
 
     visit room_path(@room)
     wait_for_cable_connection
+    # Only this room's stacks are live; every other row renders an empty
+    # stack target that stays hidden until someone joins its huddle.
     assert_selector '[data-controller="huddle-participants"]', count: 2
 
     page.execute_script(<<~JS)
@@ -451,9 +453,10 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       })(window.fetch.bind(window))
     JS
 
-    fetch_count = page.evaluate_async_script(<<~JS)
+    fetch_count = page.evaluate_async_script(<<~JS, participants_room_huddle_path(@room))
       const done = arguments[arguments.length - 1]
-      const controllers = [...document.querySelectorAll('[data-controller="huddle-participants"]')]
+      const url = arguments[0]
+      const controllers = [...document.querySelectorAll(`[data-huddle-participants-url-value="${url}"]`)]
         .map(element => window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-participants"))
       Promise.all(controllers.map(controller => controller.refresh())).then(() => done(window.probeFetches))
     JS
