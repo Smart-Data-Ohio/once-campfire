@@ -3,6 +3,20 @@ require "test_helper"
 class MembershipTest < ActiveSupport::TestCase
   setup do
     @membership = memberships(:david_watercooler)
+
+    @environment_names = Huddle::REQUIRED_ENVIRONMENT
+    @original_livekit_environment = ENV.values_at(*@environment_names)
+    ENV["LIVEKIT_URL"] = "wss://huddle.example.test"
+    ENV["LIVEKIT_INTERNAL_URL"] = "ws://livekit.example.test:7880"
+    ENV["LIVEKIT_API_KEY"] = "test-api-key"
+    ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
+    ENV["LIVEKIT_GATEWAY_SECRET"] = "test-gateway-secret"
+  end
+
+  teardown do
+    @environment_names.zip(@original_livekit_environment).each do |name, value|
+      ENV[name] = value
+    end
   end
 
   test "connected scope" do
@@ -95,4 +109,39 @@ class MembershipTest < ActiveSupport::TestCase
     assert_nothing_raised { @membership.destroy }
     assert @membership.destroyed?
   end
+
+  test "removing an open channel member drops their header stack and sidebar row" do
+    assert_removal_drops_header_stack_and_row memberships(:david_hq)
+  end
+
+  test "removing a closed channel member drops their header stack and sidebar row" do
+    assert_removal_drops_header_stack_and_row memberships(:david_watercooler)
+  end
+
+  test "removing a direct member drops their header stack and sidebar row" do
+    assert_removal_drops_header_stack_and_row memberships(:david_david_and_jason)
+  end
+
+  test "removal drops only the sidebar row without huddle configuration" do
+    ENV.delete("LIVEKIT_GATEWAY_SECRET")
+    membership = memberships(:david_watercooler)
+
+    membership.destroy!
+
+    removed = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
+    assert_equal [ "remove" ], removed.map { |stream| stream["action"] }
+    assert_equal [ dom_id(membership.room, :list) ], removed.map { |stream| stream["target"] }
+  end
+
+  private
+    def assert_removal_drops_header_stack_and_row(membership)
+      room, user = membership.room, membership.user
+
+      membership.destroy!
+
+      removed = capture_turbo_stream_broadcasts([ user, :rooms ])
+      assert_equal [ "remove", "remove" ], removed.map { |stream| stream["action"] }
+      assert_equal [ dom_id(room, :header_voice_participants), dom_id(room, :list) ],
+        removed.map { |stream| stream["target"] }
+    end
 end
