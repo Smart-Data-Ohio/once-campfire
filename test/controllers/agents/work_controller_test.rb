@@ -140,6 +140,21 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
     assert_equal "planned", human_thread.reload.work_status
   end
 
+  test "show and patch are 404 once the agent is no longer a room member" do
+    grant!(capability: "read_messages", room: @room)
+    grant!(capability: "post_messages", room: @room)
+    grant!(capability: "manage_threads", room: @room)
+    thread = create_owned_thread!(name: "Orphaned work")
+    @room.memberships.find_by!(user: @bot).destroy
+
+    get agents_work_thread_url(thread), headers: bearer_headers
+    assert_response :not_found
+
+    patch agents_work_thread_url(thread), params: { work_status: "done" }, headers: bearer_headers, as: :json
+    assert_response :not_found
+    assert_not_equal "done", thread.reload.work_status
+  end
+
   test "patch is 403 without manage_threads in the thread room" do
     grant!(capability: "read_messages", room: @room)
     grant!(capability: "post_messages", room: @room)

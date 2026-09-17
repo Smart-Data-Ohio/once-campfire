@@ -62,10 +62,12 @@ class Agents::WorkController < ApplicationController
       end
     end
 
+    # Ownership plus current room membership: like every other agent
+    # endpoint, a room the agent's user no longer belongs to answers 404.
     def set_owned_thread
       @thread = ChannelThread.work.where(work_owner_id: Current.agent.user_id)
         .includes(:room).find_by(id: params[:id])
-      head :not_found unless @thread
+      head :not_found unless @thread && @thread.room.memberships.exists?(user_id: Current.agent.user_id)
     end
 
     def work_thread_payload(thread)
