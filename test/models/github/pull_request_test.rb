@@ -27,6 +27,43 @@ class Github::PullRequestTest < ActiveSupport::TestCase
     assert_not pull_request.stale?
   end
 
+  test "claim_fetch_request! grants one fetch per PR per ten minutes" do
+    pull_request = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 50)
+
+    assert pull_request.claim_fetch_request!
+    assert pull_request.fetch_requested_recently?
+    assert_not pull_request.claim_fetch_request!
+
+    pull_request.update_column(:fetch_requested_at, 11.minutes.ago)
+    assert_not pull_request.reload.fetch_requested_recently?
+    assert pull_request.claim_fetch_request!
+  end
+
+  test "claiming a fetch request does not broadcast a card update" do
+    message = @room.messages.create!(
+      creator: @creator, markdown_source: "see https://github.com/rails/rails/pull/52",
+      client_message_id: "pr-claim-quiet"
+    )
+    pull_request = message.github_pull_requests.first
+    pull_request.update_column(:fetch_requested_at, nil) # creating the message claimed once already
+
+    assert_broadcasts room_messages_stream_name(@room), 0 do
+      assert pull_request.claim_fetch_request!
+    end
+  end
+
+  test "with_rendering_details preloads referenced PRs" do
+    message = @room.messages.create!(
+      creator: @creator, markdown_source: "see https://github.com/rails/rails/pull/51",
+      client_message_id: "pr-preload-1"
+    )
+
+    loaded = Message.with_rendering_details.find(message.id)
+
+    assert_predicate loaded.association(:github_pull_requests), :loaded?
+    assert_equal [ 51 ], loaded.github_pull_requests.map(&:number)
+  end
+
   test "creating a message with a PR URL references the PR and enqueues a fetch" do
     assert_enqueued_with(job: Github::FetchPullRequestJob) do
       @message = @room.messages.create!(

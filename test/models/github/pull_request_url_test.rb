@@ -43,4 +43,17 @@ class Github::PullRequestUrlTest < ActiveSupport::TestCase
     assert_not Github::PullRequestUrl.pull_request_url?("https://github.com/rails/rails/pulls")
     assert_not Github::PullRequestUrl.pull_request_url?(nil)
   end
+
+  test "ignores dot-only owner and repo segments" do
+    assert_empty Github::PullRequestUrl.extract("https://github.com/../../pull/1")
+    assert_empty Github::PullRequestUrl.extract("https://github.com/./rails/pull/1")
+    assert_empty Github::PullRequestUrl.extract("https://github.com/rails/../pull/1")
+    assert_empty Github::PullRequestUrl.extract("https://github.com/../pull/1")
+    assert_not Github::PullRequestUrl.pull_request_url?("https://github.com/../../pull/1")
+  end
+
+  test "still matches names containing dots and dashes" do
+    assert_equal [ Github::PullRequestUrl::Reference.new("foo.bar", "baz-qux", 7) ],
+      Github::PullRequestUrl.extract("https://github.com/foo.bar/baz-qux/pull/7")
+  end
 end

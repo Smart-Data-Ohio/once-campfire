@@ -69,6 +69,48 @@ class Github::FetchPullRequestJobTest < ActiveSupport::TestCase
     assert_equal "failing", @pull_request.reload.check_status
   end
 
+  test "no check runs and no statuses leaves check_status blank" do
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("pending", total_count: 0)
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+    assert_nil @pull_request.reload.check_status
+  end
+
+  test "pending combined status with real statuses maps to pending" do
+    stub_pull_request(state: "open", draft: false)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("pending", total_count: 2)
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+    assert_equal "pending", @pull_request.reload.check_status
+  end
+
+  test "a draft with approvals shows its review decision" do
+    stub_pull_request(state: "open", draft: true)
+    stub_reviews([ { "state" => "APPROVED", "submitted_at" => "2026-09-02T00:00:00Z", "user" => { "id" => 1 } } ])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+
+    assert_equal "draft", @pull_request.reload.state
+    assert_equal "approved", @pull_request.review_decision
+  end
+
+  test "a draft with no reviews shows review required" do
+    stub_pull_request(state: "open", draft: true)
+    stub_reviews([])
+    stub_check_runs([])
+    stub_combined_status("success")
+
+    Github::FetchPullRequestJob.perform_now(@pull_request)
+    assert_equal "review_required", @pull_request.reload.review_decision
+  end
+
   test "404 leaves a fetch_error and stamps fetched_at without raising" do
     WebMock.stub_request(:get, %r{\Ahttps://api\.github\.com/repos/rails/rails/pulls/123\z})
       .to_return(status: 404, body: { message: "Not Found" }.to_json)
@@ -169,8 +211,8 @@ class Github::FetchPullRequestJobTest < ActiveSupport::TestCase
         .to_return(status: 200, body: { "check_runs" => runs }.to_json, headers: { "Content-Type" => "application/json" })
     end
 
-    def stub_combined_status(state)
+    def stub_combined_status(state, total_count: 1)
       WebMock.stub_request(:get, "https://api.github.com/repos/rails/rails/commits/abc123/status")
-        .to_return(status: 200, body: { "state" => state }.to_json, headers: { "Content-Type" => "application/json" })
+        .to_return(status: 200, body: { "state" => state, "total_count" => total_count }.to_json, headers: { "Content-Type" => "application/json" })
     end
 end

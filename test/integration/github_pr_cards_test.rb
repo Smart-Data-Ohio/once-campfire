@@ -27,6 +27,7 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
     assert_select ".github-pr-card__review", text: "Approved"
     assert_select ".github-pr-card__checks", text: "Checks passing"
     assert_select '.github-pr-card__link[href="https://github.com/rails/rails/pull/123"]'
+    assert_select '.github-pr-card__link[rel="noopener noreferrer"]', count: 1
   end
 
   test "a message without a PR link renders no card" do
@@ -82,6 +83,73 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "a loaded card with no check data shows No checks" do
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "https://github.com/rails/rails/pull/131",
+      client_message_id: "card-render-no-checks"
+    )
+    fill_card(message.github_pull_requests.first, check_status: nil)
+
+    get room_url(@room)
+
+    assert_response :success
+    assert_select ".github-pr-card__checks", text: "No checks"
+  end
+
+  test "rendering a room page costs no extra queries per message with a PR link" do
+    create_pr_messages(2, offset: 200)
+    small = count_queries { get room_url(@room) }
+    assert_response :success
+
+    create_pr_messages(4, offset: 300)
+    large = count_queries { get room_url(@room) }
+    assert_response :success
+
+    assert_equal small, large,
+      "room render should be O(1) in queries, got #{small} then #{large}"
+  end
+
+  test "one render enqueues a single refresh for one stale PR linked by many messages" do
+    3.times do |i|
+      @room.messages.create!(
+        creator: users(:david),
+        markdown_source: "see https://github.com/rails/rails/pull/129",
+        client_message_id: "card-dedupe-#{i}"
+      )
+    end
+    pull_request = Github::PullRequest.find_by!(owner: "rails", repo: "rails", number: 129)
+    fill_card(pull_request, fetched_at: 11.minutes.ago)
+
+    assert_enqueued_jobs 1, only: Github::FetchPullRequestJob do
+      get room_url(@room)
+    end
+
+    assert_response :success
+  end
+
+  test "repeat views by different users enqueue at most one refresh per PR per window" do
+    message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "https://github.com/rails/rails/pull/130",
+      client_message_id: "card-window-1"
+    )
+    fill_card(message.github_pull_requests.first, fetched_at: 11.minutes.ago)
+
+    assert_enqueued_jobs 1, only: Github::FetchPullRequestJob do
+      get room_url(@room)
+    end
+    assert_response :success
+
+    delete session_url
+    sign_in :jason # another designers member
+
+    assert_no_enqueued_jobs only: Github::FetchPullRequestJob do
+      get room_url(@room)
+    end
+    assert_response :success
+  end
+
   test "a fresh card does not enqueue a refresh on render" do
     message = @room.messages.create!(
       creator: users(:david),
@@ -131,14 +199,44 @@ class GithubPrCardsTest < ActionDispatch::IntegrationTest
   end
 
   private
-    def fill_card(pull_request, fetched_at: Time.current)
+    def fill_card(pull_request, fetched_at: Time.current, check_status: "passing")
       pull_request.update!(
         title: "Add shiny things", author_login: "dhh",
         author_avatar_url: "https://avatars.example/dhh",
         state: "open", base_branch: "main", head_branch: "shiny", head_sha: "abc123",
-        review_decision: "approved", check_status: "passing",
+        review_decision: "approved", check_status: check_status,
         html_url: "https://github.com/rails/rails/pull/123",
         github_updated_at: 1.hour.ago, payload: {}, fetched_at: fetched_at, fetch_error: nil
       )
+      # The broadcast above re-renders the card, which would otherwise claim
+      # the fetch request: every render test starts unrequested.
+      pull_request.update_column(:fetch_requested_at, nil)
+    end
+
+    def create_pr_messages(count, offset:)
+      count.times do |i|
+        number = offset + i
+        message = @room.messages.create!(
+          creator: users(:david),
+          markdown_source: "review https://github.com/rails/rails/pull/#{number}",
+          client_message_id: "card-query-#{number}"
+        )
+        fill_card(message.github_pull_requests.first, fetched_at: 1.minute.ago)
+      end
+    end
+
+    # Same shape as the count_queries in Message::RenderingDetailsTest: every
+    # SQL statement except schema loads and query-cache hits.
+    def count_queries
+      count = 0
+      subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+        count += 1 unless payload[:name] == "SCHEMA" || payload[:cached]
+      end
+
+      ActiveRecord::Base.connection.clear_query_cache
+      yield
+      count
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
     end
 end
