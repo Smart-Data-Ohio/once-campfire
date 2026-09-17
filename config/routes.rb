@@ -123,7 +123,7 @@ Rails.application.routes.draw do
       resources :members, only: :index
       resources :events, only: %i[ index show new create edit update ] do
         patch :cancel, on: :member
-        resource :attendance, only: :update, controller: "events/attendances"
+        resource :attendance, only: %i[ show update ], controller: "events/attendances"
       end
       namespace :stage do
         resource :hand, only: %i[ create destroy ], controller: "hands"

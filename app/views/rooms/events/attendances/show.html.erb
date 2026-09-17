@@ -1,0 +1,28 @@
+<%= turbo_frame_tag @frame_id do %>
+  <div class="event-card__response">
+    <% if @frame_alert.present? %>
+      <p class="event-card__alert" role="alert"><%= @frame_alert %></p>
+    <% end %>
+    <% counts = @event.attendance_counts %>
+    <p class="event-card__current">
+      Currently: <strong><%= @current_response ? @current_response.humanize : "No response yet" %></strong>
+      <span class="event-card__counts">(<%= pluralize(counts["going"].to_i, "going") %>, <%= pluralize(counts["maybe"].to_i, "maybe") %>)</span>
+    </p>
+    <% if @event.respondable_by?(Current.user) %>
+      <%= form_with url: room_event_attendance_path(@room, @event), method: :patch, class: "event-card__responses" do %>
+        <%= hidden_field_tag :message_id, @message_id %>
+        <% if @event.series_head? || (@event.series? && @event.next_occurrence.present?) %>
+          <label class="event-card__future">
+            <%= check_box_tag :apply_to_future, "1", false %>
+            Apply to all future occurrences
+          </label>
+        <% end %>
+        <%= button_tag "Going", name: "response", value: "going", class: "btn" %>
+        <%= button_tag "Maybe", name: "response", value: "maybe", class: "btn" %>
+        <%= button_tag "Declined", name: "response", value: "declined", class: "btn btn--plain" %>
+      <% end %>
+    <% elsif @event.cancelled? %>
+      <p class="event-card__closed">Responses are closed because this event was cancelled.</p>
+    <% end %>
+  </div>
+<% end %>

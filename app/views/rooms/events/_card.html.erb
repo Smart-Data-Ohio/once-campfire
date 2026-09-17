@@ -1,0 +1,29 @@
+<article class="event-card<%= " event-card--cancelled" if event.cancelled? %>" data-event-card="<%= event.id %>">
+  <header class="event-card__header">
+    <span class="event-card__eyebrow"><%= event.series? ? "Repeating event" : "Event" %></span>
+    <% if event.cancelled? %>
+      <span class="event-card__state">Cancelled</span>
+    <% end %>
+  </header>
+
+  <p class="event-card__title"><%= link_to event.title, room_event_path(event.room, event) %></p>
+
+  <p class="event-card__meta">
+    <%= local_datetime_tag(event.starts_at, style: :datetime) do %><%= event.starts_at.in_time_zone(event.time_zone).strftime("%B %-d, %Y at %-I:%M %p") %><% end %>
+    <% if event.ends_at.present? %>
+      &ndash; <%= local_datetime_tag(event.ends_at, style: :datetime) do %><%= event.ends_at.in_time_zone(event.time_zone).strftime("%B %-d, %Y at %-I:%M %p") %><% end %>
+    <% end %>
+  </p>
+
+  <% if event.venue.present? %>
+    <p class="event-card__venue">Where: <%= event.venue.name %></p>
+  <% end %>
+
+  <p class="event-card__organizer">Organized by <%= event.organizer.name %></p>
+
+  <%= turbo_frame_tag event_attendance_frame_id(event, message.id),
+        src: room_event_attendance_path(event.room, event, message_id: message.id),
+        loading: :lazy do %>
+    <p class="event-card__response-loading">Loading response…</p>
+  <% end %>
+</article>

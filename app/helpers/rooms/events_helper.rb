@@ -44,4 +44,29 @@ module Rooms::EventsHelper
     @venue_room_ids ||= Current.user.room_ids.to_set
     @venue_room_ids.include?(venue.id)
   end
+
+  # Events referenced by a message that the viewer may see cards for: only
+  # events in rooms the viewer belongs to. Everyone else keeps the plain
+  # link. Without a viewer (card broadcasts render outside a request) every
+  # referenced event qualifies, so the broadcast carries the same
+  # viewer-independent bodies the card partial renders.
+  def event_cards_for(message)
+    # Sorting in Ruby rather than with an `order` scope, because applying a
+    # scope to an association builds a fresh relation and so ignores the rows
+    # `with_rendering_details` already preloaded — one extra query per message
+    # rendered. (Same reason `ordered_boosts` exists.)
+    events = message.events.sort_by { |event| [ event.starts_at, event.id ] }
+    return events if Current.user.nil?
+
+    member_room_ids = (@event_card_room_ids ||= Current.user.room_ids.to_set)
+    events.select { |event| member_room_ids.include?(event.room_id) }
+  end
+
+  # The lazy attendance frame inside an event card. The message id keeps the
+  # frame unique when one event is linked from several messages; the
+  # attendances controller rebuilds the same id from its message_id param so
+  # frame responses swap into the frame that requested them.
+  def event_attendance_frame_id(event, message_id)
+    dom_id(event, "response_for_message_#{message_id}")
+  end
 end
