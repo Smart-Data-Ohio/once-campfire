@@ -20,6 +20,7 @@ class Rooms::EventsController < ApplicationController
     @upcoming_events = (singles + representatives).sort_by { |event| [ event.starts_at, event.id ] }
     @past_events = @room.events.past.ordered.includes(:organizer, :attendances, :venue)
     @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances, :venue)
+    preload_venue_streams(@upcoming_events + @past_events.to_a + @cancelled_events.to_a)
   end
 
   def show
@@ -61,6 +62,14 @@ class Rooms::EventsController < ApplicationController
   end
 
   private
+    # Preloads the live streams behind stage venues so rows read
+    # `venue.live_stream` without a query each. Nested `includes` cannot
+    # express this: venues preload as Room, which has no streams association.
+    def preload_venue_streams(events)
+      venues = events.filter_map(&:venue).select(&:stage?)
+      ActiveRecord::Associations::Preloader.new(records: venues, associations: :streams).call
+    end
+
     def set_event
       @event = @room.events.find(params[:id])
     end

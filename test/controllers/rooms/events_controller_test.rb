@@ -689,6 +689,96 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "article a[href='#{room_path(voice)}']", text: "Lounge"
   end
 
+  test "show renders the live dot for a stage venue with a live stream" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "##{ActionView::RecordIdentifier.dom_id(venue, :event_stage_live)} .stage-live-dot__pip", 1
+    # The sidebar dot keeps its own id; the event page must not duplicate it.
+    assert_not_includes response.body, "sidebar_stage_live"
+  end
+
+  test "show renders no live pip for a stage venue with an ended stream" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    stream = Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    stream.end!
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select "##{ActionView::RecordIdentifier.dom_id(venue, :event_stage_live)}", 1
+    assert_select ".stage-live-dot__pip", 0
+  end
+
+  test "show never renders a live dot for a voice venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select ".stage-live-dot", 0
+  end
+
+  test "index rows render the live dot for a live stage venue" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_select "##{ActionView::RecordIdentifier.dom_id(@event, :venue_live_dot)} .stage-live-dot__pip", 1
+    assert_not_includes response.body, "sidebar_stage_live"
+  end
+
+  test "index rows never render a live dot for a voice venue" do
+    voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: voice.id)
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_select "article .stage-live-dot", 0
+  end
+
+  test "index issues the same queries regardless of event count when venues are shared" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    @event.update!(venue_room_id: venue.id)
+    @room.events.create!(organizer: users(:david), title: "Second session",
+      starts_at: 3.days.from_now, time_zone: "UTC", venue_room_id: venue.id)
+
+    get room_events_url(@room)
+    assert_response :success
+
+    small = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    4.times do |n|
+      @room.events.create!(organizer: users(:david), title: "Session #{n}",
+        starts_at: (4 + n).days.from_now, time_zone: "UTC", venue_room_id: venue.id)
+    end
+
+    large = count_sql_queries do
+      get room_events_url(@room)
+      assert_response :success
+    end
+
+    assert_equal small, large
+  end
+
   test "show and index omit the Where line without a venue" do
     get room_event_url(@room, @event)
 
