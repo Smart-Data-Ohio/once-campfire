@@ -219,7 +219,82 @@ class Github::DeliverSubscriptionEventJobTest < ActiveJob::TestCase
     assert_equal @room.messages.order(:created_at).last, notification.message
   end
 
+  test "an event posts a thread reply where the PR has a thread and a room message elsewhere" do
+    other_room = rooms(:watercooler)
+    Github::RepositorySubscription.create!(
+      room: other_room, owner: "rails", repo: "rails",
+      events: %w[ opened ], created_by: users(:david))
+
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-parent")
+    thread.update_column(:last_activity_at, 2.days.ago)
+
+    Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
+
+    bot = User.active_bots.find_by!(name: "GitHub")
+    reply = thread.messages.order(:created_at).last
+    assert_equal bot, reply.creator
+    assert_equal "**alice** opened pull request #12: Fix login\nhttps://github.com/rails/rails/pull/12", reply.markdown_source
+    assert_empty @room.root_messages.where(creator: bot)
+
+    room_message = other_room.messages.order(:created_at).last
+    assert_equal bot, room_message.creator
+    assert_nil room_message.thread_id
+    assert_equal reply.markdown_source, room_message.markdown_source
+
+    assert_operator thread.reload.last_activity_at, :>, 2.days.ago
+  end
+
+  test "thread updates dedupe like room messages" do
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-dedupe")
+
+    Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
+
+    assert_no_difference -> { thread.messages.count } do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "reopened"))
+    end
+  end
+
+  test "review_requested in a PR thread points the inbox item at the thread message" do
+    users(:kevin).update!(github_login: "kevin-gh")
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-review")
+
+    Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "review_requested", reviewer: "Kevin-GH"))
+
+    reply = thread.messages.order(:created_at).last
+    assert_equal "**bob** requested a review from **Kevin-GH** on #12: Fix login\nhttps://github.com/rails/rails/pull/12", reply.markdown_source
+
+    item = ActivityItem.find_by!(user: users(:kevin), event_type: "pr_review_request")
+    assert_equal reply, item.source
+    assert_includes ActivityItem.accessible_to(users(:kevin)), item
+  end
+
+  test "thread updates broadcast to the thread stream" do
+    thread = discuss_pull_request(@room, number: 12, client_id: "notifier-thread-broadcast")
+    stream = thread_messages_stream_name(thread)
+
+    assert_broadcasts stream, 1 do
+      Github::DeliverSubscriptionEventJob.perform_now("pull_request", pull_request_payload(action: "opened"))
+    end
+  end
+
   private
+    def discuss_pull_request(room, number:, client_id:)
+      parent = room.messages.create!(
+        creator: users(:david),
+        markdown_source: "review https://github.com/Rails/Rails/pull/#{number}",
+        client_message_id: client_id
+      )
+      pull_request = parent.github_pull_requests.first
+      thread = ChannelThread.create!(room: room, creator: users(:david), name: "PR chat", parent_message: parent)
+      ThreadMembership.join!(thread, users(:david))
+      Github::PullRequestThread.create!(pull_request: pull_request, room: room, channel_thread: thread)
+      thread
+    end
+
+    def thread_messages_stream_name(thread)
+      signed = Turbo::StreamsChannel.signed_stream_name([ thread, :messages ])
+      Turbo::StreamsChannel.verified_stream_name(signed)
+    end
     def pull_request_payload(action:, number: 12, title: "Fix login", merged: false, reviewer: "carol")
       {
         "action" => action,

@@ -369,6 +369,48 @@ class ThreadsTest < ApplicationSystemTestCase
     wait_for_thread_read_state(membership, unread: false)
   end
 
+  test "discusses a pull request from its card" do
+    room = rooms(:designers)
+    message = room.messages.create!(
+      creator: users(:jz),
+      markdown_source: "review https://github.com/rails/rails/pull/12",
+      client_message_id: "system-discuss-flow"
+    )
+    pull_request = message.github_pull_requests.first
+    pull_request.update!(
+      title: "Fix login", author_login: "alice", state: "open",
+      base_branch: "main", head_branch: "shiny",
+      review_decision: "approved", check_status: "passing",
+      html_url: "https://github.com/rails/rails/pull/12",
+      github_updated_at: 1.hour.ago, fetched_at: Time.current, fetch_error: nil,
+      changed_files: { "files" => [
+        { "filename" => "app/models/user.rb", "additions" => 10, "deletions" => 2, "status" => "modified" }
+      ], "total_count" => 1 }.to_json,
+      changed_files_fetched_at: Time.current
+    )
+    pull_request.update_column(:fetch_requested_at, nil)
+
+    visit room_url(room)
+    within(:css, ".github-pr-card", text: "Fix login", wait: 10) do
+      click_button "Discuss"
+    end
+
+    assert_selector ".github-pr-thread-header .github-pr-card__title", text: "Fix login", wait: 10
+    assert_selector ".github-pr-files__heading", text: "Files changed"
+    assert_selector ".github-pr-files__path", text: "app/models/user.rb"
+    thread = Github::PullRequestThread.last
+    assert_equal message, thread.channel_thread.parent_message
+
+    visit room_url(room)
+    within(:css, ".github-pr-card", text: "Fix login", wait: 10) do
+      click_link "Discuss"
+    end
+
+    assert_selector ".github-pr-thread-header .github-pr-card__title", text: "Fix login", wait: 10
+    assert_equal 1, Github::PullRequestThread.count
+    assert_equal thread, Github::PullRequestThread.last
+  end
+
   private
     def open_threads
       find("[data-thread-panel-target='browserToggle']").click unless page.has_css?("body.thread-panel-open", wait: 0)
