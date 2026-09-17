@@ -307,6 +307,8 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
     agent_b = create_agent_in(@room, name: "Loop Bot B")
     _, secret_b = AgentCredential.create_with_secret!(agent: agent_b, name: "loop", created_by: users(:david))
+    webhook_b = Webhook.create!(user: agent_b.user, url: "http://example.com/loop-bot-b")
+    WebMock.stub_request(:post, webhook_b.url).to_return(status: 200)
 
     # Each agent posts only in response to an event actually delivered to
     # it: perform the job, check outcome delivered, then post through the
@@ -332,6 +334,9 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
       post_as_agent secret_b, "Hey @[#{@bot.name}] two", "loop-b2"
     end
     assert_suppressed @agent
+    # Two deliveries reached A so far (hop 0 and hop 1); the suppressed
+    # hop-3 message must not have posted a third.
+    assert_requested :post, webhooks(:bender).url, times: 2
 
     human_says "Hey @[#{@bot.name}] again", "loop-human-a2"
     assert_delivered @agent, hop: 0
@@ -349,6 +354,10 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_suppressed agent_b
 
     assert_no_enqueued_jobs only: Agent::DeliveryJob
+    # Four deliveries reached each agent across both chains and nothing
+    # else was posted: the suppressed messages never hit either webhook.
+    assert_requested :post, webhooks(:bender).url, times: 4
+    assert_requested :post, webhook_b.url, times: 4
   end
 
   test "ledger page renders for admins" do
