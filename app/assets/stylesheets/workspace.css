@@ -1118,16 +1118,20 @@ summary.member-panel__group-heading {
     margin: 0;
   }
 
+  /* Seven icon-only actions (members, search, threads, events, huddle,
+     settings, notifications) have to fit beside the sidebar toggle on a
+     320px phone, so the actions sit flush and each is a 2rem square. */
   .room-header__actions {
-    gap: 0.1rem;
+    gap: 0;
   }
 
   .room-header__actions .btn,
   .room-header__action {
-    --btn-padding: 0.35rem;
-    --btn-size: 2.15rem;
+    --btn-padding: 0.3rem;
+    --btn-size: 2rem;
 
     aspect-ratio: 1;
+    block-size: 2rem;
   }
 
   .room-header__actions .huddle-launcher span,
