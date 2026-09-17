@@ -34,7 +34,7 @@ class Agents::EventsController < ApplicationController
       .to_a
 
     @approval_cache = AgentApproval.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["approval_id"] }).index_by(&:id)
-    @thread_cache = ChannelThread.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["thread_id"] }).includes(:room).index_by(&:id)
+    @thread_cache = ChannelThread.where(id: events.filter_map { |event| event.metadata.is_a?(Hash) && event.metadata["thread_id"] }).includes(:room, work_thread_links: %i[ github_pull_request event ]).index_by(&:id)
 
     render json: events.filter_map { |event| poll_payload(agent, event) }
   end

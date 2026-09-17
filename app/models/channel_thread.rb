@@ -22,6 +22,7 @@ class ChannelThread < ApplicationRecord
   has_many :memberships, class_name: "ThreadMembership", foreign_key: :thread_id, inverse_of: :thread, dependent: :destroy
   has_many :users, through: :memberships
   has_many :work_thread_events, foreign_key: :channel_thread_id, inverse_of: :thread, dependent: :destroy
+  has_many :work_thread_links, foreign_key: :channel_thread_id, inverse_of: :channel_thread, dependent: :destroy
 
   class LockedError < StandardError; end
   class WorkUpdateForbidden < StandardError; end

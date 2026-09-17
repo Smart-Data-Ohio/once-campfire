@@ -16,6 +16,18 @@ class DriveLinkPreviewsTest < ApplicationSystemTestCase
     WebMock.disable!
   end
 
+  # Belt and suspenders around the teardown above: WebMock must never leak
+  # out of this file, even when a test or an earlier teardown step errors.
+  # The browser's HTTP client is shared across tests (see
+  # ApplicationSystemTestCase), so leaving WebMock enabled here breaks every
+  # later system test's chromedriver traffic.
+  def after_teardown
+    super
+  ensure
+    WebMock.reset!
+    WebMock.disable!
+  end
+
   test "a viewer with the Drive scope sees the link upgraded to a preview chip" do
     connect_google!(users(:jz), scopes: DRIVE_SCOPES)
     stub_google_drive_file(FILE_ID)

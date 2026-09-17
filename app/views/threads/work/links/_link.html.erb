@@ -1,0 +1,20 @@
+<%# locals: (link:, thread:) -%>
+<% case link.kind %>
+<% when "pull_request" %>
+  <% pull_request = link.github_pull_request %>
+  <%= link_to "#{pull_request.display_full_name}##{pull_request.number}",
+        pull_request.html_url.presence || "https://github.com/#{pull_request.full_name}/pull/#{pull_request.number}",
+        class: "work-links__pr", target: "_blank", rel: "noopener noreferrer" %>
+  <span class="work-links__pr-state"><%= github_pr_state_label(pull_request) %></span>
+  <% if pull_request.title.present? %>
+    <span class="work-links__pr-title"><%= pull_request.title %></span>
+  <% end %>
+<% when "event" %>
+  <%= link_to link.event.title, room_event_path(thread.room, link.event), class: "work-links__event" %>
+  <span class="work-links__event-time"><%= local_datetime_tag(link.event.starts_at, style: :datetime) do %><%= link.event.starts_at.in_time_zone(link.event.time_zone).strftime("%B %-d, %Y at %-I:%M %p") %><% end %></span>
+  <% if link.event.cancelled? %>
+    <span class="work-links__cancelled">Cancelled</span>
+  <% end %>
+<% when "drive_file" %>
+  <%= link_to link.title.presence || link.url, link.url, class: "work-links__drive", target: "_blank", rel: "noopener noreferrer" %>
+<% end %>
