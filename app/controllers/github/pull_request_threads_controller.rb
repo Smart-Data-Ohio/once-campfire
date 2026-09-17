@@ -23,9 +23,8 @@ class Github::PullRequestThreadsController < ApplicationController
       Github::FetchPullRequestJob.perform_later(pull_request)
       redirect_to room_thread_path(@room, thread), status: :see_other
     else
-      # Lost an insert race: the winner's thread stands, ours was never
-      # mapped and goes away so no orphaned empty thread is left behind.
-      thread.destroy!
+      # Lost an insert race: create_or_reuse! destroyed our provisional
+      # thread, so the winner's thread stands alone.
       redirect_to room_thread_path(@room, mapping.channel_thread), status: :see_other
     end
   rescue ActiveRecord::RecordInvalid => error

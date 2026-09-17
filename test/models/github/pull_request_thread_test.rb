@@ -73,6 +73,37 @@ class Github::PullRequestThreadTest < ActiveSupport::TestCase
       mapping = Github::PullRequestThread.create_or_reuse!(pull_request: @pull_request, room: @room, channel_thread: loser_thread)
       assert_equal winner, mapping
     end
+    assert_not ChannelThread.exists?(loser_thread.id)
+  end
+
+  test "create_or_reuse! reuses the winner when the validation runs after the winner commits" do
+    thread = ChannelThread.create!(room: @room, creator: users(:david), name: "PR chat", parent_message: @parent)
+    winner = Github::PullRequestThread.create!(pull_request: @pull_request, room: @room, channel_thread: thread)
+
+    other_parent = @room.messages.create!(
+      creator: users(:david), markdown_source: "https://github.com/rails/rails/pull/12 late",
+      client_message_id: "pr-thread-model-late"
+    )
+    loser_thread = ChannelThread.create!(room: @room, creator: users(:david), name: "Late chat", parent_message: other_parent)
+
+    assert_no_difference -> { Github::PullRequestThread.count } do
+      mapping = Github::PullRequestThread.create_or_reuse!(pull_request: @pull_request, room: @room, channel_thread: loser_thread)
+      assert_equal winner, mapping
+    end
+    assert_not ChannelThread.exists?(loser_thread.id)
+  end
+
+  test "create_or_reuse! reraises validation errors other than the PR-per-room uniqueness" do
+    other_pr = Github::PullRequest.for_reference(owner: "rails", repo: "rails", number: 13)
+    thread = ChannelThread.create!(room: @room, creator: users(:david), name: "PR chat", parent_message: @parent)
+    Github::PullRequestThread.create!(pull_request: other_pr, room: @room, channel_thread: thread)
+
+    # The same thread cannot discuss a second PR: the failure is the
+    # channel-thread uniqueness, not a lost insert race.
+    assert_raises(ActiveRecord::RecordInvalid) do
+      Github::PullRequestThread.create_or_reuse!(pull_request: @pull_request, room: @room, channel_thread: thread)
+    end
+    assert ChannelThread.exists?(thread.id)
   end
 
   test "the unique index rejects a duplicate mapping without validations" do

@@ -51,19 +51,30 @@ class Github::PullRequestThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to room_thread_path(@room, thread)
   end
 
-  test "discuss reuses one row when a concurrent creation wins the race" do
-    existing_thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "PR chat", parent_message: @message)
-    ThreadMembership.join!(existing_thread, users(:jz))
-    winner = Github::PullRequestThread.create!(pull_request: @pull_request, room: @room, channel_thread: existing_thread)
+  test "discuss reuses the winner and drops the loser when the race is lost at the unique index" do
+    simulate_mapping_race(ActiveRecord::RecordNotUnique.new("index_github_pr_threads_on_pr_and_room"))
+    thread_ids_before = ChannelThread.ids
 
-    Github::PullRequestThread.stubs(:create_or_reuse!).returns(winner)
-
-    assert_no_difference [ -> { ChannelThread.count }, -> { Github::PullRequestThread.count } ] do
+    assert_difference -> { Github::PullRequestThread.count }, 1 do
       post room_github_pull_request_threads_url(@room),
         params: { pull_request_id: @pull_request.id, message_id: @message.id }
     end
 
-    assert_redirected_to room_thread_path(@room, existing_thread)
+    assert_mapping_race_loser_cleaned_up(thread_ids_before)
+  end
+
+  test "discuss reuses the winner and drops the loser when the race is lost at the validation" do
+    loser = Github::PullRequestThread.new(pull_request: @pull_request, room: @room, channel_thread: ChannelThread.new)
+    loser.errors.add(:github_pull_request_id, :taken)
+    simulate_mapping_race(ActiveRecord::RecordInvalid.new(loser))
+    thread_ids_before = ChannelThread.ids
+
+    assert_difference -> { Github::PullRequestThread.count }, 1 do
+      post room_github_pull_request_threads_url(@room),
+        params: { pull_request_id: @pull_request.id, message_id: @message.id }
+    end
+
+    assert_mapping_race_loser_cleaned_up(thread_ids_before)
   end
 
   test "non-members get not found" do
@@ -106,4 +117,32 @@ class Github::PullRequestThreadsControllerTest < ActionDispatch::IntegrationTest
 
     assert_empty Github::PullRequestThread.all
   end
+
+  private
+    # The race winner commits inside the loser's create path: the stubbed
+    # create! first inserts the winner through the original method, then
+    # raises the given uniqueness error for the loser's attempt. The winner
+    # discusses from its own card message, since a message parents one thread.
+    def simulate_mapping_race(error)
+      real_create = Github::PullRequestThread.method(:create!)
+      Github::PullRequestThread.stubs(:create!).with do |*args, **kwargs|
+        winner_parent = @room.messages.create!(
+          creator: users(:jz),
+          markdown_source: "review https://github.com/rails/rails/pull/12",
+          client_message_id: "race-winner-parent"
+        )
+        winner_thread = ChannelThread.create!(room: @room, creator: users(:jz), name: "Winning chat", parent_message: winner_parent)
+        ThreadMembership.join!(winner_thread, users(:jz))
+        attributes = args.first || kwargs
+        real_create.call(attributes.merge(channel_thread: winner_thread))
+        true
+      end.raises(error)
+    end
+
+    def assert_mapping_race_loser_cleaned_up(thread_ids_before)
+      assert_equal 1, Github::PullRequestThread.count
+      mapping = Github::PullRequestThread.last
+      assert_redirected_to room_thread_path(@room, mapping.channel_thread)
+      assert_equal [ mapping.channel_thread_id ], ChannelThread.ids - thread_ids_before
+    end
 end
