@@ -130,6 +130,32 @@ class Agent::Delivery
       http.request(Net::HTTP::Post.new(uri, "Content-Type" => "application/json").tap { |request| request.body = payload })
     end
 
+    # Posts a GitHub write-action result to the agent's webhook. The payload
+    # carries the same additive agent key as approval decisions plus a
+    # github_action key with the completion fields. Response bodies are
+    # ignored: a completion notification never creates a reply message.
+    def post_github_action_webhook!(webhook, event, agent:)
+      uri = URI(webhook.url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = (uri.scheme == "https")
+      http.open_timeout = Webhook::ENDPOINT_TIMEOUT
+      http.read_timeout = Webhook::ENDPOINT_TIMEOUT
+
+      metadata = event.metadata.is_a?(Hash) ? event.metadata : {}
+      payload = {
+        agent: { id: agent.id, name: agent.user.name, owner: agent.owner&.name, delivery_id: event.id },
+        github_action: {
+          approval_id: metadata["approval_id"],
+          action: metadata["action"],
+          status: metadata["status"],
+          url: metadata["url"],
+          message: metadata["message"]
+        }.compact
+      }.to_json
+
+      http.request(Net::HTTP::Post.new(uri, "Content-Type" => "application/json").tap { |request| request.body = payload })
+    end
+
     # Runs inside Agent::DeliveryJob. Re-checks everything at perform time:
     # grant, membership, rate, hop, and message existence. Marks the row
     # delivered (posting the webhook when configured) or records a
