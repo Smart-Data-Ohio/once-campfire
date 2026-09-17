@@ -1,5 +1,6 @@
 class AgentEvent < ApplicationRecord
-  DELIVERABLE_TYPES = %w[ mention direct_message reply ].freeze
+  MESSAGE_DELIVERABLE_TYPES = %w[ mention direct_message reply ].freeze
+  DELIVERABLE_TYPES = (MESSAGE_DELIVERABLE_TYPES + %w[ approval_decided ]).freeze
   SUPPRESSED_TYPES = %w[
     delivery_suppressed_rate_limit
     delivery_suppressed_hop_limit
@@ -19,37 +20,47 @@ class AgentEvent < ApplicationRecord
   validates :outcome, inclusion: { in: OUTCOMES }, allow_nil: true
 
   scope :deliverable, -> { where(event_type: DELIVERABLE_TYPES) }
+  scope :message_deliverable, -> { where(event_type: MESSAGE_DELIVERABLE_TYPES) }
   scope :ledger_only, -> { where.not(event_type: DELIVERABLE_TYPES) }
   scope :ordered, -> { order(:id) }
   scope :recent_first, -> { order(id: :desc) }
 
   class << self
-    # Deliverable rows whose message the agent can currently read: the
-    # message still exists, the agent's user is a member of its room, and a
-    # read grant covers that room (legacy agents keep read everywhere).
-    # Expressed as joins, the way ActivityItem.accessible_to does it, so
-    # callers limit after filtering and revoked rows can never hide newer
-    # readable rows.
+    # Deliverable rows the agent can currently read. Message rows require
+    # the message to still exist, membership in its room, and a read grant
+    # covering that room (legacy agents keep read everywhere). Approval
+    # decision rows carry no message and are always readable by their own
+    # agent. Expressed as joins, the way ActivityItem.accessible_to does
+    # it, so callers limit after filtering and revoked rows can never hide
+    # newer readable rows.
     def readable_by(agent)
       scope = deliverable
-        .joins("INNER JOIN messages AS event_messages ON event_messages.id = agent_events.message_id")
+        .joins("LEFT JOIN messages AS event_messages ON event_messages.id = agent_events.message_id")
         .joins(<<~SQL.squish)
-          INNER JOIN memberships AS event_memberships
+          LEFT JOIN memberships AS event_memberships
             ON event_memberships.room_id = event_messages.room_id
             AND event_memberships.user_id = #{connection.quote(agent.user_id)}
         SQL
 
-      unless agent.legacy_capabilities?
+      if agent.legacy_capabilities?
+        scope.where(
+          "(agent_events.event_type IN (?) AND event_messages.id IS NOT NULL AND event_memberships.id IS NOT NULL) OR agent_events.event_type = ?",
+          MESSAGE_DELIVERABLE_TYPES, "approval_decided"
+        ).distinct
+      else
         scope = scope.joins(<<~SQL.squish)
-          INNER JOIN agent_grants AS event_grants
+          LEFT JOIN agent_grants AS event_grants
             ON event_grants.agent_id = #{connection.quote(agent.id)}
             AND event_grants.revoked_at IS NULL
             AND event_grants.capability = #{connection.quote("read_messages")}
             AND (event_grants.room_id = event_messages.room_id OR event_grants.room_id IS NULL)
         SQL
-      end
 
-      scope.distinct
+        scope.where(
+          "(agent_events.event_type IN (?) AND event_messages.id IS NOT NULL AND event_memberships.id IS NOT NULL AND event_grants.id IS NOT NULL) OR agent_events.event_type = ?",
+          MESSAGE_DELIVERABLE_TYPES, "approval_decided"
+        ).distinct
+      end
     end
   end
 

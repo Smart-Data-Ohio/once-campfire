@@ -1,26 +1,15 @@
-<% if item.event_type == "agent_approval_request" && item.source.is_a?(AgentApproval) %>
-  <%= render "activity_items/agent_approval_request", item: item, approval: item.source, filter: filter %>
-<% else %>
 <article id="<%= dom_id(item) %>" class="activity-item activity-item--<%= item.state %>">
   <div class="activity-item__meta">
     <span class="activity-item__kind"><%= activity_item_event_label(item) %></span>
-    <%= message_timestamp(item.source, class: "activity-item__time") if item.source %>
+    <%= message_timestamp(approval, class: "activity-item__time") %>
   </div>
 
   <div class="activity-item__content">
-    <h2 class="activity-item__title"><%= activity_item_source_label(item) %></h2>
-    <% if item.source %>
-      <p class="activity-item__author"><%= activity_item_source_author(item) %></p>
-      <p class="activity-item__body"><%= activity_item_source_body(item).truncate(500) %></p>
-    <% else %>
-      <p class="activity-item__body">This source is no longer available.</p>
-    <% end %>
+    <%= render "agent_approvals/card", approval: approval %>
   </div>
 
   <div class="activity-item__actions">
-    <% if item.source %>
-      <%= button_to "Open", open_activity_item_path(item), method: :post, class: "btn btn--primary", form: { class: "activity-item__action-form" } %>
-    <% end %>
+    <%= button_to "Open", open_activity_item_path(item), method: :post, class: "btn btn--primary", form: { class: "activity-item__action-form" } %>
 
     <% if item.unread? %>
       <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
@@ -35,4 +24,3 @@
     <% end %>
   </div>
 </article>
-<% end %>

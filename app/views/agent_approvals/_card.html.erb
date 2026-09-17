@@ -1,0 +1,42 @@
+<div class="agent-approval-card" id="<%= dom_id(approval, :card) %>">
+  <div class="agent-approval-card__header">
+    <% agent_user = approval.agent.user %>
+    <%= image_tag fresh_user_avatar_path(agent_user), alt: "", class: "avatar agent-approval-card__avatar", size: 32 %>
+    <div class="agent-approval-card__identity">
+      <strong><%= agent_user.name %></strong>
+      <span class="txt-small">requests approval · <%= approval.action %></span>
+      <% if approval.room %>
+        <span class="txt-small">in <%= room_display_name(approval.room) %></span>
+      <% end %>
+    </div>
+  </div>
+
+  <p class="agent-approval-card__summary"><%= approval.summary %></p>
+
+  <div class="txt-small agent-approval-card__meta">
+    <% case approval.effective_status %>
+    <% when "pending" %>
+      Expires in <%= distance_of_time_in_words_to_now(approval.expires_at) %>
+    <% when "expired" %>
+      Expired
+    <% when "approved", "denied" %>
+      <%= approval.status.capitalize %> by <%= approval.decided_by&.name || "someone" %>
+      <% if approval.decision_note.present? %>
+        · <%= approval.decision_note %>
+      <% end %>
+    <% when "cancelled" %>
+      Cancelled by the agent
+    <% end %>
+  </div>
+
+  <% if approval.pending_effective? %>
+    <div class="agent-approval-card__actions">
+      <%= button_to "Approve", agent_approval_path(approval, decision: "approved"), method: :patch, class: "btn btn--primary", form: { class: "agent-approval-card__action-form" } %>
+      <%= form_with url: agent_approval_path(approval), method: :patch, class: "agent-approval-card__deny-form" do %>
+        <%= hidden_field_tag :decision, "denied" %>
+        <%= text_field_tag :decision_note, nil, placeholder: "Note (optional)", maxlength: 200, class: "input agent-approval-card__note", aria: { label: "Deny note (optional)" } %>
+        <%= submit_tag "Deny", class: "btn" %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

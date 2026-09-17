@@ -80,6 +80,12 @@
                   View activity ledger
                 <% end %>
               </div>
+              <div class="margin-block-start">
+                <%= link_to agent_approvals_path(@user.agent), class: "btn full-width" do %>
+                  <%= image_tag "check.svg", aria: { hidden: "true" }, size: 20 %>
+                  View approval requests
+                <% end %>
+              </div>
             <% end %>
           <% end %>
         <% else %>
