@@ -1,0 +1,270 @@
+/* X post cards rendered under messages (see docs/x-posts.md). */
+
+.x-post-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.x-post-card {
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5em;
+  background-color: var(--color-bg);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  max-inline-size: 36rem;
+}
+
+.x-post-card:hover {
+  border-color: var(--color-border-darker);
+}
+
+.x-post-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.x-post-card__avatar {
+  border-radius: 50%;
+  flex: none;
+  object-fit: cover;
+}
+
+.x-post-card__author {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.x-post-card__name {
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.x-post-card__name:hover {
+  text-decoration: underline;
+}
+
+.x-post-card__handle {
+  opacity: 0.7;
+  text-decoration: none;
+}
+
+.x-post-card__handle:hover {
+  text-decoration: underline;
+}
+
+.x-post-card__logo {
+  block-size: 1em;
+  inline-size: auto;
+  margin-inline-start: auto;
+  flex: none;
+}
+
+.x-post-card__text {
+  margin: 0.35rem 0 0;
+  overflow-wrap: break-word;
+}
+
+/* No display override here: flex or grid on the details element would
+   break the closed state where ::details-content is unsupported. The
+   summary (clamp plus toggle) renders above the expanded text. */
+.x-post-card__details {
+  margin: 0.35rem 0 0;
+}
+
+.x-post-card__details > .x-post-card__text {
+  margin-top: 0;
+}
+
+.x-post-card__summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.x-post-card__summary::-webkit-details-marker,
+.x-post-card__summary::marker {
+  display: none;
+  content: "";
+}
+
+.x-post-card__clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 12;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.x-post-card__toggle {
+  color: var(--color-link);
+  font-size: 0.8rem;
+}
+
+.x-post-card__toggle--less,
+.x-post-card__details[open] .x-post-card__toggle--more,
+.x-post-card__details[open] .x-post-card__clamp {
+  display: none;
+}
+
+.x-post-card__details[open] .x-post-card__toggle--less {
+  display: inline;
+}
+
+.x-post-card__media {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 0.5em;
+}
+
+.x-post-card__media--1 {
+  grid-template-columns: 1fr;
+}
+
+.x-post-card__media--2,
+.x-post-card__media--4 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.x-post-card__media--3 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.x-post-card__media-link {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.x-post-card__media--1 .x-post-card__media-link img {
+  max-block-size: 24rem;
+  inline-size: 100%;
+}
+
+.x-post-card__media--2 .x-post-card__media-link,
+.x-post-card__media--4 .x-post-card__media-link {
+  aspect-ratio: 4 / 3;
+}
+
+.x-post-card__media--3 .x-post-card__media-link {
+  aspect-ratio: 16 / 10;
+}
+
+.x-post-card__media--3 .x-post-card__media-link:first-child {
+  grid-row: span 2;
+  aspect-ratio: auto;
+  min-block-size: 100%;
+}
+
+.x-post-card__media-link img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.x-post-card__media-link--video {
+  position: relative;
+}
+
+.x-post-card__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.x-post-card__quote {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5em;
+  font-size: 0.8rem;
+}
+
+.x-post-card__quote-author {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.x-post-card__quote-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.x-post-card__quote-link:hover {
+  text-decoration: underline;
+}
+
+.x-post-card__quote-handle {
+  opacity: 0.7;
+}
+
+.x-post-card__quote-text {
+  margin-top: 0.25rem;
+  overflow-wrap: break-word;
+}
+
+.x-post-card__footer {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.x-post-card__time,
+.x-post-card__count {
+  opacity: 0.7;
+}
+
+.x-post-card__link {
+  margin-inline-start: auto;
+}
+
+.x-post-card__error {
+  margin: 0;
+  color: var(--color-negative);
+}
+
+.x-post-card__error-handle {
+  font-weight: 600;
+}
+
+.x-post-card__error .x-post-card__link {
+  margin-inline-start: 0.25rem;
+}
+
+.x-post-card__loading {
+  margin: 0;
+  opacity: 0.7;
+}
+
+@media (max-width: 40rem) {
+  .x-post-card {
+    max-inline-size: none;
+  }
+
+  .x-post-card__media--2,
+  .x-post-card__media--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .x-post-card__media--3 .x-post-card__media-link:first-child {
+    grid-row: auto;
+    aspect-ratio: 16 / 10;
+  }
+}

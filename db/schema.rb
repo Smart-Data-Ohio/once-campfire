@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_130000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_140000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -511,6 +511,37 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_130000) do
     t.index ["user_id"], name: "index_thread_memberships_on_user_id"
   end
 
+  create_table "twitter_post_references", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "message_id", null: false
+    t.integer "twitter_post_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id", "twitter_post_id"], name: "index_twitter_post_references_on_message_and_post", unique: true
+    t.index ["message_id"], name: "index_twitter_post_references_on_message_id"
+    t.index ["twitter_post_id"], name: "index_twitter_post_references_on_twitter_post_id"
+  end
+
+  create_table "twitter_posts", force: :cascade do |t|
+    t.string "author_avatar_url"
+    t.string "author_handle"
+    t.string "author_name"
+    t.datetime "created_at", null: false
+    t.string "fetch_error"
+    t.datetime "fetch_requested_at"
+    t.datetime "fetched_at"
+    t.integer "likes"
+    t.json "media"
+    t.string "post_id", null: false
+    t.datetime "posted_at"
+    t.json "quote"
+    t.integer "replies"
+    t.integer "reposts"
+    t.text "text"
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.index ["post_id"], name: "index_twitter_posts_on_post_id", unique: true
+  end
+
   create_table "users", force: :cascade do |t|
     t.text "bio"
     t.string "bot_token"
@@ -633,6 +664,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_130000) do
   add_foreign_key "sessions", "users"
   add_foreign_key "thread_memberships", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "thread_memberships", "users", on_delete: :cascade
+  add_foreign_key "twitter_post_references", "messages"
+  add_foreign_key "twitter_post_references", "twitter_posts"
   add_foreign_key "webhooks", "users"
   add_foreign_key "work_thread_events", "channel_threads", on_delete: :cascade
   add_foreign_key "work_thread_events", "users", column: "actor_id", on_delete: :nullify

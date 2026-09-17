@@ -1,0 +1,94 @@
+<article class="x-post-card" data-twitter-post="<%= post.post_id %>">
+  <% if post.fetch_error.present? %>
+    <p class="x-post-card__error">
+      <% if post.display_handle.present? %>
+        <span class="x-post-card__error-handle">@<%= post.display_handle %></span>
+      <% end %>
+      Couldn’t load this post.
+      <%= link_to "View on X", post.view_url, class: "x-post-card__link", target: "_blank", rel: "noopener noreferrer" %>
+    </p>
+  <% elsif post.fetched_at.nil? %>
+    <p class="x-post-card__loading">Loading post…</p>
+  <% else %>
+    <header class="x-post-card__header">
+      <% if post.author_avatar_url.present? %>
+        <%= image_tag post.author_avatar_url, alt: "", loading: "lazy", size: "40x40", class: "x-post-card__avatar" %>
+      <% end %>
+      <span class="x-post-card__author">
+        <%= link_to post.display_name, post.profile_url || post.view_url, class: "x-post-card__name", target: "_blank", rel: "noopener noreferrer" %>
+        <% if post.display_handle.present? %>
+          <%= link_to "@#{post.display_handle}", post.profile_url, class: "x-post-card__handle", target: "_blank", rel: "noopener noreferrer" %>
+        <% end %>
+      </span>
+      <%= twitter_x_logo_tag %>
+    </header>
+
+    <% if post.text.present? %>
+      <% if Twitter::PostFormatter.clamp?(post.text) %>
+        <details class="x-post-card__details">
+          <summary class="x-post-card__summary">
+            <span class="x-post-card__clamp"><%= Twitter::PostFormatter.plain(post.text) %></span>
+            <span class="x-post-card__toggle x-post-card__toggle--more">Show more</span>
+            <span class="x-post-card__toggle x-post-card__toggle--less">Show less</span>
+          </summary>
+          <div class="x-post-card__text"><%= Twitter::PostFormatter.format(post.text) %></div>
+        </details>
+      <% else %>
+        <div class="x-post-card__text"><%= Twitter::PostFormatter.format(post.text) %></div>
+      <% end %>
+    <% end %>
+
+    <% media = Array(post.media).first(4) %>
+    <% if media.any? %>
+      <div class="x-post-card__media x-post-card__media--<%= media.size %>">
+        <% media.each do |item| %>
+          <% if item["type"] == "photo" %>
+            <%= link_to post.view_url, target: "_blank", rel: "noopener noreferrer", class: "x-post-card__media-link", aria: { label: "View post on X" } do %>
+              <%= image_tag item["url"], alt: item["alt"].to_s, loading: "lazy", class: "x-post-card__photo",
+                    width: item["width"], height: item["height"] %>
+            <% end %>
+          <% else %>
+            <%= link_to post.view_url, target: "_blank", rel: "noopener noreferrer", class: "x-post-card__media-link x-post-card__media-link--video", aria: { label: "View video on X" } do %>
+              <%= image_tag item["thumbnail_url"], alt: "", loading: "lazy", class: "x-post-card__poster",
+                    width: item["width"], height: item["height"] %>
+              <span class="x-post-card__play" aria-hidden="true"><svg viewBox="0 0 24 24" width="40" height="40"><circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.55)"/><path d="M10 8.5v7l6-3.5z" fill="#fff"/></svg></span>
+            <% end %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if (quote = post.quote).present? %>
+      <blockquote class="x-post-card__quote">
+        <div class="x-post-card__quote-author">
+          <% author = capture do %>
+            <% if quote["author_name"].present? %><strong><%= quote["author_name"] %></strong><% end %>
+            <% if quote["author_handle"].present? %><span class="x-post-card__quote-handle">@<%= quote["author_handle"] %></span><% end %>
+          <% end %>
+          <% if quote["url"].present? %>
+            <%= link_to quote["url"], target: "_blank", rel: "noopener noreferrer", class: "x-post-card__quote-link" do %><%= author %><% end %>
+          <% else %>
+            <%= author %>
+          <% end %>
+        </div>
+        <div class="x-post-card__quote-text"><%= Twitter::PostFormatter.format(quote["text"].to_s) %></div>
+      </blockquote>
+    <% end %>
+
+    <footer class="x-post-card__footer">
+      <% if post.posted_at.present? %>
+        <span class="x-post-card__time"><%= local_datetime_tag post.posted_at %></span>
+      <% end %>
+      <% if post.replies.present? %>
+        <span class="x-post-card__count"><%= compact_count(post.replies) %> replies</span>
+      <% end %>
+      <% if post.reposts.present? %>
+        <span class="x-post-card__count"><%= compact_count(post.reposts) %> reposts</span>
+      <% end %>
+      <% if post.likes.present? %>
+        <span class="x-post-card__count"><%= compact_count(post.likes) %> likes</span>
+      <% end %>
+      <%= link_to "View on X", post.view_url, class: "x-post-card__link", target: "_blank", rel: "noopener noreferrer" %>
+    </footer>
+  <% end %>
+</article>
