@@ -614,6 +614,48 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_no_selector "[data-huddle-target='devicesBlock']:not([hidden])"
   end
 
+  test "an SDK device retarget keeps the stored preference and updates the picker" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Check devices"
+    assert_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+
+    # The user's own selection is the stored preference. Speakers exercise the
+    # same handler path as microphones; a microphone retarget would also
+    # restart the track, and the fake backend reports every microphone as
+    # "default", which races that restart against the retarget itself.
+    speakers = device_select_options("speakerSelect").reject { |option| option["value"] == "default" }
+    assert_operator speakers.size, :>=, 2, "expected the fake backend to offer at least two speakers"
+    preferred, fallback = speakers.first(2)
+    select preferred["label"], from: "Speaker"
+    wait_for_condition("the speaker switch was not remembered") do
+      stored_device_preferences["audiooutput"] == preferred["value"]
+    end
+
+    # A retarget that comes from the SDK rather than the picker — the preferred
+    # device disappearing, for example — must not overwrite that preference.
+    retargeted = page.evaluate_async_script(<<~JS, fallback["value"])
+      const deviceId = arguments[0];
+      const done = arguments[arguments.length - 1];
+      window.Stimulus
+        .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+        .room.switchActiveDevice('audiooutput', deviceId)
+        .then(() => done(true))
+        .catch(error => done(`switch failed: ${error.message}`));
+    JS
+    assert_equal true, retargeted
+    wait_for_condition("the SDK retarget did not take effect") do
+      active_device_id("audiooutput") == fallback["value"]
+    end
+    assert_equal preferred["value"], stored_device_preferences["audiooutput"],
+      "the SDK fallback overwrote the stored speaker preference"
+    wait_for_condition("the picker did not follow the SDK retarget") do
+      device_select_value("speakerSelect") == fallback["value"]
+    end
+    using_session("Kevin") { assert_media_received "audio" }
+  end
+
   test "the microphone meter follows the fake microphone and rests while muted" do
     open_huddle_as "jz@37signals.com"
 
@@ -1081,6 +1123,14 @@ class HuddlesTest < ApplicationSystemTestCase
 
     def device_select_value(target)
       page.evaluate_script("document.querySelector(\"[data-huddle-target='#{target}']\").value")
+    end
+
+    def active_device_id(kind)
+      page.evaluate_script(<<~JS, kind)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.getActiveDevice(arguments[0]) ?? null
+      JS
     end
 
     def device_select_other_option(target)

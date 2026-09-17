@@ -758,11 +758,14 @@ export default class extends Controller {
       select.appendChild(option)
     })
 
+    // The preferred device — the active one in a call, the stored choice
+    // otherwise — wins over the previous selection, so a picker that is open
+    // during an SDK retarget shows the now-active device.
     const ids = new Set(devices.map((device) => device.deviceId))
-    if (current && ids.has(current)) {
-      select.value = current
-    } else if (preferred && ids.has(preferred)) {
+    if (preferred && ids.has(preferred)) {
       select.value = preferred
+    } else if (current && ids.has(current)) {
+      select.value = current
     } else {
       select.selectedIndex = 0
     }
@@ -1106,12 +1109,14 @@ export default class extends Controller {
         this.#updateConnectionIndicator(quality)
       }
     })
-    on(RoomEvent.ActiveDeviceChanged, (kind, deviceId) => {
+    on(RoomEvent.ActiveDeviceChanged, (kind) => {
       if (room !== this.room) return
 
-      // The SDK retargets tracks itself when a device vanishes; the pickers,
-      // the stored preference, and the meter follow it.
-      storeDevicePreference(kind, deviceId)
+      // The SDK retargets tracks itself when a device vanishes; the pickers
+      // and the meter follow it. The stored preference keeps the user's own
+      // choice, so a fallback never overwrites it: preferences are only
+      // written from user selections (#switchDevice, #storeSelectedDevices,
+      // and the pre-join change handlers).
       this.#refreshDeviceLists()
       if (kind === "audioinput") this.#startMicrophoneMeter()
     })
