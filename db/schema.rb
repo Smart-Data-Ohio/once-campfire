@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022903) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -254,10 +254,25 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
     t.index ["message_id"], name: "index_github_pull_request_references_on_message_id"
   end
 
+  create_table "github_pull_request_threads", force: :cascade do |t|
+    t.integer "channel_thread_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "github_pull_request_id", null: false
+    t.integer "room_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel_thread_id"], name: "index_github_pr_threads_on_thread", unique: true
+    t.index ["channel_thread_id"], name: "index_github_pull_request_threads_on_channel_thread_id"
+    t.index ["github_pull_request_id", "room_id"], name: "index_github_pr_threads_on_pr_and_room", unique: true
+    t.index ["github_pull_request_id"], name: "index_github_pull_request_threads_on_github_pull_request_id"
+    t.index ["room_id"], name: "index_github_pull_request_threads_on_room_id"
+  end
+
   create_table "github_pull_requests", force: :cascade do |t|
     t.string "author_avatar_url"
     t.string "author_login"
     t.string "base_branch"
+    t.text "changed_files"
+    t.datetime "changed_files_fetched_at"
     t.string "check_status"
     t.datetime "created_at", null: false
     t.string "fetch_error"
@@ -522,6 +537,9 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
   add_foreign_key "github_notifications", "messages", on_delete: :nullify
   add_foreign_key "github_pull_request_references", "github_pull_requests"
   add_foreign_key "github_pull_request_references", "messages"
+  add_foreign_key "github_pull_request_threads", "channel_threads"
+  add_foreign_key "github_pull_request_threads", "github_pull_requests"
+  add_foreign_key "github_pull_request_threads", "rooms"
   add_foreign_key "github_repository_subscriptions", "rooms", on_delete: :cascade
   add_foreign_key "github_repository_subscriptions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "google_accounts", "users"
