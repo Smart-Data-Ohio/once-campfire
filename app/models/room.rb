@@ -76,6 +76,10 @@ class Room < ApplicationRecord
     is_a?(Rooms::Voice)
   end
 
+  def stage?
+    is_a?(Rooms::Stage)
+  end
+
   def default_involvement
     "mentions"
   end

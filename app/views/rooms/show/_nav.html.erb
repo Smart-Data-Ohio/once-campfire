@@ -28,7 +28,7 @@
       <% end %>
     <% end %>
 
-    <% if room.voice? %>
+    <% if room.voice? || room.stage? %>
       <%= render "rooms/huddles/participants", room: room, placement: :header %>
     <% end %>
 
@@ -37,6 +37,7 @@
       <span class="room-header__action-label">Events</span>
     <% end %>
 
+    <% stage_membership = room.stage? ? room.memberships.find_by(user: Current.user) : nil %>
     <% if Huddle.configured? && (!room.direct? || room.users.count == 2) %>
       <%= tag.button type: "button", class: "btn huddle-share-indicator room-header__action", hidden: true,
             aria: { label: "View shared screen" }, title: "View shared screen",
@@ -49,19 +50,62 @@
         <span data-huddle-share-indicator-target="label">Screen shared</span>
       <% end %>
 
-      <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: room.voice? ? "Join voice" : "Join huddle" },
+      <%= tag.button type: "button", class: "btn huddle-launcher room-header__action", aria: { pressed: "false", label: room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle" },
             data: {
               controller: "huddle-launcher",
-              action: room.voice? ? "huddle-launcher#toggle" : "huddle-launcher#join",
+              action: room.voice? || room.stage? ? "huddle-launcher#toggle" : "huddle-launcher#join",
               huddle_launcher_room_id_value: room.id,
               huddle_launcher_room_name_value: room_display_name(room),
-              huddle_launcher_join_label_value: room.voice? ? "Join voice" : "Join huddle",
-              huddle_launcher_active_label_value: room.voice? ? "Leave voice" : "In huddle",
-              huddle_launcher_toggle_value: room.voice?
+              huddle_launcher_join_label_value: room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle",
+              huddle_launcher_active_label_value: room.stage? ? "Leave stage" : room.voice? ? "Leave voice" : "In huddle",
+              huddle_launcher_toggle_value: room.voice? || room.stage?,
+              huddle_can_publish_param: stage_membership && !stage_membership.listener?
             } do %>
         <%= image_tag "headphones.svg", size: 20, aria: { hidden: "true" } %>
-        <span data-huddle-launcher-target="label"><%= room.voice? ? "Join voice" : "Join huddle" %></span>
+        <span data-huddle-launcher-target="label"><%= room.stage? ? "Join stage" : room.voice? ? "Join voice" : "Join huddle" %></span>
       <% end %>
+    <% end %>
+
+    <% if stage_membership %>
+      <div class="stage-panel-wrap" data-controller="stage-panel">
+        <button type="button" class="btn room-header__action"
+                aria-controls="<%= dom_id(room, :stage_panel_dialog) %>"
+                aria-expanded="false"
+                aria-label="Show stage"
+                title="Show stage"
+                data-stage-panel-target="toggle"
+                data-action="stage-panel#toggle">
+          <span class="stage-panel__glyph" aria-hidden="true">◉</span>
+          <span class="room-header__action-label">Stage</span>
+        </button>
+
+        <dialog id="<%= dom_id(room, :stage_panel_dialog) %>"
+                class="stage-panel"
+                aria-labelledby="<%= dom_id(room, :stage_panel_title) %>"
+                data-stage-panel-target="panel"
+                data-action="click->stage-panel#backdropClicked close->stage-panel#wasClosed">
+          <section class="stage-panel__surface" aria-labelledby="<%= dom_id(room, :stage_panel_title) %>">
+            <header class="stage-panel__header">
+              <div class="min-width">
+                <h2 id="<%= dom_id(room, :stage_panel_title) %>">Stage</h2>
+                <p>Hosts, speakers, and listeners</p>
+              </div>
+
+              <button type="button"
+                      class="btn stage-panel__close"
+                      aria-label="Close stage"
+                      title="Close stage"
+                      data-action="stage-panel#close">
+                <%= image_tag "remove.svg", size: 16, aria: { hidden: "true" } %>
+              </button>
+            </header>
+
+            <div class="stage-panel__content">
+              <%= render "rooms/stage/panel_body", room: room, membership: stage_membership, rejoin: false %>
+            </div>
+          </section>
+        </dialog>
+      </div>
     <% end %>
 
     <%= link_to_edit_room(room) do %>

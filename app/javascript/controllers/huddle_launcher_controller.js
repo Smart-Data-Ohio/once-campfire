@@ -23,9 +23,13 @@ export default class extends Controller {
   }
 
   join() {
-    window.dispatchEvent(new CustomEvent("huddle:join", {
-      detail: { roomId: this.roomIdValue, roomName: this.roomNameValue }
-    }))
+    // The stage join control carries a non-authoritative publishing hint for
+    // the huddle panel; voice and DM controls carry none.
+    const detail = { roomId: this.roomIdValue, roomName: this.roomNameValue }
+    const hint = this.element.dataset.huddleCanPublishParam
+    if (hint !== undefined) detail.canPublishHint = hint === "true"
+
+    window.dispatchEvent(new CustomEvent("huddle:join", { detail }))
   }
 
   // Voice channels toggle in place: leaving goes through the huddle panel's

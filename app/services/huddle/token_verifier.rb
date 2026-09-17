@@ -2,13 +2,13 @@ class Huddle::TokenVerifier
   class Invalid < StandardError; end
 
   REQUIRED_CLAIMS = %w[ exp iss nbf sub video ].freeze
-  REQUIRED_VIDEO_PERMISSIONS = %w[ roomJoin canPublish canSubscribe ].freeze
+  REQUIRED_VIDEO_PERMISSIONS = %w[ roomJoin canSubscribe ].freeze
   FORBIDDEN_VIDEO_PERMISSIONS = %w[
     roomCreate roomList roomRecord roomAdmin canPublishData canUpdateOwnMetadata ingressAdmin hidden recorder agent
     canPublishTranscription
   ].freeze
   ALLOWED_VIDEO_CLAIMS = (
-    %w[ room canPublishSources ] + REQUIRED_VIDEO_PERMISSIONS + FORBIDDEN_VIDEO_PERMISSIONS
+    %w[ room canPublish canPublishSources ] + REQUIRED_VIDEO_PERMISSIONS + FORBIDDEN_VIDEO_PERMISSIONS
   ).freeze
 
   def initialize(token)
@@ -41,9 +41,23 @@ class Huddle::TokenVerifier
     raise Invalid unless REQUIRED_VIDEO_PERMISSIONS.all? { |permission| video_grant[permission] == true }
     raise Invalid unless FORBIDDEN_VIDEO_PERMISSIONS.none? { |permission| video_grant[permission] }
 
+    # Publishers carry the exact source grant; listeners carry no publish
+    # permission and no sources. Anything in between is not a shape Campfire
+    # mints. A missing canPublish reads as false, and missing sources read as
+    # empty: LiveKit's refreshed tokens omit false permissions and empty
+    # lists, so a listener's refreshed token drops both keys.
+    can_publish = video_grant["canPublish"]
+    raise Invalid unless [ true, false, nil ].include?(can_publish)
+
     publish_sources = video_grant["canPublishSources"]
-    raise Invalid unless publish_sources.is_a?(Array) && publish_sources.all? { |source| source.is_a?(String) }
-    raise Invalid unless publish_sources.sort == Huddle::PUBLISH_SOURCES.sort
+    raise Invalid unless publish_sources.nil? || publish_sources.is_a?(Array)
+    raise Invalid unless publish_sources.nil? || publish_sources.all? { |source| source.is_a?(String) }
+
+    if can_publish == true
+      raise Invalid unless publish_sources.is_a?(Array) && publish_sources.sort == Huddle::PUBLISH_SOURCES.sort
+    else
+      raise Invalid unless publish_sources.nil? || publish_sources.empty?
+    end
 
     { identity: identity, room_name: room_name }
   rescue JWT::DecodeError, KeyError, TypeError, ArgumentError, NoMethodError

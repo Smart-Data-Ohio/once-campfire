@@ -39,6 +39,88 @@ class HuddleInvitationTest < ActiveSupport::TestCase
     assert ActivityItem.exists?(user: users(:jason), event_type: "huddle_started")
   end
 
+  test "a recipient with notifications off or invisible gets no invitation" do
+    memberships(:jason_david_and_jason).update!(involvement: "nothing")
+
+    assert_no_difference -> { ActivityItem.where(user: users(:jason)).count } do
+      assert_no_enqueued_jobs only: Huddle::PushInvitationJob do
+        HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      end
+    end
+
+    memberships(:jason_david_and_jason).update!(involvement: "invisible")
+
+    assert_no_difference -> { ActivityItem.where(user: users(:jason)).count } do
+      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+    end
+  end
+
+  test "a recipient with huddle items switched off still gets the banner but no item" do
+    users(:jason).update!(inbox_preferences: { "huddle_invitations" => false })
+
+    assert_no_difference -> { ActivityItem.where(user: users(:jason)).count } do
+      assert_no_enqueued_jobs only: Huddle::PushInvitationJob do
+        assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+          HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+        end
+      end
+    end
+
+    assert_broadcast_on(ActivityChannel.stream_name_for(users(:jason).id), {
+      activityItemId: 0,
+      huddleInvitation: {
+        activityItemId: 0,
+        eventType: "huddle_started",
+        state: "unread",
+        roomId: @room.id,
+        roomName: "David",
+        roomPath: Rails.application.routes.url_helpers.room_path(@room),
+        callerName: "David",
+        readPath: "",
+        handledPath: ""
+      }
+    })
+
+    travel 46.seconds do
+      Huddle::InvitationResolver.resolve_overdue!
+    end
+    assert_not ActivityItem.exists?(user: users(:jason))
+
+    mention = rooms(:designers).messages.create!(
+      creator: users(:david),
+      body: "Hey #{mention_attachment_for(:jason)}",
+      client_message_id: "huddle-switch-neighbour"
+    )
+    assert_equal "mention", ActivityItem.find_by!(user: users(:jason), source: mention).event_type
+  end
+
+  test "a switched-off user hears one banner across reissues inside the window and a fresh one after" do
+    users(:jason).update!(inbox_preferences: { "huddle_invitations" => false })
+
+    assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+      HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+    end
+    assert_not ActivityItem.exists?(user: users(:jason))
+
+    travel 3.minutes do
+      assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+        HuddleGrant.issue!(session: second_session_for(users(:david)), membership: @starter_membership)
+      end
+    end
+    assert_not ActivityItem.exists?(user: users(:jason))
+  end
+
+  test "a switched-off user is not rung again when the same session reissues its grant" do
+    users(:jason).update!(inbox_preferences: { "huddle_invitations" => false })
+
+    assert_broadcasts ActivityChannel.stream_name_for(users(:jason).id), 1 do
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+      HuddleGrant.issue!(session: @starter_session, membership: @starter_membership)
+    end
+  end
+
   test "channel huddles create no invitation" do
     assert_no_difference -> { ActivityItem.count } do
       assert_no_enqueued_jobs do

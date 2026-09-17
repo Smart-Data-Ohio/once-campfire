@@ -37,11 +37,14 @@ class HuddleGrant < ApplicationRecord
           revoke_scope! active.where(session_id: current_session.id, room_id: current_room.id)
             .where.not(membership_id: current_membership.id)
 
+          stage_role = current_room.stage? ? current_membership.stage_role : nil
+
           existing = active.find_by(session_id: current_session.id, membership_id: current_membership.id)
-          if existing
+          if existing && existing.stage_role == stage_role
             existing.update!(last_issued_at: Time.current)
             existing
           else
+            existing&.revoke!
             create!(
               identity: "campfire-participant-#{SecureRandom.hex(32)}",
               room_name: Huddle.room_name(current_room.id),
@@ -49,6 +52,7 @@ class HuddleGrant < ApplicationRecord
               user_id: user.id,
               membership_id: current_membership.id,
               room_id: current_room.id,
+              stage_role: stage_role,
               last_issued_at: Time.current
             )
           end
@@ -102,10 +106,18 @@ class HuddleGrant < ApplicationRecord
   def authorized?
     return false if revoked?
 
-    User.active.where.not(role: :bot).exists?(id: user_id) &&
+    return false unless User.active.where.not(role: :bot).exists?(id: user_id) &&
       Session.exists?(id: session_id, user_id: user_id) &&
-      Membership.exists?(id: membership_id, user_id: user_id, room_id: room_id) &&
       Room.exists?(id: room_id)
+
+    membership = Membership.find_by(id: membership_id, user_id: user_id, room_id: room_id)
+    return false unless membership
+
+    # A stage grant is only valid for the role it was issued for. The
+    # gateway's per-second check revokes through here, so a demoted speaker
+    # whose grant somehow survived the role-change revocation still loses the
+    # call on the next check.
+    !room.stage? || membership.stage_role == stage_role
   end
 
   def authorize_or_revoke!
@@ -176,10 +188,11 @@ class HuddleGrant < ApplicationRecord
     # invitation or missed item from the last two minutes, handled or not,
     # keeps reconnects and rejoins silent.
     # Refresh the voice presence stacks in the room members' sidebars and in
-    # the room header. Non-voice rooms have no stacks, so they stay silent.
+    # the room header. Stage rooms share the voice stacks wholesale. Other
+    # rooms have no stacks, so they stay silent.
     def broadcast_voice_presence
       voice_room = Room.find_by(id: room_id)
-      return unless voice_room.is_a?(Rooms::Voice)
+      return unless voice_room.is_a?(Rooms::Voice) || voice_room.is_a?(Rooms::Stage)
 
       voice_room.memberships.includes(:user).find_each do |membership|
         broadcast_replace_to membership.user, :rooms,
@@ -195,14 +208,20 @@ class HuddleGrant < ApplicationRecord
     end
 
     def invite_direct_participant
-      # Voice channels are standing calls that members join at will: nobody is
-      # ever invited, rung, or marked as missing the call.
-      return if room.is_a?(Rooms::Voice)
+      # Voice and stage channels are standing calls that members join at
+      # will: nobody is ever invited, rung, or marked as missing the call.
+      return if room.is_a?(Rooms::Voice) || room.is_a?(Rooms::Stage)
 
       recipient = direct_huddle_recipient
       return unless recipient
       return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?
       return if recent_invitation?(recipient)
+      return if recent_grant_issuance?
+
+      unless recipient.inbox_preferences.huddle_invitations
+        broadcast_suppressed_invitation!(recipient)
+        return
+      end
 
       item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
       return unless item
@@ -236,12 +255,31 @@ class HuddleGrant < ApplicationRecord
       return unless User.active.without_bots.where(id: member_ids).count == 2
 
       other_id = (member_ids - [ user_id ]).first
-      User.active.without_bots.find_by(id: other_id) if other_id
+      return unless other_id
+
+      recipient = User.active.without_bots.find_by(id: other_id)
+      return unless recipient
+      return if room.memberships.where(user_id: other_id, involvement: %w[ nothing invisible ]).exists?
+
+      recipient
     end
 
     def recent_invitation?(recipient)
       invitations_for(recipient.id)
         .where(activity_items: { created_at: INVITATION_DEDUP_WINDOW.ago.. })
+        .exists?
+    end
+
+    # The item query above cannot throttle the suppressed path, which never
+    # creates an item, so a second grant for this room and starter inside
+    # the same window also stays silent: rejoins and reconnects ring once.
+    def recent_grant_issuance?
+      previous_issue = last_issued_at_previously_was
+      return true if previous_issue && previous_issue >= INVITATION_DEDUP_WINDOW.ago
+
+      HuddleGrant.where(room_id: room_id, user_id: user_id)
+        .where(created_at: INVITATION_DEDUP_WINDOW.ago..)
+        .where.not(id: id)
         .exists?
     end
 
@@ -258,5 +296,38 @@ class HuddleGrant < ApplicationRecord
 
     def stale_invitation?(item)
       item.handled? || item.event_type != "huddle_started" || item.created_at < INVITATION_DEDUP_WINDOW.ago
+    end
+
+    # With huddle inbox items switched off, the call still rings in-app
+    # through a banner payload without an item. Join and Dismiss skip the
+    # read/handled round-trip that needs an item id. The payload carries no
+    # nulls: empty paths and a zero id read as "no item" in the Stimulus
+    # guards, where nil would arrive as the string "null" and NaN.
+    def broadcast_suppressed_invitation!(recipient)
+      return unless ActivityItem.active_human?(recipient)
+
+      routes = Rails.application.routes.url_helpers
+      ActionCable.server.broadcast ActivityChannel.stream_name_for(recipient.id), {
+        activityItemId: 0,
+        huddleInvitation: {
+          activityItemId: 0,
+          eventType: "huddle_started",
+          state: "unread",
+          roomId: room.id,
+          roomName: suppressed_invitation_room_name(recipient),
+          roomPath: routes.room_path(room),
+          callerName: user&.name || "Someone",
+          readPath: "",
+          handledPath: ""
+        }
+      }
+    end
+
+    def suppressed_invitation_room_name(recipient)
+      if room.direct?
+        room.users.without(recipient).pluck(:name).to_sentence.presence || recipient.name
+      else
+        room.name
+      end
     end
 end

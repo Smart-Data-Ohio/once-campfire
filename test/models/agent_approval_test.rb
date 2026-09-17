@@ -151,6 +151,26 @@ class AgentApprovalTest < ActiveSupport::TestCase
     # Owner Kevin plus administrators David and Jason.
   end
 
+  test "a decider with approvals switched off gets no item but stays a decider" do
+    @agent.update!(owner: users(:kevin))
+    users(:kevin).update!(inbox_preferences: { "agent_approvals" => false })
+
+    approval = AgentApproval.create!(agent: @agent, action: "deploy", summary: "ship it")
+
+    assert_not ActivityItem.exists?(user: users(:kevin), source: approval)
+    assert ActivityItem.exists?(user: users(:david), source: approval)
+    assert ActivityItem.exists?(user: users(:jason), source: approval)
+    assert_includes approval.deciders, users(:kevin)
+    assert approval.decidable_by?(users(:kevin))
+
+    mention = rooms(:designers).messages.create!(
+      creator: users(:david),
+      body: "Hey #{mention_attachment_for(:kevin)}",
+      client_message_id: "approval-switch-neighbour"
+    )
+    assert_equal "mention", ActivityItem.find_by!(user: users(:kevin), source: mention).event_type
+  end
+
   test "deciders fall back to administrators when the agent has no owner" do
     @agent.update_columns(owner_id: nil)
     approval = AgentApproval.create!(agent: @agent, action: "deploy", summary: "ok")
