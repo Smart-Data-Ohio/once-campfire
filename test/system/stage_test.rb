@@ -164,12 +164,12 @@ class StageTest < ApplicationSystemTestCase
       jason_row = "##{dom_id(room.memberships.find_by!(user: users(:jason)), :stage_row)}"
       kevin_row = "##{dom_id(room.memberships.find_by!(user: users(:kevin)), :stage_row)}"
 
-      within jason_row, wait: 10 do
-        assert_selector ".stage-panel__hand-badge", text: "Hand raised"
-        assert_selector "button", text: "Invite to speak"
+      within jason_row, wait: BROADCAST_WAIT do
+        assert_selector ".stage-panel__hand-badge", text: "Hand raised", wait: BROADCAST_WAIT
+        assert_selector "button", text: "Invite to speak", wait: BROADCAST_WAIT
       end
       within kevin_row do
-        assert_selector "button", text: "Invite to speak"
+        assert_selector "button", text: "Invite to speak", wait: BROADCAST_WAIT
       end
 
       first, second = page.evaluate_script(<<~JS)
@@ -200,8 +200,8 @@ class StageTest < ApplicationSystemTestCase
 
     using_session("Host") do
       jason_row = "##{dom_id(room.memberships.find_by!(user: users(:jason)), :stage_row)}"
-      within jason_row, wait: 10 do
-        assert_selector "button", text: "Invite to speak"
+      within jason_row, wait: BROADCAST_WAIT do
+        assert_selector "button", text: "Invite to speak", wait: BROADCAST_WAIT
         click_button "Invite to speak"
       end
 
@@ -210,7 +210,7 @@ class StageTest < ApplicationSystemTestCase
       end
     end
 
-    assert_selector "##{dom_id(room, :stage_controls)}", text: "You are speaking", wait: 10
+    assert_selector "##{dom_id(room, :stage_controls)}", text: "You are speaking", wait: BROADCAST_WAIT
 
     using_session("Host") do
       jason_row = "##{dom_id(room.memberships.find_by!(user: users(:jason)), :stage_row)}"
@@ -223,7 +223,7 @@ class StageTest < ApplicationSystemTestCase
       end
     end
 
-    assert_selector "##{dom_id(room, :stage_controls)}", text: "You are in the audience", wait: 10
+    assert_selector "##{dom_id(room, :stage_controls)}", text: "You are in the audience", wait: BROADCAST_WAIT
   end
 
   test "a host lowers a raised hand without promoting" do
@@ -471,7 +471,7 @@ class StageTest < ApplicationSystemTestCase
       end
     end
 
-    wait_for_condition("the invited listener did not rejoin publishing") do
+    wait_for_condition("the invited listener did not rejoin publishing", timeout: LIVEKIT_REJOIN_WAIT) do
       page.has_css?("#channel-huddle[data-state='connected']", wait: 0) && local_can_publish? == true
     end
     assert_selector "#channel-huddle [data-huddle-target='mute']", text: "Mute", visible: :visible
@@ -484,7 +484,7 @@ class StageTest < ApplicationSystemTestCase
       end
     end
 
-    wait_for_condition("the demoted speaker kept publishing") do
+    wait_for_condition("the demoted speaker kept publishing", timeout: LIVEKIT_REJOIN_WAIT) do
       page.has_css?("#channel-huddle[data-state='connected']", wait: 0) && local_can_publish? == false
     end
     assert_selector "#channel-huddle [data-huddle-target='listeningNote']", text: "You are listening"
@@ -620,8 +620,8 @@ class StageTest < ApplicationSystemTestCase
       @gateway_pid = nil
     end
 
-    def wait_for_condition(message)
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
+    def wait_for_condition(message, timeout: 20)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
       until yield
         flunk message if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         sleep 0.1

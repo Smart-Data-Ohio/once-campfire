@@ -29,26 +29,30 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     assert_selector "#voice_rooms .voice-room .voice-stack:not(.voice-stack--live)"
 
     # The test cable adapter delivers over a thread pool, so back-to-back
-    # presence broadcasts can arrive out of order. The pauses below let each
-    # broadcast land before the next one fires; in production, issuance and
-    # first sighting are seconds apart.
+    # presence broadcasts can arrive out of order and the issuance render
+    # (nobody in voice yet) could land after the sighting render. Wait for
+    # each issuance render before recording the sighting; in production,
+    # issuance and first sighting are seconds apart.
+    observe_turbo_stream_renders
+    renders = header_voice_renders
     david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
-    sleep 0.5
+    wait_for_issuance_broadcast(after: renders)
     david_grant.record_seen!
 
     within "#voice_rooms .voice-room" do
-      assert_selector ".voice-stack__count", text: "1", wait: 10
+      assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
     end
 
+    renders = header_voice_renders
     jason_grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:jason)))
-    sleep 0.5
+    wait_for_issuance_broadcast(after: renders)
     jason_grant.record_seen!
 
     within "#voice_rooms .voice-room" do
-      assert_selector ".voice-stack--live", wait: 10
-      assert_selector ".voice-stack__count", text: "2"
-      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
-      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']"
+      assert_selector ".voice-stack--live", wait: BROADCAST_WAIT
+      assert_selector ".voice-stack__count", text: "2", wait: BROADCAST_WAIT
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']", wait: BROADCAST_WAIT
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']", wait: BROADCAST_WAIT
     end
 
     # The presence stack sits at the row's trailing edge; if the row ever
@@ -65,10 +69,10 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     JS
     assert_operator trailing_left, :>, label_left
     within ".room-header__actions" do
-      assert_selector ".voice-stack--live", wait: 10
-      assert_selector ".voice-stack__count", text: "2"
-      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
-      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']"
+      assert_selector ".voice-stack--live", wait: BROADCAST_WAIT
+      assert_selector ".voice-stack__count", text: "2", wait: BROADCAST_WAIT
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']", wait: BROADCAST_WAIT
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']", wait: BROADCAST_WAIT
     end
 
     assert_not ActivityItem.exists?(source: [ david_grant, jason_grant ])
@@ -76,13 +80,13 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     david_grant.revoke!
 
     within "#voice_rooms .voice-room" do
-      assert_selector ".voice-stack__count", text: "1", wait: 10
-      assert_no_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
-      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']"
+      assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
+      assert_no_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']", wait: BROADCAST_WAIT
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:jason).id}']", wait: BROADCAST_WAIT
     end
     within ".room-header__actions" do
-      assert_selector ".voice-stack__count", text: "1", wait: 10
-      assert_no_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
+      assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
+      assert_no_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']", wait: BROADCAST_WAIT
     end
   end
 
@@ -128,12 +132,13 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     stack = find(".room-header__actions .voice-stack")
     assert_equal "15000", stack["data-huddle-participants-interval-value"]
 
+    observe_turbo_stream_renders
     grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
-    sleep 0.5 # Let the issuance broadcast land first (see above).
+    wait_for_issuance_broadcast # Let the issuance render land first (see above).
     grant.record_seen!
 
     within ".room-header__actions" do
-      assert_selector ".voice-stack__count", text: "1", wait: 10
+      assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
     end
 
     # The grant quietly expires: no broadcast fires, so the stack goes stale
@@ -175,7 +180,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
     wait_for_issuance_broadcast
     david_grant.record_seen!
-    within(".room-header__actions") { assert_selector ".voice-stack--live", wait: 10 }
+    within(".room-header__actions") { assert_selector ".voice-stack--live", wait: BROADCAST_WAIT }
 
     page.execute_script(<<~JS)
       window.voiceRemovalErrors = []
@@ -217,7 +222,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       JS
     end
     wait_for_stable_header_stack_removal
-    assert_no_selector ".room-header__actions .voice-stack--live", wait: 10
+    assert_no_selector ".room-header__actions .voice-stack--live", wait: BROADCAST_WAIT
 
     # Let the post-removal cable reconnect play out: the room message stream
     # stays rejected while the sidebar streams resubscribe and the sidebar
@@ -314,8 +319,8 @@ class VoiceChannelsTest < ApplicationSystemTestCase
 
       page.current_window.resize_to(1400, 1400)
       within(".room-header__actions") do
-        assert_selector ".voice-stack__count", text: "4", wait: 10
-        assert_selector "img.voice-stack__avatar", count: 4
+        assert_selector ".voice-stack__count", text: "4", wait: BROADCAST_WAIT
+        assert_selector "img.voice-stack__avatar", count: 4, wait: BROADCAST_WAIT
       end
 
       # The narrowest phones have no room for the stack at all: it steps
@@ -412,11 +417,17 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     # page, while the sidebar render travels a user stream whose
     # subscription has a legitimate gap during the sidebar's initial
     # reload (rooms-list reconnects once on every page load).
-    def wait_for_issuance_broadcast
-      expected = "replace:#{dom_id(@room, :header_voice_participants)}"
+    def wait_for_issuance_broadcast(after: 0)
       Timeout.timeout(10) do
-        sleep 0.05 until page.evaluate_script("window.voiceRemovalStreams").include?(expected)
+        sleep 0.05 until header_voice_renders > after
       end
+    end
+
+    # Number of header participant renders observed so far; pass it as
+    # `after:` so a later wait cannot be satisfied by an earlier render.
+    def header_voice_renders
+      expected = "replace:#{dom_id(@room, :header_voice_participants)}"
+      page.evaluate_script("window.voiceRemovalStreams").count(expected)
     end
 
     # The header stack is stably clear once its element is gone (removal
