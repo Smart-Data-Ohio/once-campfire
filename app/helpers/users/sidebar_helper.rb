@@ -22,6 +22,18 @@ module Users::SidebarHelper
       .transform_values { |grants| grants.filter_map(&:user).uniq.sort_by { |user| user.name.downcase } }
   end
 
+  # Members of every direct room of the current user, loaded once per
+  # render so DM rows never query per row. Rows exclude the current user
+  # themselves in Ruby instead of scoping the association, which would
+  # query again even when preloaded.
+  def direct_room_members_by_room_id
+    @direct_room_members_by_room_id ||= begin
+      direct_room_ids = Current.user.memberships.joins(:room).where(room: { type: "Rooms::Direct" }).select(:room_id)
+      Membership.where(room_id: direct_room_ids).includes(:user).group_by(&:room_id)
+        .transform_values { |room_memberships| room_memberships.map(&:user) }
+    end
+  end
+
   # Two-person DM ids for the current user, counted once: only those DMs can
   # huddle, so only their rows render a stack. One grouped count instead of a
   # COUNT per row.

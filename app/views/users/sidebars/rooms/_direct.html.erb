@@ -1,7 +1,7 @@
 <%= link_to_room membership.room, class: [ "sidebar-item direct", "unread": membership.unread? ], id: dom_id(membership.room, :list),
       data: { sorted_list_number: membership.room.updated_at.to_fs(:epoch) } do %>
   <% cache membership do %>
-    <% members = membership.room.users.without(membership.user).presence || [ membership.user ] %>
+    <% members = direct_room_members_by_room_id.fetch(membership.room_id, []).reject { |member| member.id == membership.user_id }.presence || [ membership.user ] %>
 
     <% if members.many? %>
       <div class="avatar__group">
