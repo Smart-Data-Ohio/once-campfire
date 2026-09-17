@@ -1,0 +1,14 @@
+<div class="room-header__identity room--current min-width" id="<%= dom_id(room, :header) %>">
+  <span class="room-header__kind"><%= room_kind_label(room) %></span>
+  <h1 class="room__contents overflow-ellipsis">
+    <% if room.direct? %>
+      <span class="for-screen-reader">Ping with</span>
+    <% elsif (room_icon = icon_avatar_tag(room.icon_name, size: 32, class: "room-header__icon")) %>
+      <%= room_icon %>
+    <% else %>
+      <span class="room-header__hash" aria-hidden="true">#</span>
+    <% end %>
+
+    <span class="room-header__name overflow-ellipsis"><%= room_display_name(room) %></span>
+  </h1>
+</div>

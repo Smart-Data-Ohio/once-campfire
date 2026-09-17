@@ -40,3 +40,44 @@
   margin-inline-start: auto;
   opacity: 0.65;
 }
+
+/* Icons used as room and bot avatars (see docs/icons.md). Emoji avatars size
+   through an inline font-size; image avatars size through width/height. */
+
+.icon-avatar--emoji {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  line-height: 1;
+}
+
+.sidebar-item__icon--custom {
+  display: inline-flex;
+}
+
+.sidebar-item__icon--custom::before {
+  content: none;
+}
+
+.room-header__icon {
+  align-self: center;
+  flex: none;
+}
+
+.message--formatted .message__room--custom {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4ch;
+}
+
+.message--formatted .message__room--custom::before {
+  content: none;
+}
+
+.icon-field__preview {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-block-size: 32px;
+  min-inline-size: 32px;
+}

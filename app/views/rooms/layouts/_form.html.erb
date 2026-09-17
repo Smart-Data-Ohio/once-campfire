@@ -16,6 +16,12 @@
     <% end %>
   </div>
 
+  <% if Current.user.can_administer?(room) %>
+    <div class="margin-block-start">
+      <%= render "shared/icon_field", form: form, record: room %>
+    </div>
+  <% end %>
+
   <hr class="margin-block borderless">
 
   <section class="room-access margin-block pad-inline fill-shade border-radius">

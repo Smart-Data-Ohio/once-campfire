@@ -53,5 +53,6 @@ class Rooms::OpensController < RoomsController
 
     def broadcast_update_room
       broadcast_replace_to :rooms, target: [ @room, :list ], partial: "users/sidebars/rooms/shared", locals: { room: @room }
+      broadcast_replace_to :rooms, target: [ @room, :header ], partial: "rooms/show/header_identity", locals: { room: @room }
     end
 end

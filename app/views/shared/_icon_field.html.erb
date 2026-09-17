@@ -1,0 +1,22 @@
+<%# Icon shortcode field with `:` autocomplete, a live preview, and a remove control. Locals: form (builder), record (room or bot). %>
+<div data-controller="icon-field" data-icon-field-url-value="<%= autocompletable_icons_path %>">
+  <%= form.label :icon_name, "Icon", class: "txt-small" %>
+
+  <div class="flex align-center gap">
+    <span class="icon-field__preview flex-item-no-shrink" data-icon-field-target="preview"><%= icon_avatar_tag(record.icon_name, size: 32) %></span>
+
+    <%= form.text_field :icon_name, value: (record.icon_name.present? ? ":#{record.icon_name}:" : nil),
+          class: "input flex-item-grow", placeholder: ":shortcode:", autocomplete: "off", autocorrect: "off",
+          autocapitalize: "off", spellcheck: false,
+          data: {
+            icon_field_target: "input",
+            action: "input->icon-field#preview input->markdown-autocomplete#search focus->markdown-autocomplete#focus blur->markdown-autocomplete#blur",
+            controller: "markdown-autocomplete",
+            markdown_autocomplete_icons_url_value: autocompletable_icons_path
+          } %>
+
+    <button type="button" class="btn flex-item-no-shrink" data-action="icon-field#clear">Remove</button>
+  </div>
+
+  <p class="txt-small">Type : to search the icon set. Leave blank for the default.</p>
+</div>

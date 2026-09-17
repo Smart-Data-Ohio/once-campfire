@@ -82,7 +82,11 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     ], removed_streams.map { |stream| stream["target"] }
 
     remaining_streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
-    assert_equal [ "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [ "replace", "replace" ], remaining_streams.map { |stream| stream["action"] }
+    assert_equal [
+      ActionView::RecordIdentifier.dom_id(room, :list),
+      ActionView::RecordIdentifier.dom_id(room, :header)
+    ], remaining_streams.map { |stream| stream["target"] }
   end
 
   test "a non-administrator creator can manage members of their own voice room" do

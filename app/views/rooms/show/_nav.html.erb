@@ -1,16 +1,5 @@
 <% content_for :nav do %>
-  <div class="room-header__identity room--current min-width">
-    <span class="room-header__kind"><%= room_kind_label(room) %></span>
-    <h1 class="room__contents overflow-ellipsis">
-      <% if room.direct? %>
-        <span class="for-screen-reader">Ping with</span>
-      <% else %>
-        <span class="room-header__hash" aria-hidden="true">#</span>
-      <% end %>
-
-      <span class="room-header__name overflow-ellipsis"><%= room_display_name(room) %></span>
-    </h1>
-  </div>
+  <%= render "rooms/show/header_identity", room: room %>
 
   <div class="room-header__actions">
     <button type="button"

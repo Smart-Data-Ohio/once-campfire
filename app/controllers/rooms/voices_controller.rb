@@ -55,20 +55,23 @@ class Rooms::VoicesController < RoomsController
     end
 
     def broadcast_create_room(room)
-      each_user_and_html_for(room) do |user, html|
+      each_user_and_html_for(room, "users/sidebars/rooms/voice") do |user, html|
         broadcast_prepend_to user, :rooms, target: :voice_rooms, html: html
       end
     end
 
     def broadcast_update_room
-      each_user_and_html_for(@room) do |user, html|
+      each_user_and_html_for(@room, "users/sidebars/rooms/voice") do |user, html|
         broadcast_replace_to user, :rooms, target: [ @room, :list ], html: html
+      end
+      each_user_and_html_for(@room, "rooms/show/header_identity") do |user, html|
+        broadcast_replace_to user, :rooms, target: [ @room, :header ], html: html
       end
     end
 
-    def each_user_and_html_for(room)
+    def each_user_and_html_for(room, partial)
       # Optimization to avoid rendering the same partial for every user
-      html = render_to_string(partial: "users/sidebars/rooms/voice", locals: { room: room })
+      html = render_to_string(partial:, locals: { room: room })
 
       room.users.each { |user| yield user, html }
     end

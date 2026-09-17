@@ -54,7 +54,7 @@ class Accounts::BotsController < ApplicationController
     end
 
     def bot_params
-      params.require(:user).permit(:name, :avatar, :webhook_url)
+      params.require(:user).permit(:name, :avatar, :webhook_url, :icon_name)
     end
 
     def agent_params

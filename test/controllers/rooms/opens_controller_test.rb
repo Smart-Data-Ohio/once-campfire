@@ -45,7 +45,8 @@ class Rooms::OpensControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "update" do
-    assert_turbo_stream_broadcasts :rooms, count: 1 do
+    # Sidebar row plus room header.
+    assert_turbo_stream_broadcasts :rooms, count: 2 do
       put rooms_open_url(rooms(:pets)), params: { room: { name: "New Name" } }
     end
 
