@@ -1,2 +1,37 @@
-<%# Editing happens in the room composer. Keep the frame endpoint empty for old Turbo links. %>
-<turbo-frame id="<%= dom_id(@message, :edit) %>"></turbo-frame>
+<%# Full edit form: the in-room composer handles quick text edits, but Drive
+    attachments are managed here. Each chip carries a hidden
+    message[drive_file_ids][] input; removing the chip drops the input, and
+    the blank sentinel below keeps "remove all" expressible (blanks are
+    filtered server-side). Only file ids are stored or submitted: names
+    resolve at view time for viewers who can open the file. %>
+<turbo-frame id="<%= dom_id(@message, :edit) %>">
+  <%= form_with model: [ @room, @message ], class: "message-edit" do |form| %>
+    <div class="message-edit__field">
+      <%= form.label :markdown_source, "Message" %>
+      <%= form.text_area :markdown_source, value: @message.editable_markdown_source,
+            rows: 5, maxlength: 50_000, class: "message-edit__textarea input" %>
+    </div>
+
+    <div class="message-edit__field">
+      <span class="message-edit__label" id="<%= dom_id(@message, :drive_attachments_label) %>">Drive attachments</span>
+      <div class="drive-attachment-chips" role="group" aria-labelledby="<%= dom_id(@message, :drive_attachments_label) %>">
+        <% @message.drive_attachments.each do |attachment| %>
+          <span class="drive-attachment-chip" data-controller="element-removal">
+            <%= hidden_field_tag "message[drive_file_ids][]", attachment.file_id %>
+            <span class="drive-attachment-chip__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
+            <span class="drive-attachment-chip__name">Google Drive file</span>
+            <%= link_to "Open in Drive", attachment.url, class: "drive-attachment-chip__open",
+                  target: "_blank", rel: "noopener" %>
+            <button type="button" class="drive-attachment-chip__remove" aria-label="Remove Google Drive file"
+                    data-action="element-removal#remove">×</button>
+          </span>
+        <% end %>
+        <%= hidden_field_tag "message[drive_file_ids][]", "" %>
+      </div>
+    </div>
+
+    <div class="message-edit__actions">
+      <%= form.submit "Save changes", class: "btn btn--reversed" %>
+    </div>
+  <% end %>
+</turbo-frame>

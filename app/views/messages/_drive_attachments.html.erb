@@ -1,0 +1,19 @@
+<%# Viewer-independent on purpose: this markup is identical for every viewer
+    (and safe to fragment-cache across viewers) because only the file id is
+    stored. The drive-link controller upgrades each anchor to the file's name,
+    kind icon, modified time, and owner for viewers whose own Google account
+    can open it; everyone else keeps the generic chip below. %>
+<% attachments = local_assigns[:message]&.drive_attachments.to_a %>
+<% if attachments.any? %>
+  <div class="drive-attachments" data-controller="drive-link">
+    <% attachments.each do |attachment| %>
+      <%= link_to attachment.url, class: "drive-attachment", target: "_blank", rel: "noopener" do %>
+        <span class="drive-attachment__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
+        <span class="drive-attachment__text">
+          <span class="drive-attachment__name">Google Drive file</span>
+          <span class="drive-attachment__meta">Open in Drive</span>
+        </span>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>
