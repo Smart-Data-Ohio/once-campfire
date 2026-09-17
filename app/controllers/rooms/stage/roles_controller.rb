@@ -15,7 +15,8 @@ class Rooms::Stage::RolesController < ApplicationController
   # and a rejoin event goes to the persistent target in their huddle panel,
   # which is present on every page. The persistent event is the only reconnect
   # trigger, so delayed delivery cannot reconnect twice; the panel carries no
-  # trigger.
+  # trigger. A demotion to listener also ends the member's live stream in the
+  # same transaction.
   def update
     target = @room.memberships.find_by(id: params[:membership_id])
     return head :not_found unless target
@@ -25,7 +26,10 @@ class Rooms::Stage::RolesController < ApplicationController
     end
 
     begin
-      target.change_stage_role!(params[:stage_role])
+      ActiveRecord::Base.transaction do
+        target.change_stage_role!(params[:stage_role])
+        Stream.end_live_for_membership!(target) if target.listener?
+      end
     rescue ActiveRecord::RecordInvalid => error
       return render plain: error.record.errors.full_messages.to_sentence, status: :unprocessable_entity
     end

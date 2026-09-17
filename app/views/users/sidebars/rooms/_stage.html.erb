@@ -5,6 +5,7 @@
   <span class="sidebar-item__icon<%= " sidebar-item__icon--custom" if room_icon %>" aria-hidden="true"><%= room_icon %></span>
   <span class="sidebar-item__label overflow-ellipsis"><%= room.name %></span>
   <span class="voice-room__trailing">
+    <%= render "rooms/stage/live_dot", room: room %>
     <%= render "rooms/huddles/participants", room: room, placement: :sidebar %>
     <% if local_assigns[:unread] %>
       <span class="sidebar-item__status">New</span>

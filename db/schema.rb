@@ -466,6 +466,19 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
+  create_table "streams", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "ended_at"
+    t.integer "membership_id", null: false
+    t.string "quality", null: false
+    t.integer "room_id", null: false
+    t.datetime "started_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["membership_id"], name: "index_streams_on_membership_id"
+    t.index ["room_id"], name: "index_streams_on_room_id", unique: true, where: "ended_at IS NULL"
+  end
+
   create_table "thread_memberships", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "involvement", default: "mentions", null: false

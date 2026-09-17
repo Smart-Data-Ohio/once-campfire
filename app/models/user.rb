@@ -86,6 +86,11 @@ class User < ApplicationRecord
       # manager. Promote a successor first, in this same transaction.
       promote_replacement_stage_hosts
 
+      # Grant revocation below ends streams only when a grant exists; a
+      # presenter who never joined still holds a live stream, so end those
+      # explicitly in this same transaction.
+      Stream.end_live_for_user!(self)
+
       # delete_all skips the membership hook, so capture the entries now
       # for cleanup syncs after commit.
       calendar_event_ids = event_calendar_entries.pluck(:event_id)

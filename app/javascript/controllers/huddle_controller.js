@@ -8,6 +8,7 @@ const AUTH_CHECK_INTERVAL = 45_000
 const CONNECTION_STATS_INTERVAL = 2_000
 const ACTIVE_STATES = [ "prejoin", "connecting", "connected", "reconnecting" ]
 const NOISE_SUPPRESSION_STORAGE_KEY = "campfire.huddle.noiseSuppression"
+const STREAM_QUALITY_STORAGE_KEY = "campfire.huddle.streamQuality"
 let liveKitPromise
 
 const loadLiveKit = () => liveKitPromise ||= import("livekit-client").catch(error => {
@@ -34,7 +35,8 @@ export default class extends Controller {
     "prejoinMeter", "prejoinMeterFill", "preview", "previewWrap", "resumeAudio",
     "retry", "roleEvents", "roomName", "screens", "settings", "settingsRow", "share", "shareLabel",
     "sharing", "sharingExpand", "sharingName", "speakerRow", "speakerSelect",
-    "statJitter", "statLoss", "statRtt", "statRx", "statSent", "statTransport", "status"
+    "statJitter", "statLoss", "statRtt", "statRx", "statSent", "statTransport", "status",
+    "streamQuality", "streamQualityRow"
   ]
   static values = {
     currentUserId: Number,
@@ -64,6 +66,7 @@ export default class extends Controller {
     this.previewVideoStream = null
     this.devicesOpen = false
     this.connectionQuality = "unknown"
+    this.streaming = null
     this.roleEventsObserver = null
     this.connectionStatsTimer = null
     this.connectionStatsSampling = false
@@ -78,6 +81,8 @@ export default class extends Controller {
 
     window.addEventListener("huddle:join", this.join, options)
     window.addEventListener("huddle:role-changed", this.roleChanged, options)
+    window.addEventListener("huddle:stream-start", this.streamStarted, options)
+    window.addEventListener("huddle:stream-stop", this.streamStopped, options)
     window.addEventListener("huddle:query", this.broadcastState, options)
     window.addEventListener("huddle:expand-screen", this.viewSharedScreen, options)
     window.addEventListener("pagehide", this.pageHiding, options)
@@ -268,6 +273,17 @@ export default class extends Controller {
 
   #handleRoleEvent(node) {
     if (node?.nodeType !== Node.ELEMENT_NODE) return
+
+    // A host stopping this browser's stream: the server state is already
+    // ended, so this only stops the local share. streamStopped clears the
+    // streaming flag before stopping, which keeps the unpublish below from
+    // DELETEing a stream that is already gone.
+    if (node.dataset.huddleStreamKind === "stream-stopped") {
+      const roomId = Number(node.dataset.huddleStreamRoomId)
+      node.remove()
+      this.streamStopped({ detail: { roomId } })
+      return
+    }
 
     const roomId = Number(node.dataset.huddleRejoinRoomId)
     const stageRole = node.dataset.huddleRejoinStageRole
@@ -558,6 +574,79 @@ export default class extends Controller {
 
     const expanded = tracks.indexOf(this.expandedTrack)
     this.#expandScreen(expanded === -1 ? tracks.at(-1) : tracks[(expanded + 1) % tracks.length])
+  }
+
+  // The stage panel POSTs the stream first and dispatches this on success,
+  // so by the time it arrives the room is live. The share starts at the
+  // stream's quality; an ordinary share keeps the room default.
+  streamStarted = async ({ detail }) => {
+    const roomId = Number(detail?.roomId)
+    if (!Number.isInteger(roomId) || roomId <= 0) return
+
+    // Presenting needs the call: without it there is nothing to share over.
+    // The stream stays live — stopping it is the Stop control's job — and a
+    // join afterwards shares through the ordinary control instead.
+    if (roomId !== this.roomId || !this.room || this.state !== "connected") return
+
+    const room = this.room
+    this.streaming = { roomId, quality: detail?.quality }
+
+    try {
+      await this.#startScreenShare(room, this.#streamEncodingFor(detail?.quality))
+    } catch (error) {
+      // A cancelled or denied capture must not leave live state dangling.
+      this.streaming = null
+      await this.#deleteStream(roomId)
+      if (room === this.room) {
+        this.#showTemporaryStatus(this.#permissionWasDenied(error)
+          ? "Screen sharing wasn’t started. Choose a screen and allow sharing to try again."
+          : "Screen sharing could not be started. Try again.")
+        this.#updateMediaControls()
+      }
+      return
+    }
+
+    if (room !== this.room) {
+      this.streaming = null
+      return
+    }
+
+    this.#syncLocalScreenShare(room)
+    this.#updateMediaControls()
+    this.#showTemporaryStatus("You’re live")
+  }
+
+  // Stop stream ends the server state first; this stops the local share once
+  // that lands. Only the presenting browser holds the flag, so a host
+  // stopping someone else's stream changes nothing locally.
+  streamStopped = async ({ detail }) => {
+    const roomId = Number(detail?.roomId)
+    if (!Number.isInteger(roomId) || roomId <= 0) return
+    if (this.streaming?.roomId !== roomId || !this.room) return
+
+    // Cleared before stopping: the unpublish below would otherwise DELETE a
+    // stream the form already ended.
+    this.streaming = null
+
+    try {
+      await this.room.localParticipant.setScreenShareEnabled(false)
+    } catch (error) {
+      // The share is already gone or going; nothing to recover.
+    }
+
+    this.#updateMediaControls()
+  }
+
+  // The viewer's stream quality choice applies to the presenter's screen
+  // share and is remembered like the other huddle preferences.
+  streamQualityChanged = () => {
+    const value = this.streamQualityTarget.value
+    if (![ "auto", "low", "high" ].includes(value)) return
+
+    this.#storeStreamQuality(value)
+
+    const publication = this.#streamPublication()
+    if (publication) this.#applyStreamViewerQuality(publication)
   }
 
   keyPressed = (event) => {
@@ -1105,7 +1194,7 @@ export default class extends Controller {
     return { ideal: deviceId || fallback }
   }
 
-  async #startScreenShare(room) {
+  async #startScreenShare(room, screenShareEncoding) {
     const options = {
       contentHint: "detail",
       // No `resolution`. A preset's resolution carries its frame rate too, so
@@ -1121,8 +1210,10 @@ export default class extends Controller {
 
     // Shared audio is usually music or a video rather than speech, and discontinuous
     // transmission chops it, so it publishes without DTX. The option reaches both
-    // screen tracks; DTX has no meaning for the video one.
+    // screen tracks; DTX has no meaning for the video one. A stream passes its
+    // own encoding for this call only; an ordinary share inherits the default.
     const publishOptions = { dtx: false }
+    if (screenShareEncoding) publishOptions.screenShareEncoding = screenShareEncoding
 
     try {
       await room.localParticipant.setScreenShareEnabled(true, { ...options, audio: true }, publishOptions)
@@ -1132,6 +1223,42 @@ export default class extends Controller {
       // Only a browser that refused to *capture* with these constraints is
       // retried; a publishing failure would just show a second picker.
       await room.localParticipant.setScreenShareEnabled(true, options, publishOptions)
+    }
+  }
+
+  // The stream quality select maps onto the SDK's screen-share presets. An
+  // unknown value falls back to the room default rather than failing the
+  // share.
+  #streamEncodingFor(quality) {
+    const presets = this.liveKit?.ScreenSharePresets
+    if (!presets) return undefined
+
+    switch (quality) {
+      case "720p15": return presets.h720fps15.encoding
+      case "1080p15": return presets.h1080fps15.encoding
+      case "1080p30": return presets.h1080fps30.encoding
+      default: return undefined
+    }
+  }
+
+  // Ends the room's stream the way the Stop control's DELETE does. Best
+  // effort: the Stop control and the automatic ends converge on the same
+  // state, so a failure here only delays the end.
+  async #deleteStream(roomId) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
+    if (!csrfToken) return
+
+    try {
+      await fetch(`/rooms/${encodeURIComponent(roomId)}/stage/stream`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: {
+          "Accept": "text/vnd.turbo-stream.html",
+          "X-CSRF-Token": csrfToken
+        }
+      })
+    } catch (error) {
+      // Ending is idempotent; the next trigger retries it.
     }
   }
 
@@ -1201,6 +1328,7 @@ export default class extends Controller {
       if (publication.track) this.#detachTrack(publication.track)
       this.#renderRoster()
       this.#updateMediaControls()
+      this.#streamShareUnpublished(publication)
     })
     on(RoomEvent.AudioPlaybackStatusChanged, () => this.#updateAudioPlaybackControl())
     on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
@@ -1243,9 +1371,34 @@ export default class extends Controller {
     this.#setState("failed", this.#disconnectMessage(reason), true, "Huddle ended")
   }
 
+  // The browser's own stop control and leaving the call unpublish the screen
+  // share without touching the stream. Ending the server state there keeps no
+  // live state dangling behind a share that is already gone.
+  #streamShareUnpublished(publication) {
+    if (!this.streaming || this.streaming.roomId !== this.roomId) return
+    if (publication?.source !== this.liveKit?.Track?.Source?.ScreenShare) return
+
+    const { roomId } = this.streaming
+    this.streaming = null
+    this.#deleteStream(roomId)
+  }
+
+  // Leaving, switching rooms, and rejoining all end the local share with the
+  // old connection; the stream it carried ends alongside so no live state
+  // dangles. A rejoin after a role change already ended server-side through
+  // grant revocation, which makes this DELETE a harmless no-op there.
+  #endStreamOnDisconnect() {
+    if (!this.streaming) return
+
+    const { roomId } = this.streaming
+    this.streaming = null
+    this.#deleteStream(roomId)
+  }
+
   async #disconnectCurrentRoom() {
     const room = this.room
     this.room = null
+    this.#endStreamOnDisconnect()
     this.#stopAuthenticationChecks()
     this.#stopPreview()
     this.#stopMicrophoneMeter()
@@ -1376,8 +1529,12 @@ export default class extends Controller {
       fullscreenButton.focus()
     })
 
+    const watching = document.createElement("p")
+    watching.className = "huddle__watching"
+    watching.hidden = true
+
     actions.append(expandButton, fullscreenButton)
-    figure.append(video, actions, caption)
+    figure.append(video, actions, caption, watching)
     this.screensTarget.appendChild(figure)
     this.screensTarget.hidden = false
     this.attachments.set(track, {
@@ -1385,14 +1542,25 @@ export default class extends Controller {
       wrapper: figure,
       publication,
       name,
+      participantIdentity: participant?.identity || null,
       isLocal,
       kind: "screen",
       expandButton,
-      fullscreenButton
+      fullscreenButton,
+      watching
     })
 
     this.#updateScreenControls()
     this.#renderSharingNotice()
+
+    // A live stream expands itself for viewers: the presenter's share opens
+    // in theater mode on arrival the way huddle:expand-screen would open it,
+    // unless the viewer already expanded something else. Joining late takes
+    // the same path through the connect-time sync.
+    if (!isLocal && this.#isStreamTrack(track)) {
+      this.#applyStreamViewerQuality(publication)
+      if (!this.expandedTrack) this.#expandScreen(track)
+    }
   }
 
   // One tile per published camera track: the local preview plus every remote
@@ -1579,6 +1747,7 @@ export default class extends Controller {
       this.sharingExpandTarget.disabled = Boolean(this.expandedTrack) && !others
     }
 
+    this.#renderStreamViewing()
     this.broadcastState()
   }
 
@@ -1588,10 +1757,122 @@ export default class extends Controller {
   // adaptive size wins. It matters once the element has actually been resized,
   // where it asks for the full layer immediately instead of waiting for the next
   // observer callback.
+  // The viewer's stream quality choice: Low and High pin the presenter's
+  // screen-share subscription through setVideoQuality, while Auto clears the
+  // explicit request so adaptive streaming sizes it from the element again.
+  #applyStreamViewerQuality(publication) {
+    if (typeof publication?.setVideoQuality !== "function" || !this.liveKit) return
+
+    try {
+      const { VideoQuality } = this.liveKit
+      const preference = this.#storedStreamQuality()
+
+      if (preference === "low") {
+        publication.setVideoQuality(VideoQuality.LOW)
+      } else if (preference === "high") {
+        publication.setVideoQuality(VideoQuality.HIGH)
+      } else {
+        publication.requestedMaxQuality = undefined
+        publication.requestedVideoDimensions = undefined
+        publication.emitTrackUpdate?.()
+      }
+    } catch (error) {
+      // Quality is a hint. A rejected hint must not break the view.
+    }
+  }
+
+  #storedStreamQuality() {
+    try {
+      const value = window.localStorage.getItem(STREAM_QUALITY_STORAGE_KEY)
+      return [ "auto", "low", "high" ].includes(value) ? value : "auto"
+    } catch (error) {
+      // Private browsing modes can refuse storage; the default is auto.
+      return "auto"
+    }
+  }
+
+  #storeStreamQuality(value) {
+    try {
+      window.localStorage.setItem(STREAM_QUALITY_STORAGE_KEY, value)
+    } catch (error) {
+      // The preference simply does not survive this session.
+    }
+  }
+
+  // The Live badge carries the presenter's LiveKit participant identity for
+  // the connected room's stream, if the current page carries one. Viewed
+  // from another page there is no badge to match against, so shares there
+  // expand only by hand.
+  #liveStreamPresenterId() {
+    if (!this.roomId) return null
+
+    const badge = document.querySelector(
+      `[data-live-stream-badge][data-room-id="${this.roomId}"]`
+    )
+    return badge?.dataset.presenterId || null
+  }
+
+  // The presenter's screen share: the local one while this browser presents,
+  // otherwise a remote share whose publisher identity matches the Live
+  // badge. Identity — not the display name — identifies the publisher, so
+  // two members sharing a name never mis-resolve; ordinary shares from other
+  // speakers never match.
+  #isStreamTrack(track) {
+    const attachment = this.attachments.get(track)
+    if (!attachment || attachment.kind !== "screen") return false
+    if (attachment.isLocal) return this.streaming?.roomId === this.roomId
+
+    const presenterId = this.#liveStreamPresenterId()
+    return presenterId !== null && attachment.participantIdentity === presenterId
+  }
+
+  // The viewed stream's remote publication, for the quality control. The
+  // presenter's own share is local and never takes a viewer quality.
+  #streamPublication() {
+    for (const [ track, attachment ] of this.attachments) {
+      if (attachment.kind === "screen" && !attachment.isLocal && this.#isStreamTrack(track)) {
+        return attachment.publication
+      }
+    }
+
+    return null
+  }
+
+  // Everyone in the call minus the presenter.
+  #watcherCount() {
+    if (!this.room) return 0
+
+    return Math.max(0, this.room.remoteParticipants.size)
+  }
+
+  // "N watching" shows on the expanded stream only, and the quality control
+  // shows while the presenter's share is attached.
+  #renderStreamViewing() {
+    const publication = this.#streamPublication()
+    this.streamQualityRowTarget.hidden = !publication
+    if (publication) this.streamQualityTarget.value = this.#storedStreamQuality()
+
+    const count = this.#watcherCount()
+    for (const [ track, attachment ] of this.attachments) {
+      if (attachment.kind !== "screen" || !attachment.watching) continue
+
+      const viewing = this.expandedTrack === track && this.#isStreamTrack(track)
+      attachment.watching.hidden = !(viewing && count > 0)
+      if (viewing && count > 0) attachment.watching.textContent = `${count} watching`
+    }
+  }
+
   #applyScreenQuality(track) {
     const attachment = this.attachments.get(track)
     const publication = attachment?.publication
     if (typeof publication?.setVideoQuality !== "function") return
+
+    // A viewed stream follows the viewer's quality choice instead of the
+    // default expand and collapse behavior below.
+    if (this.#isStreamTrack(track)) {
+      this.#applyStreamViewerQuality(publication)
+      return
+    }
 
     const { VideoQuality } = this.liveKit
     const expanded = this.expandedTrack === track || this.fullscreenTrack === track
@@ -1813,6 +2094,7 @@ export default class extends Controller {
 
     const count = participants.length
     this.participantCountTarget.textContent = `${count} ${count === 1 ? "participant" : "participants"}`
+    this.#renderStreamViewing()
   }
 
   #participantName(participant) {
@@ -2050,6 +2332,7 @@ export default class extends Controller {
 
   #endForAuthenticationChange() {
     ++this.operation
+    this.#endStreamOnDisconnect()
     this.#stopAuthenticationChecks()
     this.#stopPreview()
     this.#stopMicrophoneMeter()

@@ -6,6 +6,7 @@ class Membership < ApplicationRecord
 
   before_destroy -> { HuddleGrant.revoke_for_membership!(self) }
   before_destroy -> { AgentGrant.revoke_for_membership!(self) }
+  before_destroy -> { Stream.end_live_for_membership!(self) }
   # The removal notice goes out before the connection reset below: once the
   # client processes the disconnect, broadcasts queued behind it are dropped.
   after_destroy_commit :broadcast_room_removal_to_user

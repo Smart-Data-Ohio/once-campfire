@@ -1,0 +1,7 @@
+<% stream = room.live_stream %>
+<%= tag.span id: dom_id(room, :sidebar_stage_live), class: "stage-live-dot",
+      data: { live_stream_dot: true, room_id: room.id } do %>
+  <% if stream %>
+    <span class="stage-live-dot__pip" role="img" aria-label="Live now: <%= stream.user.name %>"></span>
+  <% end %>
+<% end %>

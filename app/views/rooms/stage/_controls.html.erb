@@ -1,4 +1,24 @@
 <div id="<%= dom_id(room, :stage_controls) %>" class="stage-panel__controls">
+  <% stream = room.live_stream %>
+  <% if stream %>
+    <div class="stage-panel__live">
+      <p class="stage-panel__note stage-panel__note--live">Live: <%= stream.user.name %></p>
+      <% if stream.membership_id == membership.id || membership.host? %>
+        <%= button_to "Stop stream", room_stage_stream_path(room), method: :delete,
+              class: "btn stage-panel__stop",
+              form: { data: { action: "turbo:submit-end->stage-panel#streamStopSubmitted", room_id: room.id } } %>
+      <% end %>
+    </div>
+  <% elsif membership.host? || membership.speaker? %>
+    <%= form_with url: room_stage_stream_path(room), method: :post, class: "stage-panel__stream-form",
+          data: { action: "turbo:submit-end->stage-panel#streamSubmitted", room_id: room.id } do |form| %>
+      <div class="stage-panel__stream-quality">
+        <%= form.label :quality, "Stream quality" %>
+        <%= form.select :quality, options_for_select(Stream::QUALITIES.map { |quality| [ quality, quality ] }, "1080p15"), {}, class: "input" %>
+      </div>
+      <%= form.submit "Go live", class: "btn btn--reversed stage-panel__go-live" %>
+    <% end %>
+  <% end %>
   <% if membership.listener? %>
     <% if membership.hand_raised? %>
       <p class="stage-panel__note">Your hand is raised. A host can invite you to speak.</p>
