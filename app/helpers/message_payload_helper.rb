@@ -24,6 +24,7 @@ module MessagePayloadHelper
       thread_summary: include_thread_summary ? thread_summary_payload(message) : nil,
       reply_to: reply_payload(message),
       forwarded: forwarded_payload(message),
+      drive_attachments: drive_attachments_payload(message),
       url: message_permalink_url(message)
     }.compact
   end
@@ -191,6 +192,15 @@ module MessagePayloadHelper
         label: "Forwarded",
         note: message.forward_note
       }.compact
+    end
+
+    # File ids and open links only, never names: bots receive no Drive
+    # credentials, so a name would be unverifiable metadata about a file
+    # the agent may not be allowed to open.
+    def drive_attachments_payload(message)
+      message.drive_attachments.map do |attachment|
+        { file_id: attachment.file_id, url: attachment.url }
+      end
     end
 
     def thread_summary_payload(message)
