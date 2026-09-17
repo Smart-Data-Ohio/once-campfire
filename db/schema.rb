@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022901) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -447,6 +447,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022900) do
     t.datetime "created_at", null: false
     t.string "email_address"
     t.string "github_login"
+    t.json "inbox_preferences", default: {}
     t.string "name", null: false
     t.string "password_digest"
     t.integer "role", default: 0, null: false
