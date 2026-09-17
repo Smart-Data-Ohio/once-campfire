@@ -717,6 +717,26 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".stage-live-dot__pip", 0
   end
 
+  test "show hides the live dot from members who do not belong to the stage venue" do
+    venue = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david) ])
+    @event.update!(venue_room_id: venue.id)
+    Stream.create!(room: venue, membership: venue.memberships.find_by!(user: users(:david)),
+      user: users(:david), quality: "1080p15")
+    sign_in :kevin
+
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_includes response.body, "Town Hall"
+    assert_select ".stage-live-dot", 0
+    assert_not_includes response.body, "Live now:"
+
+    get room_events_url(@room)
+
+    assert_response :success
+    assert_select "article .stage-live-dot", 0
+  end
+
   test "show never renders a live dot for a voice venue" do
     voice = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
     @event.update!(venue_room_id: voice.id)

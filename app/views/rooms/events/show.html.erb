@@ -47,10 +47,8 @@
           <% else %>
             <%= @event.venue.name %>
           <% end %>
-          <% if @event.venue.stage? %>
-            <%= render "rooms/events/venue_live_dot", room: @event.venue %>
-          <% end %>
           <% if venue_member?(@event.venue) %>
+            <%= render "rooms/events/venue_live_dot", room: @event.venue if @event.venue.stage? %>
             <%= link_to "Join", room_path(@event.venue), class: "btn btn--primary" %>
           <% end %>
         </p>
