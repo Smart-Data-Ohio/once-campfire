@@ -17,10 +17,11 @@ class ActiveSupport::TestCase
   # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
   fixtures :all
 
-  include SessionTestHelper, MentionTestHelper, TurboTestHelper, DnsTestHelper
+  include SessionTestHelper, MentionTestHelper, TurboTestHelper, DnsTestHelper, WorkspaceIconTestHelper
 
   setup do
     ActionCable.server.pubsub.clear
+    Icons.expire_custom_cache!
 
     Rails.configuration.tap do |config|
       config.x.web_push_pool.shutdown

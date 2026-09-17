@@ -26,6 +26,8 @@ Rails.application.routes.draw do
         end
       end
 
+      resources :icons, only: %i[ index create destroy ]
+
       resource :join_code, only: :create
       resource :logo, only: %i[ show destroy ]
       resource :custom_styles, only: %i[ edit update ]
@@ -62,6 +64,8 @@ Rails.application.routes.draw do
     resources :users, only: :index
     resources :icons, only: :index
   end
+
+  get "icons/:name", to: "workspace_icons#show", as: :workspace_icon
 
   get "agents", to: "agents/directory#index"
   get "agents/me", to: "agents#me", defaults: { format: :json }
