@@ -1,4 +1,6 @@
 class Event < ApplicationRecord
+  include Event::ChannelTimeline
+
   TIME_CHANGE_ATTRIBUTES = %w[ starts_at ends_at time_zone ].freeze
   NOTIFYING_RESPONSES = %w[ going maybe ].freeze
 
@@ -12,6 +14,8 @@ class Event < ApplicationRecord
   has_many :attendees, through: :attendances, source: :user
   has_many :calendar_entries, class_name: "EventCalendarEntry", dependent: :destroy
   has_many :activity_items, as: :source, dependent: :destroy, inverse_of: :source
+  has_many :event_references, dependent: :destroy
+  has_many :referencing_messages, through: :event_references, source: :message
 
   validates :title, presence: true
   validates :starts_at, presence: true
@@ -40,6 +44,8 @@ class Event < ApplicationRecord
   after_create :record_organizer_attendance
   after_create :materialize_series, if: :materializes_series?
   after_create_commit :fan_out_invitations
+  after_create_commit :announce_in_channel
+  after_update_commit :broadcast_event_card_updates
 
   def cancelled?
     cancelled_at.present?

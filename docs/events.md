@@ -16,6 +16,18 @@ The organizer is recorded as **going**. Every other active human room member rec
 
 On the event page, choose **Going**, **Maybe**, or **Declined**. The current response and the attendee list are visible to every room member. Only current room members can respond: a member who is removed from the room can no longer see or respond to the event, and the event's inbox items disappear from their inbox.
 
+## In the channel
+
+Scheduling an event posts an announcement message in the room ("Scheduled an event: \<title\>" plus a link to the event page), so the conversation itself shows what was scheduled. Edits and cancellations post nothing further; the card below carries them, and the announcement creates no inbox items of its own.
+
+Any message linking to an event — the announcement or a pasted event URL — renders an event card beneath it: the kind ("Event" or "Repeating event"), the title linking to the event page, the start and end times, the venue name when set, and the organizer. Cancelled events show a Cancelled state. The card refreshes live when the event changes.
+
+The card carries a response section with your current response and the going/maybe counts, plus **Going**, **Maybe**, and **Declined** buttons that answer in place without leaving the room. On a repeating event the card also offers **Apply to all future occurrences**.
+
+Cards render only for the room's own events. A link to an event from another room stays a plain link with no card for everyone, including members of both rooms, so an event's title and details never reach a room it was not scheduled in.
+
+A repeating series announces once, for its first event; the later occurrences post nothing.
+
 ## Editing and cancelling
 
 Only the organizer or an administrator can edit or cancel an event, from the **Edit** and **Cancel event** controls on the event page.

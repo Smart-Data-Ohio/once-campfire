@@ -1,0 +1,8 @@
+<% events = event_cards_for(message) %>
+<% if events.any? %>
+  <div id="<%= dom_id(message, :event_cards) %>" class="event-cards">
+    <% events.each do |event| %>
+      <%= render "rooms/events/card", event: event, message: message %>
+    <% end %>
+  </div>
+<% end %>

@@ -99,6 +99,47 @@ class EventsTest < ApplicationSystemTestCase
     end
   end
 
+  test "scheduling an event announces it in the room with a card members respond from" do
+    room = rooms(:designers)
+
+    using_session("David") do
+      sign_in "david@37signals.com"
+      join_room room
+
+      click_on "Events"
+      click_on "New event"
+      fill_in "Title", with: "Card session"
+      fill_in "Starts", with: 8.days.from_now.strftime("%Y-%m-%dT15:30")
+      click_on "Schedule event"
+
+      assert_selector "h1", text: "Card session"
+    end
+
+    event = Event.find_by!(title: "Card session")
+
+    using_session("Jason") do
+      sign_in "jason@37signals.com"
+      join_room room
+
+      assert_text "Scheduled an event: Card session"
+
+      within ".event-card", text: "Card session" do
+        assert_text "Organized by David"
+        assert_text "No response yet"
+
+        click_button "Going"
+
+        assert_text "Currently: Going"
+      end
+
+      # The response landed without leaving the room.
+      assert_current_path room_path(room)
+      assert_text "Scheduled an event: Card session"
+    end
+
+    assert_equal "going", event.reload.response_for(users(:jason))
+  end
+
   private
     # The inbox re-renders its list when the activity channel connects, so a
     # click that lands on the item mid-replacement is retried, and the event

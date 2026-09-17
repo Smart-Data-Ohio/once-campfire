@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_022913) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -216,6 +216,16 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
     t.index ["event_id", "user_id"], name: "index_event_calendar_entries_on_event_id_and_user_id", unique: true
     t.index ["event_id"], name: "index_event_calendar_entries_on_event_id"
     t.index ["user_id"], name: "index_event_calendar_entries_on_user_id"
+  end
+
+  create_table "event_references", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "event_id", null: false
+    t.integer "message_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_event_references_on_event_id"
+    t.index ["message_id", "event_id"], name: "index_event_references_on_message_id_and_event_id", unique: true
+    t.index ["message_id"], name: "index_event_references_on_message_id"
   end
 
   create_table "events", force: :cascade do |t|
@@ -590,6 +600,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
   add_foreign_key "channel_threads", "users", column: "work_owner_id", on_delete: :nullify
   add_foreign_key "event_calendar_entries", "events"
   add_foreign_key "event_calendar_entries", "users"
+  add_foreign_key "event_references", "events"
+  add_foreign_key "event_references", "messages"
   add_foreign_key "github_connected_accounts", "users"
   add_foreign_key "github_notifications", "github_repository_subscriptions", column: "subscription_id", on_delete: :cascade
   add_foreign_key "github_notifications", "messages", on_delete: :nullify
