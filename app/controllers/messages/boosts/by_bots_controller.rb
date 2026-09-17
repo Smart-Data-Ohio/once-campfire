@@ -13,7 +13,7 @@ class Messages::Boosts::ByBotsController < Messages::BoostsController
       broadcast_reactions
       render :show, status: :created
     else
-      head :unprocessable_content
+      render json: { errors: @boost.errors.full_messages }, status: :unprocessable_content
     end
   end
 

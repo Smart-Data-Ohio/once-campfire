@@ -50,13 +50,21 @@ class Messages::BoostsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ":openai:", icon["alt"]
   end
 
-  test "create rejects an unknown shortcode without broadcasting" do
-    assert_no_turbo_stream_broadcasts [ @message.room, :messages ] do
-      assert_no_difference -> { @message.boosts.count } do
-        post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":nope_not_real:" } }
+  test "create stores an unknown shortcode as literal text" do
+    assert_turbo_stream_broadcasts [ @message.room, :messages ], count: 1 do
+      assert_difference -> { @message.boosts.count }, 1 do
+        post message_boosts_url(@message, format: :turbo_stream), params: { boost: { content: ":lol:" } }
         assert_redirected_to message_boosts_url(@message)
       end
     end
+
+    assert_equal ":lol:", @message.boosts.last.content
+
+    get message_boosts_url(@message)
+
+    assert_response :success
+    assert_includes response.body, ":lol:"
+    assert_empty Nokogiri::HTML5.fragment(response.body).css("img.icon--brand")
   end
 
   test "action metadata groups reaction counts by distinct reactor" do

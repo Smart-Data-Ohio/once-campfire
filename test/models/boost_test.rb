@@ -14,11 +14,17 @@ class BoostTest < ActiveSupport::TestCase
     assert_not boost.shortcode_content?
   end
 
-  test "rejects an unknown shortcode" do
-    boost = Boost.new(message: messages(:first), booster: users(:david), content: ":nope_not_real:")
+  test "canonicalises a brand alias to its brand name" do
+    boost = Boost.create!(message: messages(:first), booster: users(:david), content: ":gpt:")
 
-    assert_not boost.valid?
-    assert_includes boost.errors[:content], "is not a known brand icon"
+    assert_equal ":openai:", boost.reload.content
+  end
+
+  test "stores an unknown shortcode literally" do
+    boost = Boost.create!(message: messages(:first), booster: users(:david), content: ":lol:")
+
+    assert_equal ":lol:", boost.reload.content
+    assert boost.shortcode_content?
   end
 
   test "leaves existing plain-text and emoji content unchanged" do

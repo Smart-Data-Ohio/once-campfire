@@ -4,8 +4,7 @@ class Boost < ApplicationRecord
 
   scope :ordered, -> { order(:created_at) }
 
-  before_validation :resolve_emoji_shortcode
-  validate :shortcode_content_must_be_a_known_brand
+  before_validation :resolve_shortcode_content
 
   # Content that is exactly a :shortcode: (for example from icon autocomplete).
   def shortcode_content?
@@ -15,17 +14,14 @@ class Boost < ApplicationRecord
   private
     # Emoji shortcodes are stored as the character itself, so they render and
     # count exactly like an emoji typed directly. Brand shortcodes stay as
-    # :name: and render through BoostsHelper.
-    def resolve_emoji_shortcode
+    # :name:, canonicalised so aliases share one reaction chip, and render
+    # through BoostsHelper. Unknown shortcodes stay literal text, as before.
+    def resolve_shortcode_content
       return unless shortcode_content?
 
-      icon = Icons.find(content.to_s[1...-1])
-      self.content = icon.character if icon.is_a?(Icons::Emoji)
-    end
-
-    def shortcode_content_must_be_a_known_brand
-      return unless shortcode_content?
-
-      errors.add(:content, "is not a known brand icon") unless Icons.brand?(content.to_s[1...-1])
+      case (icon = Icons.find(content.to_s[1...-1]))
+      when Icons::Emoji then self.content = icon.character
+      when Icons::Brand then self.content = ":#{icon.name}:"
+      end
     end
 end
