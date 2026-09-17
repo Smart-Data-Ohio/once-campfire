@@ -52,6 +52,24 @@ class IconsTest < ApplicationSystemTestCase
     assert_equal "invert(1)", icon_filter(message)
   end
 
+  test "room icon picker sets an icon that shows in the sidebar and header" do
+    using_session("Admin") do
+      sign_in "david@37signals.com"
+      visit edit_rooms_open_path(rooms(:pets))
+
+      fill_in "Icon", with: ":open"
+      assert_selector "suggestion-option", text: "OpenAI"
+      find("suggestion-option", text: "OpenAI").click
+      assert_field "Icon", with: ":openai: "
+      assert_selector "[data-icon-field-target='preview'] img.icon-avatar"
+
+      find("button.btn--reversed").click
+      assert_selector ".room-header__name", text: "All Pets"
+      assert_selector ".room-header__identity img.icon-avatar"
+      assert_selector "##{dom_id(rooms(:pets), :list)} .sidebar-item__icon--custom img.icon-avatar"
+    end
+  end
+
   test "lobehub brand icons render visibly in both themes" do
     editor = find_field("Write a message")
     editor.set "Ship :xai: and :microsoft: today"

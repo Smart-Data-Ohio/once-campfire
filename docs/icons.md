@@ -108,6 +108,43 @@ text, and boosts keep their stored `:name:` content. An icon whose name is
 no longer known renders as its alt text rather than a broken image, for
 brand and workspace icons alike.
 
+## Icons as room and bot avatars
+
+Rooms and bots can use any icon from the set as their avatar. `rooms.icon_name`
+and `users.icon_name` (bots only) hold a nullable shortcode, normalized on
+write through `Icons.normalize_name` (`:name:` colons stripped, downcased) and
+validated to nil or a name `Icons.find` resolves. A workspace icon deleted
+afterwards leaves the stored name resolving to nil, and every renderer falls
+back to its default marker instead of raising.
+
+`icon_avatar_tag(icon_name, size:)` in `app/helpers/icons_avatar_helper.rb`
+renders any resolvable icon at avatar sizes: brand and workspace icons as
+`<img>` from their existing paths with `alt` set to the icon title, emoji as
+a `<span>` glyph with an accessible name. It returns nil for an unresolvable
+name. Rooms show the icon at 24px in sidebar rows
+(`users/sidebars/rooms/_shared` and `_voice`), at 32px in the room header
+(`rooms/show/_header_identity`), and at 16px next to the room name in search
+results (`messages/_message`), each in place of the plain `#` or `→` marker;
+rooms without an icon render exactly as before. Bots show the icon through
+`avatar_tag` when no picture is uploaded — an uploaded picture always wins —
+while the avatars controller keeps serving the picture or initials as today.
+
+Each room edit form and the bot edit form has an **Icon** field holding the
+shortcode, with the existing `:` icon autocomplete wired to the same
+`markdown-autocomplete` Stimulus controller and `autocompletable/icons`
+endpoint, a live preview next to the input, and a **Remove** button that
+clears it. Room fields follow the existing room permissions (administrators
+or the room creator); the bot field follows the bot edit permission
+(administrators or the agent owner).
+
+Saving a room re-broadcasts its sidebar row and its header identity over the
+existing `:rooms` streams, so everyone who can see the room picks the new
+icon up without a reload. Saving a bot bumps `updated_at` like any other
+update, which busts `fresh_user_avatar_path` caches through its `v`
+parameter. JSON clients get `icon_name` (nullable) on rooms and on users plus
+`icon_avatar_url` (nullable, nil for emoji) on users, in `users/_user` and in
+the `message_payload` creator and room hashes.
+
 ## License
 
 The SVGs come from two sources; see
