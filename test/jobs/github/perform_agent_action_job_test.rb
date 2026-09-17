@@ -230,6 +230,71 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
     assert_failed_with(approval, "GitHub refused: Resource not accessible by personal access token")
   end
 
+  test "an approval whose payload describes a different action than its summary makes no request" do
+    approve_on_12 = Github::AgentPullRequestAction.new(pull_request: @pull_request, kind: "approve")
+    smuggled = AgentApproval.create!(
+      agent: @agent, room: @room, action: "github.comment",
+      summary: "Comment on rails/rails#12: typo nit", payload: approve_on_12.payload_json
+    )
+    approve!(smuggled)
+
+    Github::PerformAgentActionJob.perform_now(smuggled.id)
+
+    assert_not_requested :post, %r{api\.github\.com}
+    assert_failed_with smuggled, "Approval summary does not match its payload"
+  end
+
+  test "an approval whose payload names a different pull request than its summary makes no request" do
+    other_message = @room.messages.create!(
+      creator: users(:david),
+      markdown_source: "also https://github.com/rails/rails/pull/13",
+      client_message_id: "agent-action-job-pr-13"
+    )
+    other_pull_request = other_message.github_pull_requests.first
+    other_thread = ChannelThread.create!(room: @room, creator: users(:david), parent_message: other_message)
+    ThreadMembership.join!(other_thread, users(:david))
+    Github::PullRequestThread.create!(pull_request: other_pull_request, room: @room, channel_thread: other_thread)
+
+    on_13 = Github::AgentPullRequestAction.new(pull_request: other_pull_request, kind: "comment", body: "Nice")
+    smuggled = AgentApproval.create!(
+      agent: @agent, room: @room, action: "github.comment",
+      summary: "Comment on rails/rails#12: Nice", payload: on_13.payload_json
+    )
+    approve!(smuggled)
+
+    Github::PerformAgentActionJob.perform_now(smuggled.id)
+
+    assert_not_requested :post, %r{api\.github\.com}
+    assert_failed_with smuggled, "Approval summary does not match its payload"
+  end
+
+  test "running the job twice for one approval posts once" do
+    stub = stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments")
+      .with(headers: agent_bearer_header, body: { body: "Once" }.to_json)
+      .to_return(status: 201, body: { html_url: "https://github.com/rails/rails/pull/12#issuecomment-2" }.to_json)
+    approval = approve!(build_approval(kind: "comment", body: "Once"))
+
+    Github::PerformAgentActionJob.perform_now(approval.id)
+    assert_no_difference -> { @agent.agent_events.where(event_type: "github_action_completed").count } do
+      Github::PerformAgentActionJob.perform_now(approval.id)
+    end
+
+    assert_requested stub, times: 1
+  end
+
+  test "a failed run is not retried by a second run" do
+    approval = approve!(build_approval(kind: "comment", body: "Later"))
+    @grant.update!(revoked_at: Time.current)
+    Github::PerformAgentActionJob.perform_now(approval.id)
+    assert_failed_with approval, "Agent no longer has the external_action capability"
+
+    AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "external_action")
+    assert_no_difference -> { @agent.agent_events.where(event_type: "github_action_completed").count } do
+      Github::PerformAgentActionJob.perform_now(approval.id)
+    end
+    assert_not_requested :post, %r{api\.github\.com}
+  end
+
   test "a missing approval and a non-github approval are silent no-ops" do
     assert_nothing_raised_for_job(999_999_999)
 

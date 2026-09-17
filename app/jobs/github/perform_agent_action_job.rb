@@ -6,13 +6,16 @@ class Github::PerformAgentActionJob < ApplicationJob
   # performs the action with the agent's own token otherwise. Every outcome
   # is recorded as a github_action_completed ledger row; a failed re-check
   # or GitHub error makes no GitHub request beyond the failed call itself.
-  # Never raises for GitHub or re-check failures, and never retries.
+  # Never raises for GitHub or re-check failures, and never retries. Runs
+  # at most once per approval: a queue retry or a duplicate enqueue finds
+  # the earlier outcome row and stops.
   def perform(approval_id)
     approval = AgentApproval.find_by(id: approval_id)
     return unless approval&.github_action?
 
     agent = approval.agent
     room = approval.room
+    return if already_executed?(agent, approval)
 
     if (reason = premature_failure_reason(approval, agent, room))
       return record_outcome(approval, agent, room, status: "failed", message: reason)
@@ -28,6 +31,15 @@ class Github::PerformAgentActionJob < ApplicationJob
     action = Github::AgentPullRequestAction.from_payload(pull_request: pull_request, payload: payload)
     unless action.valid?
       return record_outcome(approval, agent, room, status: "failed", message: "Approval payload is invalid")
+    end
+
+    # The decider saw the approval's action name and summary, never the
+    # payload. Only an action whose name and summary rebuild to exactly what
+    # was approved may run, so a payload that describes a different PR,
+    # kind, body, or reviewer list than the summary is refused.
+    unless action.action_name == approval.action && action.summary == approval.summary
+      return record_outcome(approval, agent, room, status: "failed",
+        message: "Approval summary does not match its payload")
     end
 
     account = agent.user.github_connected_account
@@ -59,6 +71,15 @@ class Github::PerformAgentActionJob < ApplicationJob
   end
 
   private
+    # Outcome rows are JSON metadata keyed by approval_id; SQLite's
+    # json_extract reads it without a dedicated column.
+    def already_executed?(agent, approval)
+      agent.agent_events
+        .where(event_type: "github_action_completed")
+        .where("json_extract(agent_events.metadata, '$.approval_id') = ?", approval.id)
+        .exists?
+    end
+
     def premature_failure_reason(approval, agent, room)
       return "Approval is no longer approved" unless approval.status == "approved"
       return "Agent is suspended or deactivated" unless agent&.active?
