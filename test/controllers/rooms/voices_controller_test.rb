@@ -3,6 +3,20 @@ require "test_helper"
 class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
   setup do
     sign_in :david
+
+    @environment_names = Huddle::REQUIRED_ENVIRONMENT
+    @original_livekit_environment = ENV.values_at(*@environment_names)
+    ENV["LIVEKIT_URL"] = "wss://huddle.example.test"
+    ENV["LIVEKIT_INTERNAL_URL"] = "ws://livekit.example.test:7880"
+    ENV["LIVEKIT_API_KEY"] = "test-api-key"
+    ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
+    ENV["LIVEKIT_GATEWAY_SECRET"] = "test-gateway-secret"
+  end
+
+  teardown do
+    @environment_names.zip(@original_livekit_environment).each do |name, value|
+      ENV[name] = value
+    end
   end
 
   test "show redirects to get general show" do

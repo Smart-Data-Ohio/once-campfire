@@ -206,7 +206,8 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_no_selector ".huddle__camera video"
 
     # Joining stays audio-only: a rejoin never restores the previous camera state.
-    within("#sidebar") { click_link "Designers", exact: true }
+    # David is still in this huddle, so the row link also carries the live count.
+    within("#sidebar") { click_link "Designers", exact: false }
     click_button "Leave", exact: true
     assert_no_selector "#channel-huddle:not([hidden])"
     join_huddle_and_confirm

@@ -45,6 +45,8 @@ Rails.application.routes.draw do
   resources :qr_code, only: :show
 
   resources :users, only: :show do
+    get :huddle_presence, on: :collection, to: "users/huddle_presence#show"
+
     scope module: "users" do
       resource :avatar, only: %i[ show destroy ]
       resource :ban, only: %i[ create destroy ]

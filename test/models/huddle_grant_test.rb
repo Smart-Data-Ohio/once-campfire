@@ -2,12 +2,19 @@ require "test_helper"
 
 class HuddleGrantTest < ActiveSupport::TestCase
   setup do
-    @original_api_secret = ENV["LIVEKIT_API_SECRET"]
+    @environment_names = Huddle::REQUIRED_ENVIRONMENT
+    @original_livekit_environment = ENV.values_at(*@environment_names)
+    ENV["LIVEKIT_URL"] = "wss://huddle.example.test"
+    ENV["LIVEKIT_INTERNAL_URL"] = "ws://livekit.example.test:7880"
+    ENV["LIVEKIT_API_KEY"] = "test-api-key"
     ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
+    ENV["LIVEKIT_GATEWAY_SECRET"] = "test-gateway-secret"
   end
 
   teardown do
-    ENV["LIVEKIT_API_SECRET"] = @original_api_secret
+    @environment_names.zip(@original_livekit_environment).each do |name, value|
+      ENV[name] = value
+    end
   end
 
   test "an active session and membership reuse one random grant" do
@@ -185,7 +192,65 @@ class HuddleGrantTest < ActiveSupport::TestCase
     end
   end
 
-  test "channel grants never refresh voice presence" do
+  test "issuing an open channel grant refreshes every sidebar and the header" do
+    room = rooms(:hq)
+
+    assert_presence_broadcast(room) do
+      HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_hq))
+    end
+  end
+
+  test "issuing a closed channel grant refreshes every sidebar and the header" do
+    room = rooms(:watercooler)
+
+    assert_presence_broadcast(room) do
+      HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+    end
+  end
+
+  test "issuing a direct grant refreshes both sidebars and the header" do
+    room = rooms(:david_and_jason)
+
+    assert_presence_broadcast(room) do
+      HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    end
+  end
+
+  test "revoking a channel grant refreshes every sidebar and the header" do
+    room = rooms(:watercooler)
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    assert_presence_broadcast(room) do
+      grant.revoke!
+    end
+  end
+
+  test "revoking a direct grant refreshes both sidebars and the header" do
+    room = rooms(:david_and_jason)
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+
+    assert_presence_broadcast(room) do
+      grant.revoke!
+    end
+  end
+
+  test "first sighting in a channel refreshes presence, later sightings stay silent" do
+    room = rooms(:watercooler)
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    assert_presence_broadcast(room) do
+      grant.record_seen!
+    end
+
+    assert_no_changes -> { capture_turbo_stream_broadcasts([ room, :messages ]).count } do
+      travel 11.seconds do
+        grant.record_seen!
+      end
+    end
+  end
+
+  test "no presence broadcasts without huddle configuration" do
+    ENV.delete("LIVEKIT_GATEWAY_SECRET")
     membership = memberships(:david_watercooler)
 
     assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 0 do
@@ -300,4 +365,27 @@ class HuddleGrantTest < ActiveSupport::TestCase
       end
     end
   end
+
+  private
+    # The block sends each member's sidebar stack and the room header stack
+    # exactly one replace broadcast apiece.
+    def assert_presence_broadcast(room)
+      streams = room.users.map { |user| [ user, :rooms ] } + [ [ room, :messages ] ]
+      before = streams.map { |stream| capture_turbo_stream_broadcasts(stream).count }
+
+      yield
+
+      streams.zip(before) do |stream, count|
+        broadcasts = capture_turbo_stream_broadcasts(stream)
+        assert_equal count + 1, broadcasts.count, "expected one presence broadcast on #{stream.inspect}"
+        assert_equal "replace", broadcasts.last["action"]
+      end
+
+      room.users.each do |user|
+        assert_equal dom_id(room, :sidebar_voice_participants),
+          capture_turbo_stream_broadcasts([ user, :rooms ]).last["target"]
+      end
+      assert_equal dom_id(room, :header_voice_participants),
+        capture_turbo_stream_broadcasts([ room, :messages ]).last["target"]
+    end
 end

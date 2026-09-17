@@ -7,6 +7,13 @@
   justify-content: end;
 }
 
+/* A row with both a presence stack and an unread badge lays out four grid
+   items (icon, label, stack, badge); without the fourth column the badge
+   would wrap onto its own row. */
+.sidebar-item:has(> .voice-room__trailing):has(> .sidebar-item__status) {
+  grid-template-columns: 1.65rem minmax(0, 1fr) auto auto;
+}
+
 .voice-stack {
   align-items: center;
   display: inline-flex;
@@ -52,6 +59,23 @@
 
 .room-header__actions .voice-stack {
   margin-inline-end: 0.25rem;
+}
+
+/* Channel and DM rows show the stack only while someone is in the call, so
+   quiet rows look exactly as before; the empty stack stays in the DOM as the
+   broadcast target. */
+.voice-stack--huddle:not(.voice-stack--live) {
+  display: none;
+}
+
+/* A small live pip after the count while anyone is in the call. */
+.voice-stack--huddle.voice-stack--live::after {
+  background: var(--color-positive);
+  block-size: 0.5rem;
+  border-radius: 50%;
+  content: "";
+  flex: none;
+  inline-size: 0.5rem;
 }
 
 @media (max-width: 40rem) {

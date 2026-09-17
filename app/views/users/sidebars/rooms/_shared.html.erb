@@ -4,6 +4,12 @@
   <% room_icon = icon_avatar_tag(room.icon_name, size: 24) %>
   <span class="sidebar-item__icon<%= " sidebar-item__icon--custom" if room_icon %>" aria-hidden="true"><%= room_icon %></span>
   <span class="sidebar-item__label overflow-ellipsis"><%= room.name %></span>
+  <% if Huddle.configured? %>
+    <span class="voice-room__trailing">
+      <%= render "rooms/huddles/participants", room: room, placement: :sidebar, participants: huddle_participants_by_room_id[room.id] || [] %>
+    </span>
+  <% end %>
+  <%# The badge stays a direct child of the row: workspace-navigation only looks one level down. %>
   <% if local_assigns[:unread] %>
     <span class="sidebar-item__status">New</span>
   <% end %>

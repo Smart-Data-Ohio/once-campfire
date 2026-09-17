@@ -188,24 +188,32 @@ class HuddleGrant < ApplicationRecord
     # (created or reused) drives the ring and the dedup window guards it: any
     # invitation or missed item from the last two minutes, handled or not,
     # keeps reconnects and rejoins silent.
-    # Refresh the voice presence stacks in the room members' sidebars and in
-    # the room header. Stage rooms share the voice stacks wholesale. Other
-    # rooms have no stacks, so they stay silent.
+    # Refresh the presence stacks in the room members' sidebars and in the
+    # room header, for every room kind. The sidebar partial renders once and
+    # the same HTML goes to each member's rooms stream, so a 200-member
+    # channel does not render 200 times per join.
     def broadcast_voice_presence
-      voice_room = Room.find_by(id: room_id)
-      return unless voice_room.is_a?(Rooms::Voice) || voice_room.is_a?(Rooms::Stage)
+      return unless Huddle.configured?
 
-      voice_room.memberships.includes(:user).find_each do |membership|
+      huddle_room = Room.find_by(id: room_id)
+      return unless huddle_room
+
+      participants = self.class.participants_for(huddle_room)
+      sidebar_html = ApplicationController.render(
+        partial: "rooms/huddles/participants",
+        locals: { room: huddle_room, placement: :sidebar, participants: participants }
+      )
+
+      huddle_room.memberships.includes(:user).find_each do |membership|
         broadcast_replace_to membership.user, :rooms,
-          target: [ voice_room, :sidebar_voice_participants ],
-          partial: "rooms/huddles/participants",
-          locals: { room: voice_room, placement: :sidebar }
+          target: [ huddle_room, :sidebar_voice_participants ],
+          html: sidebar_html
       end
 
-      broadcast_replace_to voice_room, :messages,
-        target: [ voice_room, :header_voice_participants ],
+      broadcast_replace_to huddle_room, :messages,
+        target: [ huddle_room, :header_voice_participants ],
         partial: "rooms/huddles/participants",
-        locals: { room: voice_room, placement: :header }
+        locals: { room: huddle_room, placement: :header, participants: participants }
     end
 
     def invite_direct_participant
