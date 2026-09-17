@@ -11,7 +11,9 @@ Voice channels are a room type (`Rooms::Voice`) with closed-room membership:
 explicit members chosen by an administrator or the creator, managed through
 the same members UI as closed rooms. Voice rooms keep their type: unlike open
 and closed rooms, they never convert to or from another type. Mention
-notifications are the default.
+notifications are the default. Stage channels (`Rooms::Stage`) share the
+closed membership, the never-converts rule, and the mention default; see
+[stage channels](stage-channels.md).
 
 ## Text chat
 
@@ -39,14 +41,15 @@ shrinks, and steps aside entirely below 360px.
 The room header button reads **Join voice** and **Leave voice**. Joining uses
 the same `huddle:join` event and huddle panel as every other room, so audio,
 screen share, camera, device controls, and reconnect behave identically.
-Leaving goes through the panel's own Leave control. Voice rooms never create
-invitations, ringing, or missed-call items.
+Leaving goes through the panel's own Leave control. Voice and stage rooms
+never create invitations, ringing, or missed-call items.
 
 ## Sidebar
 
-Voice channels list under their own **Voice** section below the channels list,
-ordered by name. Each row shows the live participant count and up to three
-avatars, with a subtle live treatment while anyone is in the call.
+Voice channels list under the **Voice** section below the channels list,
+ordered by name. Stage channels list in the same section with a stage glyph.
+Each row shows the live participant count and up to three avatars, with a
+subtle live treatment while anyone is in the call.
 
 ## Access removal
 

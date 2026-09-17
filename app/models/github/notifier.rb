@@ -108,7 +108,10 @@ module Github
 
           reviewer = User.active.without_bots.find_by(github_login: post.reviewer_login.to_s.strip.downcase)
           return unless reviewer
-          return unless room.memberships.exists?(user_id: reviewer.id)
+          membership = room.memberships.find_by(user_id: reviewer.id)
+          return unless membership
+          return if membership.involved_in_invisible?
+          return unless reviewer.inbox_preferences.github_review_requests
 
           ActivityItem.create_or_find_by!(user: reviewer, source: message) do |item|
             item.event_type = "pr_review_request"

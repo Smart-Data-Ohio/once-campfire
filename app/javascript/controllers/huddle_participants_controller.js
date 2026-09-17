@@ -27,7 +27,7 @@ async function fetchParticipants(url) {
 
 export default class extends Controller {
   static targets = [ "avatars", "count" ]
-  static values = { url: String, max: Number, interval: Number }
+  static values = { url: String, max: Number, interval: Number, label: { type: String, default: "in voice" } }
 
   connect() {
     this.refreshTimer = setInterval(() => this.refresh(), this.intervalValue)
@@ -114,7 +114,7 @@ export default class extends Controller {
     this.countTarget.hidden = participants.length === 0
     this.countTarget.textContent = participants.length
     this.element.setAttribute("aria-label", participants.length > 0
-      ? `${participants.length} in voice: ${participants.map(participant => participant.name).join(", ")}`
-      : "Nobody in voice")
+      ? `${participants.length} ${this.labelValue}: ${participants.map(participant => participant.name).join(", ")}`
+      : `Nobody ${this.labelValue}`)
   }
 }

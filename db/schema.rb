@@ -73,6 +73,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
+    t.index ["user_id", "updated_at"], name: "index_activity_items_on_user_id_and_updated_at"
   end
 
   create_table "agent_approvals", force: :cascade do |t|
@@ -356,6 +357,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
     t.integer "room_id", null: false
     t.string "room_name", null: false
     t.integer "session_id", null: false
+    t.string "stage_role"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
@@ -371,12 +373,15 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
     t.datetime "connected_at"
     t.integer "connections", default: 0, null: false
     t.datetime "created_at", null: false
+    t.datetime "hand_raised_at"
     t.string "involvement", default: "mentions"
     t.integer "room_id", null: false
+    t.string "stage_role"
     t.datetime "unread_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["room_id", "created_at"], name: "index_memberships_on_room_id_and_created_at"
+    t.index ["room_id", "stage_role"], name: "index_memberships_on_room_id_and_stage_role"
     t.index ["room_id", "user_id"], name: "index_memberships_on_room_id_and_user_id", unique: true
     t.index ["room_id"], name: "index_memberships_on_room_id"
     t.index ["user_id"], name: "index_memberships_on_user_id"
@@ -462,6 +467,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022907) do
     t.datetime "created_at", null: false
     t.string "email_address"
     t.string "github_login"
+    t.json "inbox_preferences", default: {}
     t.string "name", null: false
     t.string "password_digest"
     t.integer "role", default: 0, null: false

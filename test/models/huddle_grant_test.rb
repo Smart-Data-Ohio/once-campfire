@@ -207,4 +207,97 @@ class HuddleGrantTest < ActiveSupport::TestCase
       room.destroy!
     end
   end
+
+  test "a stage grant records the membership role it was issued for" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    host_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+    listener_grant = HuddleGrant.issue!(
+      session: users(:jason).sessions.create!(user_agent: "Test"),
+      membership: room.memberships.find_by!(user: users(:jason)))
+
+    assert_equal "host", host_grant.stage_role
+    assert_equal "listener", listener_grant.stage_role
+    assert_predicate host_grant, :authorized?
+    assert_predicate listener_grant, :authorized?
+  end
+
+  test "non-stage grants record no role" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: memberships(:david_watercooler))
+
+    assert_nil grant.stage_role
+    assert_predicate grant, :authorized?
+  end
+
+  test "a stage role change revokes the member's active grants with cleanup" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    membership.change_stage_role!("speaker")
+    grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: membership)
+    other_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+
+    membership.change_stage_role!("listener")
+
+    assert grant.reload.revoked?
+    assert HuddleCleanup.exists?(operation: :remove_participant, huddle_grant_id: grant.id)
+    assert_not other_grant.reload.revoked?
+  end
+
+  test "authorize_or_revoke! revokes a grant whose issued role no longer matches" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    membership.change_stage_role!("speaker")
+    grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: membership)
+
+    assert grant.authorize_or_revoke!
+
+    # As if the role-change revocation was missed: the per-second gateway
+    # check still catches the mismatch through authorization.
+    membership.update_columns(stage_role: "listener")
+
+    assert_not grant.authorize_or_revoke!
+    assert grant.reload.revoked?
+    assert HuddleCleanup.exists?(operation: :remove_participant, huddle_grant_id: grant.id)
+  end
+
+  test "rejoining after a role change issues a new grant for the new role" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    session = users(:jason).sessions.create!(user_agent: "Test")
+    old_grant = HuddleGrant.issue!(session: session, membership: membership)
+
+    membership.change_stage_role!("speaker")
+    new_grant = HuddleGrant.issue!(session: session, membership: membership.reload)
+
+    assert old_grant.reload.revoked?
+    assert_not_equal old_grant.id, new_grant.id
+    assert_not_equal old_grant.identity, new_grant.identity
+    assert_equal "speaker", new_grant.stage_role
+    assert_predicate new_grant, :authorized?
+  end
+
+  test "issuing a stage grant refreshes the presence stacks" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:david))
+
+    assert_turbo_stream_broadcasts [ users(:david), :rooms ], count: 1 do
+      assert_turbo_stream_broadcasts [ users(:jason), :rooms ], count: 1 do
+        assert_turbo_stream_broadcasts [ room, :messages ], count: 1 do
+          HuddleGrant.issue!(session: sessions(:david_safari), membership: membership)
+        end
+      end
+    end
+  end
+
+  test "revoking a stage grant refreshes the presence stacks" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: room.memberships.find_by!(user: users(:david)))
+
+    assert_difference -> { capture_turbo_stream_broadcasts([ users(:david), :rooms ]).count } do
+      assert_difference -> { capture_turbo_stream_broadcasts([ users(:jason), :rooms ]).count } do
+        assert_difference -> { capture_turbo_stream_broadcasts([ room, :messages ]).count } do
+          grant.revoke!
+        end
+      end
+    end
+  end
 end

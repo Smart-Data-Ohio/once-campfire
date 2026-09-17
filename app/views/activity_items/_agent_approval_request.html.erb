@@ -12,15 +12,15 @@
     <%= button_to "Open", open_activity_item_path(item), method: :post, class: "btn btn--primary", form: { class: "activity-item__action-form" } %>
 
     <% if item.unread? %>
-      <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark read", read_activity_item_path(item), method: :patch, params: { state: "read", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% else %>
-      <%= button_to "Mark unread", read_activity_item_path(item), method: :patch, params: { state: "unread", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark unread", read_activity_item_path(item), method: :patch, params: { state: "unread", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% end %>
 
     <% if item.handled? %>
-      <%= button_to "Clear handled", handled_activity_item_path(item), method: :patch, params: { state: "unhandled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Clear handled", handled_activity_item_path(item), method: :patch, params: { state: "unhandled", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% else %>
-      <%= button_to "Mark handled", handled_activity_item_path(item), method: :patch, params: { state: "handled", status: filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
+      <%= button_to "Mark handled", handled_activity_item_path(item), method: :patch, params: { state: "handled", status: filter, type: type_filter }, class: "btn btn--plain", form: { class: "activity-item__action-form" } %>
     <% end %>
   </div>
 </article>

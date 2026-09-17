@@ -83,6 +83,73 @@ class Internal::HuddleControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "authorizes a stage listener token that cannot publish" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    huddle = Huddle.new(room: room, user: users(:jason), session: users(:jason).sessions.create!(user_agent: "Test"), membership: membership)
+
+    post_authorize(huddle.token)
+
+    assert_response :success
+    assert_equal(
+      { "grant_id" => huddle.grant_id, "room_name" => huddle.room_name, "identity" => huddle.identity },
+      response.parsed_body
+    )
+  end
+
+  test "authorizes a listener token in server-refreshed shape" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    huddle = Huddle.new(room: room, user: users(:jason), session: users(:jason).sessions.create!(user_agent: "Test"), membership: membership)
+
+    claims = decoded_claims(huddle.token)
+    claims.fetch("video").delete_if { |_permission, value| value == false }
+
+    post_authorize(signed_token(claims))
+
+    assert_response :success
+  end
+
+  test "rejects mismatched publish permission and sources" do
+    mismatched_grants = [
+      { "canPublish" => false, "canPublishSources" => Huddle::PUBLISH_SOURCES },
+      { "canPublish" => false, "canPublishSources" => %w[ microphone ] },
+      { "canPublish" => true, "canPublishSources" => [] },
+      { "canPublish" => "yes", "canPublishSources" => [] }
+    ]
+
+    mismatched_grants.each do |grant|
+      claims = decoded_claims(@huddle.token)
+      claims.fetch("video").merge!(grant)
+      post_authorize(signed_token(claims))
+      assert_response :unauthorized
+    end
+  end
+
+  test "rejects a publisher token missing its publish sources" do
+    claims = decoded_claims(@huddle.token)
+    claims.fetch("video").delete("canPublishSources")
+    post_authorize(signed_token(claims))
+    assert_response :unauthorized
+  end
+
+  test "authorizes a refreshed listener token that omits sources and the publish flag" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    membership = room.memberships.find_by!(user: users(:jason))
+    huddle = Huddle.new(room: room, user: users(:jason), session: users(:jason).sessions.create!(user_agent: "Test"), membership: membership)
+
+    claims = decoded_claims(huddle.token)
+    claims.fetch("video").delete("canPublishSources")
+    post_authorize(signed_token(claims))
+    assert_response :success
+
+    claims = decoded_claims(huddle.token)
+    claims.fetch("video").delete("canPublishSources")
+    claims.fetch("video").delete("canPublish")
+    post_authorize(signed_token(claims))
+    assert_response :success
+  end
+
   test "malformed signed video grants receive a controlled denial" do
     claims = decoded_claims(@huddle.token).merge("video" => "not-an-object")
 

@@ -168,6 +168,8 @@ class AgentApproval < ApplicationRecord
 
     def fan_out_inbox_items
       deciders.each do |recipient|
+        next unless recipient.inbox_preferences.agent_approvals
+
         ActivityItem.create_or_find_by!(user: recipient, source: self) do |item|
           item.event_type = "agent_approval_request"
         end

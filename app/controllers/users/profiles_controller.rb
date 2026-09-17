@@ -25,7 +25,7 @@ class Users::ProfilesController < ApplicationController
     end
 
     def user_params
-      params.require(:user).permit(:name, :avatar, :email_address, :password, :bio, :github_login).compact
+      params.require(:user).permit(:name, :avatar, :email_address, :password, :bio, :github_login, inbox_preferences: User::InboxPreferences::KEYS).compact
     end
 
     def update_notice

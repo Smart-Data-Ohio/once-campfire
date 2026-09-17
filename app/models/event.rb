@@ -92,6 +92,8 @@ class Event < ApplicationRecord
 
   def remind_attendees!
     notification_recipients.find_each do |attendee|
+      next unless attendee.inbox_preferences.event_reminders
+
       transition_activity_item!(attendee, "event_reminder")
     end
   end
@@ -142,12 +144,21 @@ class Event < ApplicationRecord
 
     def invitation_recipients
       room.users.active.without_bots.where.not(id: organizer_id)
+        .where(id: notified_member_ids)
     end
 
     def notification_recipients
       User.active.without_bots
         .where(id: attendances.where(response: NOTIFYING_RESPONSES).select(:user_id))
         .where(id: room.memberships.select(:user_id))
+        .where(id: notified_member_ids)
+    end
+
+    # Event items honour room involvement like the rest of the inbox:
+    # members with notifications off or invisible get no invitation,
+    # update, cancellation, or reminder items from this room.
+    def notified_member_ids
+      room.memberships.where(involvement: %w[ mentions everything ]).select(:user_id)
     end
 
     # Activity items are unique per recipient + source, so a later lifecycle
