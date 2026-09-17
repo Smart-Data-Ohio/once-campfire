@@ -7,12 +7,10 @@ export default class extends Controller {
   static classes = [ "unread" ]
 
   // The sidebar HTML is freshly rendered on page load, so the initial
-  // channel connect must not reload it: the reload replaces the
-  // turbo-cable-stream-source elements inside the frame, and any broadcast
-  // to the rooms or user streams sent between the unsubscribe and the
-  // resubscribe — or rendered before a stale reload response lands — is
-  // silently lost. Reload only after a genuine disconnect, when the sidebar
-  // may have missed broadcasts.
+  // channel connect must not reload it. Reload only after a genuine
+  // disconnect, when the sidebar may have missed broadcasts. The rooms
+  // subscriptions live in the layout, outside this frame, so the reload
+  // only refreshes sidebar HTML and never churns the subscriptions.
   #disconnected = false
 
   async connect() {

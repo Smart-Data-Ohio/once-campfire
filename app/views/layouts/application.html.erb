@@ -91,6 +91,10 @@
     </aside>
 
     <% if Current.user %>
+      <%# The rooms subscriptions live here, outside the reloading sidebar frame: those streams also drive %>
+      <%# main-page targets, and a sidebar reload would otherwise drop broadcasts in the resubscribe gap. %>
+      <%= turbo_stream_from :rooms %>
+      <%= turbo_stream_from Current.user, :rooms %>
       <div id="workspace_presence" data-controller="workspace-presence" data-turbo-permanent hidden></div>
     <% end %>
 
