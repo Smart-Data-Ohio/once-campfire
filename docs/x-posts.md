@@ -35,6 +35,10 @@ After a fetch, the card partial is broadcast via Turbo Stream replace to
 each room (or thread) with a referencing message, over the existing
 membership-gated message stream, so cards fill in live.
 
+Rendering a card that never fetched re-enqueues its fetch, so a lost job
+cannot leave "Loading post…" stuck forever; the fetch-request claim still
+bounds this to one enqueue per post per 10-minute window.
+
 ## Limits and fallbacks
 
 - At most 4 post links per message render cards, in order of appearance;
@@ -46,6 +50,19 @@ membership-gated message stream, so cards fill in live.
   gifs show their poster with a play badge and link to the post; no player
   is embedded.
 - Messages composed before this shipped keep rendering their stored
-  OpenGraph embeds for non-post links, but embeds whose link is a post URL
-  now render nothing: the reference sync picks the URL up from the message
-  body and the new card replaces the old box.
+  OpenGraph embeds for non-post links. For post links, the old box keeps
+  rendering until a `Twitter::Post` row exists for that post id — rows are
+  created when a message is created or edited, or by the backfill below —
+  and then the new card replaces it.
+
+## Backfilling legacy messages
+
+References only form when a message is created or edited, so untouched
+legacy messages keep their old OpenGraph boxes until their references
+are synced. Run
+
+    bin/rails twitter:backfill_references
+
+to sync references for every message whose Markdown source or rich-text
+body contains a post URL; matched messages then render cards instead of
+boxes. The task is idempotent and prints how many messages it synced.

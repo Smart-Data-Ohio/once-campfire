@@ -1,6 +1,9 @@
-<%# Post links render as first-class X cards under the message; skip the
-    generic OpenGraph box so they don't render twice. %>
-<% unless Twitter::PostUrl.post_url?(opengraph_embed.href) %>
+<%# Post links render as first-class X cards under the message once a post
+    row exists for them; skip the generic OpenGraph box then so they don't
+    render twice. Until the row exists (a legacy message the backfill has
+    not reached) the old box keeps rendering. %>
+<% twitter_post_id = Twitter::PostUrl.extract(opengraph_embed.href.to_s).first&.post_id %>
+<% unless twitter_post_id && twitter_post_exists?(twitter_post_id) %>
 <figure class="attachment attachment--content attachment--og">
   <actiontext-opengraph-embed>
     <div class="og-embed gap">

@@ -1,3 +1,3 @@
-jack_first_post_on_first:
-  message: first
+jack_first_post_on_x_card_post:
+  message: x_card_post
   post: jack_first_post

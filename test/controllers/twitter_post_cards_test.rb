@@ -1,4 +1,10 @@
 require "test_helper"
+require "rake"
+
+# The real :environment prerequisite is already loaded in tests; a no-op
+# satisfies the backfill task's dependency without reinitializing.
+Rake::Task.define_task(:environment)
+load Rails.root.join("lib/tasks/twitter.rake")
 
 class TwitterPostCardsTest < ActionDispatch::IntegrationTest
   setup do
@@ -100,13 +106,7 @@ class TwitterPostCardsTest < ActionDispatch::IntegrationTest
   end
 
   test "a legacy message with an OpenGraph embed renders the new card and not the old box" do
-    body = <<~HTML
-      <div>https://x.com/jack/status/20</div>
-      <action-text-attachment content-type="application/vnd.actiontext.opengraph-embed" href="https://x.com/jack/status/20" url="https://pbs.twimg.com/profile_images/1/avatar_200x200.jpg" filename="jack (@jack)" caption="just setting up my twttr"></action-text-attachment>
-    HTML
-    message = @room.messages.create!(
-      creator: @creator, body: body, client_message_id: "x-card-legacy"
-    )
+    message = create_legacy_post_message(post_id: "20", client_message_id: "x-card-legacy")
     assert_equal [ "20" ], message.twitter_posts.map(&:post_id)
 
     get room_messages_url(@room)
@@ -118,9 +118,60 @@ class TwitterPostCardsTest < ActionDispatch::IntegrationTest
     assert_select ".og-embed", count: 0
   end
 
+  test "a legacy message without a post row keeps the old OpenGraph box" do
+    message = create_legacy_post_message(post_id: "201", client_message_id: "x-card-legacy-noref")
+    # Simulate a message the sync never reached: no reference, no post row.
+    message.twitter_post_references.delete_all
+    Twitter::Post.where(post_id: "201").delete_all
+
+    get room_messages_url(@room)
+
+    assert_response :success
+    assert_select "##{dom_id(message)} .og-embed", count: 1
+    assert_select "##{dom_id(message, :twitter_cards)}", count: 0
+  end
+
+  test "the backfill task turns legacy boxes into cards" do
+    message = create_legacy_post_message(post_id: "202", client_message_id: "x-card-legacy-backfill")
+    message.twitter_post_references.delete_all
+    Twitter::Post.where(post_id: "202").delete_all
+
+    # The x_card_post fixture also carries a post URL, so two match.
+    assert_match(/Backfilled 2 messages/, run_backfill_task)
+    assert_equal [ "202" ], message.reload.twitter_posts.map(&:post_id)
+
+    get room_messages_url(@room)
+
+    assert_response :success
+    within_twitter_cards(message) do
+      assert_select ".x-post-card__loading", text: "Loading post…"
+    end
+    assert_select ".og-embed", count: 0
+  end
+
   private
+    def create_legacy_post_message(post_id:, client_message_id:)
+      # Not a solo link: a bare-link body takes the RemoveSoloUnfurledLinkText
+      # path, which duplicates the box independently of this feature.
+      body = <<~HTML
+        <div>Look at this: https://x.com/jack/status/#{post_id}</div>
+        <action-text-attachment content-type="application/vnd.actiontext.opengraph-embed" href="https://x.com/jack/status/#{post_id}" url="https://pbs.twimg.com/profile_images/1/avatar_200x200.jpg" filename="jack (@jack)" caption="just setting up my twttr"></action-text-attachment>
+      HTML
+      @room.messages.create!(
+        creator: @creator, body: body, client_message_id: client_message_id
+      )
+    end
+
+    def run_backfill_task
+      Rake::Task["twitter:backfill_references"].reenable
+      capture_io { Rake::Task["twitter:backfill_references"].invoke }.first
+    end
+
     def within_twitter_cards(message, &block)
-      container = ActionView::RecordIdentifier.dom_id(message, :twitter_cards)
-      assert_select "##{container}", &block
+      assert_select "##{dom_id(message, :twitter_cards)}", &block
+    end
+
+    def dom_id(*arguments)
+      ActionView::RecordIdentifier.dom_id(*arguments)
     end
 end
