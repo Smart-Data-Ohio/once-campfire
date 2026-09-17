@@ -226,6 +226,12 @@
   border-top: 1px solid var(--color-border-dark);
 }
 
+/* Bare turbo-frames are display:contents (see base.css) and never intersect
+   the viewport, so the lazy attendance frame needs its own box to load. */
+.event-card__attendance {
+  display: block;
+}
+
 .event-card__response-loading {
   margin: 0.4rem 0 0;
   font-size: 0.8rem;

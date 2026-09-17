@@ -1,4 +1,4 @@
-<%= turbo_frame_tag @frame_id do %>
+<%= turbo_frame_tag @frame_id, class: "event-card__attendance" do %>
   <div class="event-card__response">
     <% if @frame_alert.present? %>
       <p class="event-card__alert" role="alert"><%= @frame_alert %></p>

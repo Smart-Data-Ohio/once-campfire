@@ -21,9 +21,10 @@
 
   <p class="event-card__organizer">Organized by <%= event.organizer.name %></p>
 
+  <%# The frame needs its own box: base.css renders bare turbo-frames as display:contents, which never intersects the viewport, so a lazy frame without this class would never load. %>
   <%= turbo_frame_tag event_attendance_frame_id(event, message.id),
         src: room_event_attendance_path(event.room, event, message_id: message.id),
-        loading: :lazy do %>
+        loading: :lazy, class: "event-card__attendance" do %>
     <p class="event-card__response-loading">Loading response…</p>
   <% end %>
 </article>

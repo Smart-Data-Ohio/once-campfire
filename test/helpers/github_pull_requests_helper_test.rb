@@ -20,4 +20,18 @@ class GithubPullRequestsHelperTest < ActionView::TestCase
   test "cache key for a message without pull requests is just the message" do
     assert_equal [ messages(:first), nil ], message_with_pr_cards_cache_key(messages(:first))
   end
+
+  test "cache key changes when a referenced event is updated" do
+    message = messages(:first)
+    event = events(:launch_party)
+    EventReference.create!(message:, event:)
+    message.reload
+
+    before = message_with_pr_cards_cache_key(message)
+    travel 1.minute do
+      event.update!(title: "Updated title")
+    end
+
+    assert_not_equal before, message_with_pr_cards_cache_key(message.reload)
+  end
 end
