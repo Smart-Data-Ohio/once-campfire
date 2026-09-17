@@ -9,7 +9,7 @@ class Agents::Github::PullRequestActionsControllerTest < ActionDispatch::Integra
     discuss_pull_request(number: 12)
   end
 
-  test "a bad Bearer [REDACTED] is 401" do
+  test "a bad credential is 401" do
     post action_url,
       params: { pull_request_id: @pull_request.id, kind: "comment", body: "hi" }.to_json,
       headers: { "Authorization" => "Bearer wrong-secret", "Content-Type" => "application/json" }

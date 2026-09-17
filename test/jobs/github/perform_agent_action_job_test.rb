@@ -1,6 +1,8 @@
 require "test_helper"
 
 class Github::PerformAgentActionJobTest < ActiveJob::TestCase
+  AGENT_TOKEN = "agent-token-abc"
+
   setup do
     @room = rooms(:watercooler)
     @bot = users(:bender)
@@ -18,7 +20,7 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
     Github::PullRequestThread.create!(pull_request: @pull_request, room: @room, channel_thread: thread)
 
     @grant = AgentGrant.create!(agent: @agent, room: @room, granted_by: users(:david), capability: "external_action")
-    @account = GithubConnectedAccount.create!(user: @bot, github_login: "bender-machine", access_token: "agent-token-abc")
+    @account = GithubConnectedAccount.create!(user: @bot, github_login: "bender-machine", access_token: AGENT_TOKEN)
 
     @original_token = ENV["GITHUB_TOKEN"]
     ENV["GITHUB_TOKEN"] = "workspace-token"
@@ -51,7 +53,7 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
 
   test "an approved comment posts with the agent token and records completion" do
     stub = stub_request(:post, "https://api.github.com/repos/rails/rails/issues/12/comments")
-      .with(body: { body: "Nice work" }.to_json)
+      .with(headers: agent_bearer_header, body: { body: "Nice work" }.to_json)
       .to_return(status: 201, body: { html_url: "https://github.com/rails/rails/pull/12#issuecomment-1" }.to_json)
     approval = approve!(build_approval(kind: "comment", body: "Nice work"))
 
@@ -59,7 +61,7 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
       Github::PerformAgentActionJob.perform_now(approval.id)
     end
 
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub
     event = completion_event_for(approval)
     assert_equal "delivered", event.outcome
     assert_equal @room, event.room
@@ -76,13 +78,13 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
 
   test "an approved approve posts the review with the agent token" do
     stub = stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/reviews")
-      .with(body: { event: "APPROVE" }.to_json)
+      .with(headers: agent_bearer_header, body: { event: "APPROVE" }.to_json)
       .to_return(status: 200, body: { html_url: "https://github.com/rails/rails/pull/12#pullrequestreview-2" }.to_json)
     approval = approve!(build_approval(kind: "approve"))
 
     Github::PerformAgentActionJob.perform_now(approval.id)
 
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub
     assert_equal "completed", completion_event_for(approval).metadata["status"]
     assert_equal "https://github.com/rails/rails/pull/12#pullrequestreview-2",
       completion_event_for(approval).metadata["url"]
@@ -90,25 +92,25 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
 
   test "approved request_changes posts the review body" do
     stub = stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/reviews")
-      .with(body: { event: "REQUEST_CHANGES", body: "Fix the typo" }.to_json)
+      .with(headers: agent_bearer_header, body: { event: "REQUEST_CHANGES", body: "Fix the typo" }.to_json)
       .to_return(status: 200, body: { html_url: "https://github.com/rails/rails/pull/12#pullrequestreview-3" }.to_json)
     approval = approve!(build_approval(kind: "request_changes", body: "Fix the typo"))
 
     Github::PerformAgentActionJob.perform_now(approval.id)
 
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub
     assert_equal "completed", completion_event_for(approval).metadata["status"]
   end
 
   test "approved request_review posts the reviewer logins" do
     stub = stub_request(:post, "https://api.github.com/repos/rails/rails/pulls/12/requested_reviewers")
-      .with(body: { reviewers: %w[ alice bob ] }.to_json)
+      .with(headers: agent_bearer_header, body: { reviewers: %w[ alice bob ] }.to_json)
       .to_return(status: 201, body: { html_url: "https://github.com/rails/rails/pull/12" }.to_json)
     approval = approve!(build_approval(kind: "request_review", reviewers: %w[ alice bob ]))
 
     Github::PerformAgentActionJob.perform_now(approval.id)
 
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub
     assert_equal "completed", completion_event_for(approval).metadata["status"]
     assert_equal "https://github.com/rails/rails/pull/12", completion_event_for(approval).metadata["url"]
   end
@@ -241,6 +243,10 @@ class Github::PerformAgentActionJobTest < ActiveJob::TestCase
   end
 
   private
+    def agent_bearer_header
+      { "Authorization" => "Bearer #{AGENT_TOKEN}" }
+    end
+
     def build_approval(kind:, body: nil, reviewers: nil)
       action = Github::AgentPullRequestAction.new(
         pull_request: @pull_request, kind: kind, body: body, reviewers: reviewers
