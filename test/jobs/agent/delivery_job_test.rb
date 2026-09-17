@@ -395,45 +395,6 @@ class Agent::DeliveryJobTest < ActiveSupport::TestCase
     assert_equal 1, agent_b.agent_events.deliverable.last.hop
   end
 
-  test "two agents mentioning each other stop at the hop limit with both suppressions" do
-    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
-    agent_b = create_agent_in(@room, name: "Loop Bot B")
-    bot_b = agent_b.user
-    bot_a = @bot
-
-    # A starts the loop mentioning B.
-    last = @room.messages.create!(
-      creator: bot_a, markdown_source: "Hey @[#{bot_b.name}] start", client_message_id: "loop-m0"
-    )
-    perform_enqueued_jobs only: Agent::DeliveryJob
-
-    # Alternate replies until the hop limit stops both directions.
-    10.times do |i|
-      sender, recipient = i.even? ? [ bot_b, bot_a ] : [ bot_a, bot_b ]
-      last = @room.messages.create!(
-        creator: sender, markdown_source: "Hey @[#{recipient.name}] #{i}", reply_to_message: last,
-        client_message_id: "loop-m#{i + 1}"
-      )
-      perform_enqueued_jobs only: Agent::DeliveryJob
-
-      break if @agent.agent_events.where(event_type: "delivery_suppressed_hop_limit").exists? &&
-        agent_b.agent_events.where(event_type: "delivery_suppressed_hop_limit").exists?
-    end
-
-    assert @agent.agent_events.where(event_type: "delivery_suppressed_hop_limit").exists?,
-      "expected a hop-limit suppression for agent A"
-    assert agent_b.agent_events.where(event_type: "delivery_suppressed_hop_limit").exists?,
-      "expected a hop-limit suppression for agent B"
-
-    # No further deliveries are queued once suppressed at the limit.
-    assert_no_enqueued_jobs only: Agent::DeliveryJob do
-      @room.messages.create!(
-        creator: bot_a, markdown_source: "Hey @[#{bot_b.name}] after", reply_to_message: last,
-        client_message_id: "loop-after"
-      )
-    end
-  end
-
   private
     def create_mentioning_message(room, bot, creator:)
       assert_equal users(:bender), bot, "this helper only mentions the fixture bot"

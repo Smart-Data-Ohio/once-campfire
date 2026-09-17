@@ -303,6 +303,54 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, agent_b.agent_events.deliverable.last.hop
   end
 
+  test "two delivered agents mentioning each other stop at the hop limit with both suppressions" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+    agent_b = create_agent_in(@room, name: "Loop Bot B")
+    _, secret_b = AgentCredential.create_with_secret!(agent: agent_b, name: "loop", created_by: users(:david))
+
+    # Each agent posts only in response to an event actually delivered to
+    # it: perform the job, check outcome delivered, then post through the
+    # Bearer endpoint. Nothing posts after a suppression.
+
+    human_says "Hey @[#{@bot.name}]", "loop-human-a1"
+    assert_delivered @agent, hop: 0
+
+    post_as_agent @secret, "Hey @[#{agent_b.user.name}] one", "loop-a1"
+    assert_delivered agent_b, hop: 1
+
+    human_says "Hey @[#{agent_b.user.name}]", "loop-human-b1"
+    assert_delivered agent_b, hop: 0
+
+    post_as_agent secret_b, "Hey @[#{@bot.name}] one", "loop-b1"
+    assert_delivered @agent, hop: 1
+
+    post_as_agent @secret, "Hey @[#{agent_b.user.name}] two", "loop-a2"
+    assert_delivered agent_b, hop: 2
+
+    # B answers its hop-2 delivery at hop 3: suppressed for A, no job.
+    assert_no_enqueued_jobs only: Agent::DeliveryJob do
+      post_as_agent secret_b, "Hey @[#{@bot.name}] two", "loop-b2"
+    end
+    assert_suppressed @agent
+
+    human_says "Hey @[#{@bot.name}] again", "loop-human-a2"
+    assert_delivered @agent, hop: 0
+
+    post_as_agent @secret, "Hey @[#{agent_b.user.name}] three", "loop-a3"
+    assert_delivered agent_b, hop: 1
+
+    post_as_agent secret_b, "Hey @[#{@bot.name}] three", "loop-b3"
+    assert_delivered @agent, hop: 2
+
+    # A answers its hop-2 delivery at hop 3: suppressed for B, no job.
+    assert_no_enqueued_jobs only: Agent::DeliveryJob do
+      post_as_agent @secret, "Hey @[#{agent_b.user.name}] four", "loop-a4"
+    end
+    assert_suppressed agent_b
+
+    assert_no_enqueued_jobs only: Agent::DeliveryJob
+  end
+
   test "ledger page renders for admins" do
     sign_in :david
     @room.messages.create!(
@@ -447,5 +495,31 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
       agent = bot.create_agent!(kind: :workspace, owner: users(:david))
       room.memberships.grant_to(bot)
       agent
+    end
+
+    def human_says(markdown, client_message_id)
+      @room.messages.create!(
+        creator: users(:david), markdown_source: markdown, client_message_id: client_message_id
+      )
+    end
+
+    def post_as_agent(secret, markdown, client_message_id)
+      post room_agent_messages_url(@room),
+        params: { message: { markdown_source: markdown, client_message_id: client_message_id } }.to_json,
+        headers: { "Authorization" => "Bearer #{secret}", "Content-Type" => "application/json" }
+      assert_response :created
+    end
+
+    def assert_delivered(agent, hop:)
+      perform_enqueued_jobs only: Agent::DeliveryJob
+
+      event = agent.agent_events.deliverable.last
+      assert_equal "delivered", event.outcome
+      assert_equal hop, event.hop
+    end
+
+    def assert_suppressed(agent)
+      assert agent.agent_events.where(event_type: "delivery_suppressed_hop_limit").exists?,
+        "expected a hop-limit suppression for agent #{agent.id}"
     end
 end
