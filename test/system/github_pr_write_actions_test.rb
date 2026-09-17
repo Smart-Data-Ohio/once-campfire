@@ -24,7 +24,7 @@ class GithubPrWriteActionsTest < ApplicationSystemTestCase
     pull_request = message.github_pull_requests.first
     pull_request.update!(
       private: false,
-      title: \"Fix login\", author_login: "alice", state: "open",
+      title: "Fix login", author_login: "alice", state: "open",
       base_branch: "main", head_branch: "shiny",
       review_decision: "approved", check_status: "passing",
       html_url: "https://github.com/rails/rails/pull/12",
@@ -70,7 +70,7 @@ class GithubPrWriteActionsTest < ApplicationSystemTestCase
     pull_request = message.github_pull_requests.first
     pull_request.update!(
       private: false,
-      title: \"Fix login\", author_login: "alice", state: "open",
+      title: "Fix login", author_login: "alice", state: "open",
       base_branch: "main", head_branch: "shiny",
       review_decision: "approved", check_status: "passing",
       html_url: "https://github.com/rails/rails/pull/12",
@@ -115,7 +115,7 @@ class GithubPrWriteActionsTest < ApplicationSystemTestCase
     pull_request = message.github_pull_requests.first
     pull_request.update!(
       private: false,
-      title: \"Fix login\", author_login: "alice", state: "open",
+      title: "Fix login", author_login: "alice", state: "open",
       base_branch: "main", head_branch: "shiny",
       html_url: "https://github.com/rails/rails/pull/12",
       github_updated_at: 1.hour.ago, fetched_at: Time.current, fetch_error: nil
