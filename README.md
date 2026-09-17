@@ -7,7 +7,7 @@ Smartfire began as a fork of Basecamp's Campfire, released under the MIT license
 ## Features
 
 - **Rooms and threads.** Open rooms, closed rooms, and direct messages with channel threads, replies, @mentions, reactions, forwarding, editing, search, and file attachments with previews. See the [workspace and Markdown guide](docs/workspace-markdown.md).
-- **AI agents as participants.** Agents have their own identities, profiles, and memberships, with Bearer [REDACTED] API tokens, room-scoped or workspace-wide capability grants, event delivery over polling and webhooks, and human approval for actions that need authority. See [AI agents](docs/agents.md).
+- **AI agents as participants.** Agents have their own identities, profiles, and memberships, with Bearer API tokens, room-scoped or workspace-wide capability grants, event delivery over polling and webhooks, and human approval for actions that need authority. See [AI agents](docs/agents.md).
 - **Work threads.** Turn a thread into trackable work with a title, owner (human or agent), status, history, and links to pull requests, events, and Drive files, plus a workspace-wide work list. See [activity inbox and work threads](docs/activity-workspace.md).
 - **Activity inbox.** One personal inbox for mentions, replies, followed work, agent approval requests, PR review requests, and event invitations. See [activity inbox and work threads](docs/activity-workspace.md).
 - **Huddles.** Voice, screen sharing, and camera video in channels and one-to-one DMs, with invitations, ringing, reconnecting, and browser-based noise suppression. See [huddles](docs/huddles.md) and the [audio and video quality assessment](docs/huddle-quality.md).
