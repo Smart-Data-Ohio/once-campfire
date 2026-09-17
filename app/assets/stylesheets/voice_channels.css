@@ -53,3 +53,63 @@
 .room-header__actions .voice-stack {
   margin-inline-end: 0.25rem;
 }
+
+@media (max-width: 40rem) {
+  /* The phone header already squeezes seven icon-only actions beside the
+     sidebar toggle, so the voice stack yields first: at most three
+     overlapping avatars plus the count, never wrapping, clipping its own
+     width before the room name shrinks. The tighter header gap covers the
+     few pixels the buttons alone leave over at 320px. */
+  #nav:has(.room-header__actions .voice-stack) {
+    column-gap: 0.5rem;
+  }
+
+  /* The sidebar toggle is the odd one out at 58px; squaring it with the
+     actions frees the pixels the stack and room name share at 320px. */
+  #nav:has(.room-header__actions .voice-stack) .workspace-navigation__open {
+    --btn-padding: 0.3rem;
+    --btn-size: 2rem;
+
+    aspect-ratio: 1;
+    block-size: 2rem;
+  }
+
+  .room-header__actions:has(.voice-stack) {
+    flex-grow: 1;
+    flex-shrink: 1;
+    max-inline-size: max-content;
+    min-inline-size: min-content;
+  }
+
+  .room-header__actions:has(.voice-stack) > :not(.voice-stack) {
+    flex: none;
+  }
+
+  .room-header__actions .voice-stack {
+    flex-basis: 0;
+    flex-grow: 1;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    margin-inline-end: 0;
+    max-inline-size: max-content;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  .room-header__actions .voice-stack > * {
+    flex: none;
+  }
+
+  .room-header__actions .voice-stack__avatar:nth-child(n+4) {
+    display: none;
+  }
+}
+
+/* At the narrowest phones nothing is left for the stack once the actions and
+   the room name take their share, so it steps aside entirely instead of
+   leaving a clipped sliver. Presence stays one tap away in the sidebar. */
+@media (max-width: 22.5rem) {
+  .room-header__actions .voice-stack {
+    display: none;
+  }
+}

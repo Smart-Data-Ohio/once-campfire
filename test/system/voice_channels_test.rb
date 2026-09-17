@@ -271,7 +271,75 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     assert_equal [], page.evaluate_script("window.voiceRemovalErrors")
   end
 
+  test "the voice header fits narrow phones and caps the stack" do
+    david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
+    sleep 0.5
+    david_grant.record_seen!
+    jason_grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:jason)))
+    sleep 0.5
+    jason_grant.record_seen!
+
+    visit room_path(@room)
+    wait_for_cable_connection
+    within(".room-header__actions") { assert_selector ".voice-stack--live .voice-stack__count", text: "2", wait: 10 }
+
+    begin
+      [ [ 320, 740 ], [ 390, 844 ] ].each do |width, height|
+        page.current_window.resize_to(width, height)
+        assert_no_horizontal_overflow
+        assert_header_inside_viewport
+      end
+
+      # A fourth participant joins: the desktop header shows all four, the
+      # phone header at most three plus the count.
+      @room.memberships.grant_to([ users(:kevin), users(:jz) ])
+      kevin_grant = HuddleGrant.issue!(session: users(:kevin).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:kevin)))
+      sleep 0.5
+      kevin_grant.record_seen!
+      jz_grant = HuddleGrant.issue!(session: users(:jz).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:jz)))
+      sleep 0.5
+      jz_grant.record_seen!
+
+      page.current_window.resize_to(1400, 1400)
+      within(".room-header__actions") do
+        assert_selector ".voice-stack__count", text: "4", wait: 10
+        assert_selector "img.voice-stack__avatar", count: 4
+      end
+
+      # The narrowest phones have no room for the stack at all: it steps
+      # aside instead of clipping, while wider phones cap it at three avatars
+      # plus the count.
+      page.current_window.resize_to(320, 740)
+      assert_no_selector ".room-header__actions .voice-stack"
+      assert_no_horizontal_overflow
+      assert_header_inside_viewport
+
+      page.current_window.resize_to(500, 800)
+      within(".room-header__actions") do
+        assert_selector "img.voice-stack__avatar", count: 3
+        assert_selector ".voice-stack__count", text: "4"
+      end
+      assert_no_horizontal_overflow
+      assert_header_inside_viewport
+    ensure
+      page.current_window.resize_to(1400, 1400)
+    end
+  end
+
   private
+    def assert_no_horizontal_overflow
+      assert page.evaluate_script("document.documentElement.scrollWidth <= window.innerWidth"),
+        "the workspace overflows the viewport horizontally"
+    end
+
+    def assert_header_inside_viewport
+      box, viewport = page.evaluate_script(<<~JS)
+        [ document.querySelector("#nav").getBoundingClientRect().toJSON(), window.innerWidth ]
+      JS
+      assert_operator box["left"], :>=, 0, "the room header starts outside the viewport"
+      assert_operator box["right"], :<=, viewport, "the room header ends outside the viewport"
+    end
+
     def wait_for_connected_stream_sources(count)
       Timeout.timeout(25) do
         sleep 0.2 until page.evaluate_script(
