@@ -46,9 +46,12 @@ export default class extends Controller {
 
     this.activeInRoom = Boolean(isCurrentRoom && [ "connected", "reconnecting" ].includes(state))
 
-    this.element.setAttribute("aria-pressed", String(Boolean(isCurrentRoom && isActive)))
-    this.labelTarget.textContent = isCurrentRoom && state === "connecting"
+    const label = isCurrentRoom && state === "connecting"
       ? "Joining…"
       : isCurrentRoom && isActive ? this.activeLabelValue : this.joinLabelValue
+
+    this.element.setAttribute("aria-pressed", String(Boolean(isCurrentRoom && isActive)))
+    this.element.setAttribute("aria-label", label)
+    this.labelTarget.textContent = label
   }
 }

@@ -85,6 +85,19 @@ class Rooms::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "replace" ], remaining_streams.map { |stream| stream["action"] }
   end
 
+  test "a non-administrator creator can manage members of their own voice room" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:kevin) }, users: [ users(:kevin), users(:jz) ])
+
+    sign_in :kevin
+    put rooms_voice_url(room), params: {
+      room: { name: "New Name" }, user_ids: [ users(:kevin).id ]
+    }
+
+    assert_redirected_to room_url(room)
+    assert_equal "New Name", room.reload.name
+    assert_equal [ users(:kevin).id ], room.reload.user_ids
+  end
+
   test "only admins or creators can update" do
     room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jz) ])
     sign_in :jz

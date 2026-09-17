@@ -111,11 +111,13 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     JS
 
     assert_selector ".huddle-launcher", text: "Leave voice", wait: 10
+    assert_equal "Leave voice", find(".huddle-launcher")["aria-label"]
 
     click_button "Leave voice"
 
     assert_equal [], page.evaluate_script("window.huddleJoinEvents")
     assert_selector ".huddle-launcher", text: "Join voice", wait: 10
+    assert_equal "Join voice", find(".huddle-launcher")["aria-label"]
     assert_selector "#channel-huddle[data-state='idle']", visible: :all
   end
 
@@ -323,6 +325,40 @@ class VoiceChannelsTest < ApplicationSystemTestCase
       assert_header_inside_viewport
     ensure
       page.current_window.resize_to(1400, 1400)
+    end
+  end
+
+  test "the room page shares one participants request across its stacks" do
+    david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
+    sleep 0.5
+    david_grant.record_seen!
+
+    visit room_path(@room)
+    wait_for_cable_connection
+    assert_selector '[data-controller="huddle-participants"]', count: 2
+
+    page.execute_script(<<~JS)
+      window.probeFetches = 0
+      window.fetch = ((originalFetch) => (...args) => {
+        const url = String(args[0] && args[0].url || args[0])
+        if (url.includes("/huddle/participants")) window.probeFetches++
+        return originalFetch(...args)
+      })(window.fetch.bind(window))
+    JS
+
+    fetch_count = page.evaluate_async_script(<<~JS)
+      const done = arguments[arguments.length - 1]
+      const controllers = [...document.querySelectorAll('[data-controller="huddle-participants"]')]
+        .map(element => window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-participants"))
+      Promise.all(controllers.map(controller => controller.refresh())).then(() => done(window.probeFetches))
+    JS
+
+    assert_equal 1, fetch_count, "the sidebar and header stacks must share one request"
+    within("#voice_rooms") do
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
+    end
+    within(".room-header__actions") do
+      assert_selector "img.voice-stack__avatar[data-user-id='#{users(:david).id}']"
     end
   end
 

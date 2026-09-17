@@ -272,6 +272,28 @@ class Rooms::HuddlesControllerTest < ActionDispatch::IntegrationTest
     assert_json_error :not_found, "Room not found or inaccessible"
   end
 
+  test "a nonmember cannot mint voice credentials" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david) ])
+
+    sign_in :kevin
+    post room_huddle_url(room)
+
+    assert_json_error :not_found, "Room not found or inaccessible"
+  end
+
+  test "participants denies a member after removal" do
+    room = Rooms::Voice.create_for({ name: "Lounge", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+
+    sign_in :jason
+    get participants_room_huddle_url(room)
+    assert_response :success
+
+    room.memberships.find_by!(user: users(:jason)).destroy!
+    get participants_room_huddle_url(room)
+
+    assert_json_error :not_found, "Room not found or inaccessible"
+  end
+
   test "an outsider cannot join a direct room" do
     sign_in :jz
 

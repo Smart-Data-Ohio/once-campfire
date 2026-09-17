@@ -30,7 +30,9 @@ it renders as an avatar stack in the sidebar row and in the room header.
 The stacks refresh over Turbo Streams when a grant is issued, revoked, or
 first seen in the call. Grants that quietly expire — leaving the call does not
 revoke the session's grant — fall off through a 15-second browser refresh,
-which is the only polling in the feature.
+which is the only polling in the feature. On phones the header stack shows at
+most three avatars plus the count, yields its width before the room name
+shrinks, and steps aside entirely below 360px.
 
 ## Joining and leaving
 
@@ -50,7 +52,9 @@ avatars, with a subtle live treatment while anyone is in the call.
 
 Removing a member, deleting the room, or deactivating the user ends their
 voice session through the existing huddle revocation path, and they disappear
-from the participant list.
+from the participant list. Removal also drops the member's sidebar row and
+header stack over their existing rooms stream, and the presence poll treats
+its 404 as the end of membership: it stops, clears, and never retries.
 
 ## Limits
 
