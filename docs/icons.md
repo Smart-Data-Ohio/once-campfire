@@ -25,7 +25,9 @@ literal.
 
 Reactions accept a brand shortcode as boost content (validated against the
 registry; unknown shortcodes are rejected) and render the same icon markup.
-The eight quick reactions are unchanged.
+An emoji shortcode such as `:thumbsup:` is stored as the character itself, so
+it behaves exactly like an emoji typed directly. The eight quick reactions are
+unchanged.
 
 ## Adding an icon
 

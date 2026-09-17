@@ -131,6 +131,8 @@ Done for the first slice when members can turn a channel thread into work, assig
 
 Done for the first slice when a member can type `:openai:` or `:thumbsup:` in a message or a reaction, pick it from the autocomplete, and every viewer sees the icon rendered correctly in both themes.
 
+**Status:** first slice shipped. Twenty-seven brand icons (Simple Icons, CC0) plus every gemoji alias resolve through `:name:` in Markdown messages and boosts, with `:` autocomplete in the composer and boost input; see `docs/icons.md`. Still open: Microsoft, Amazon, AWS, xAI, and DeepSeek are not in the vendored set and need another source, and uploaded workspace icons are not started.
+
 ## Proposed additions
 
 - **Agent handoffs:** move a task between a person and an agent, or between agents, with explicit context and responsibility.

@@ -7,6 +7,13 @@ class BoostTest < ActiveSupport::TestCase
     assert boost.valid?
   end
 
+  test "stores an emoji shortcode as its character" do
+    boost = Boost.create!(message: messages(:first), booster: users(:david), content: ":thumbsup:")
+
+    assert_equal "👍", boost.reload.content
+    assert_not boost.shortcode_content?
+  end
+
   test "rejects an unknown shortcode" do
     boost = Boost.new(message: messages(:first), booster: users(:david), content: ":nope_not_real:")
 
