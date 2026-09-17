@@ -11,7 +11,7 @@ class Huddle::Reconciler
 
     until @stopping
       begin
-        HuddleCleanup.reconcile_now if Huddle.livekit_admin_configured?
+        reconcile_once
       rescue => error
         Rails.logger.error "Huddle reconciliation failed: #{error.class}"
       ensure
@@ -20,7 +20,19 @@ class Huddle::Reconciler
     end
   end
 
+  # One pass of both loops, extracted so tests can run it without the sleep loop.
+  def reconcile_once
+    resolve_overdue_invitations
+    HuddleCleanup.reconcile_now if Huddle.livekit_admin_configured?
+  end
+
   private
+    def resolve_overdue_invitations
+      Huddle::InvitationResolver.resolve_overdue!
+    rescue => error
+      Rails.logger.error "Huddle invitation resolution failed: #{error.class}"
+    end
+
     def install_signal_handlers
       %w[ INT TERM ].each { |signal| Signal.trap(signal) { @stopping = true } }
     end

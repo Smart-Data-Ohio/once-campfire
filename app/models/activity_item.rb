@@ -150,7 +150,8 @@ class ActivityItem < ApplicationRecord
           roomName: huddle_invitation_room_name(room),
           roomPath: routes.room_path(room),
           callerName: caller.name,
-          readPath: routes.read_activity_item_path(self, state: "read")
+          readPath: routes.read_activity_item_path(self, state: "read"),
+          handledPath: routes.handled_activity_item_path(self, state: "handled")
         }
       }
     end

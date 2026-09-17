@@ -8,6 +8,7 @@ class ActivityItemsController < ApplicationController
 
   def index
     no_store_response!
+    Huddle::InvitationResolver.resolve_overdue!(user: Current.user)
     @activity_items = filtered_activity_items
     @next_cursor = @activity_items.length == PAGE_SIZE ? @activity_items.last.id : nil
     @unread_count = accessible_activity_items.unread.count

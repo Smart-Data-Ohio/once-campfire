@@ -2,7 +2,8 @@ class HuddleGrant < ApplicationRecord
   class Ineligible < StandardError; end
 
   INVITATION_DEDUP_WINDOW = 2.minutes
-  MISSED_INVITATION_WAIT = 45.seconds
+  IN_CALL_WINDOW = 20.seconds
+  SEEN_TOUCH_INTERVAL = 10.seconds
 
   belongs_to :session, optional: true
   belongs_to :user, optional: true
@@ -13,8 +14,7 @@ class HuddleGrant < ApplicationRecord
   has_many :activity_items, as: :source, dependent: :destroy, inverse_of: :source
 
   scope :active, -> { where(revoked_at: nil) }
-
-  after_create_commit :invite_direct_participant
+  scope :in_call, -> { where("last_seen_at > ?", IN_CALL_WINDOW.ago) }
 
   validates :identity, :room_name, presence: true
   validates :identity, uniqueness: true
@@ -24,7 +24,7 @@ class HuddleGrant < ApplicationRecord
       attempts = 0
 
       begin
-        transaction do
+        grant = transaction do
           user = User.active.where.not(role: :bot).lock.find_by(id: session.user_id)
           current_session = Session.lock.find_by(id: session.id, user_id: user&.id)
           current_membership = Membership.lock.find_by(id: membership.id, user_id: user&.id, room_id: membership.room_id)
@@ -35,15 +35,25 @@ class HuddleGrant < ApplicationRecord
           revoke_scope! active.where(session_id: current_session.id, room_id: current_room.id)
             .where.not(membership_id: current_membership.id)
 
-          active.find_by(session_id: current_session.id, membership_id: current_membership.id) || create!(
-            identity: "campfire-participant-#{SecureRandom.hex(32)}",
-            room_name: Huddle.room_name(current_room.id),
-            session_id: current_session.id,
-            user_id: user.id,
-            membership_id: current_membership.id,
-            room_id: current_room.id
-          )
+          existing = active.find_by(session_id: current_session.id, membership_id: current_membership.id)
+          if existing
+            existing.update!(last_issued_at: Time.current)
+            existing
+          else
+            create!(
+              identity: "campfire-participant-#{SecureRandom.hex(32)}",
+              room_name: Huddle.room_name(current_room.id),
+              session_id: current_session.id,
+              user_id: user.id,
+              membership_id: current_membership.id,
+              room_id: current_room.id,
+              last_issued_at: Time.current
+            )
+          end
         end
+
+        grant.after_issued!
+        grant
       rescue ActiveRecord::RecordNotUnique
         attempts += 1
         retry if attempts < 3
@@ -111,6 +121,26 @@ class HuddleGrant < ApplicationRecord
     revoked_at.present?
   end
 
+  def in_call?
+    last_seen_at.present? && last_seen_at > IN_CALL_WINDOW.ago
+  end
+
+  # The gateway checks every connected participant about once per second, so
+  # liveness is persisted at most every SEEN_TOUCH_INTERVAL.
+  def record_seen!
+    return if last_seen_at.present? && last_seen_at > SEEN_TOUCH_INTERVAL.ago
+
+    update_columns(last_seen_at: Time.current)
+  end
+
+  # Post-commit work for every issuance, created or reused: obtaining a grant
+  # means joining the room's call, so the issuer's own open invitations for
+  # the room are handled and the DM peer rings for a new call.
+  def after_issued!
+    clear_open_invitations!
+    invite_direct_participant
+  end
+
   def authorization_payload
     { grant_id: id, room_name: room_name, identity: identity }
   end
@@ -122,20 +152,36 @@ class HuddleGrant < ApplicationRecord
   end
 
   private
+    # Joining late clears even a missed item: any open invitation for this
+    # room and recipient is handled as soon as they obtain a grant here.
+    def clear_open_invitations!
+      open_invitations_for(user_id).find_each(&:mark_handled!)
+    end
+
     # A huddle "starts" for a DM when a grant is issued while the other
-    # participant has no active grant in the room. Rejoins reuse their grant
-    # and never reach this callback; separate sessions are covered by the
-    # invitation dedup window instead.
+    # participant is not in the call. Grants persist per session, so issuance
+    # (created or reused) drives the ring and the dedup window guards it.
     def invite_direct_participant
       recipient = direct_huddle_recipient
       return unless recipient
-      return if HuddleGrant.active.where(room_id: room_id, user_id: recipient.id).exists?
+      return if HuddleGrant.in_call.where(room_id: room_id, user_id: recipient.id).exists?
       return if recent_unhandled_invitation?(recipient)
 
       item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
       return unless item
 
-      Huddle::MissedHuddleJob.set(wait: MISSED_INVITATION_WAIT).perform_later(item.id)
+      unless item.previously_new_record?
+        # Inbox identity is recipient + source, so a reused grant re-rings
+        # through the same row. A stale invitation (handled, missed, or past
+        # the window) is replaced with a fresh ring; a fresh one means a
+        # concurrent issuance already rang and stands.
+        return unless stale_invitation?(item)
+
+        item.destroy!
+        item = ActivityItems::Recorder.record!(recipient:, source: self, event_type: "huddle_started")
+        return unless item
+      end
+
       Huddle::PushInvitationJob.perform_later(item.id)
     end
 
@@ -151,11 +197,19 @@ class HuddleGrant < ApplicationRecord
     end
 
     def recent_unhandled_invitation?(recipient)
-      ActivityItem
-        .where(user_id: recipient.id, source_type: HuddleGrant.polymorphic_name, event_type: "huddle_started", handled_at: nil)
-        .joins("INNER JOIN huddle_grants AS invitation_grants ON invitation_grants.id = activity_items.source_id")
-        .where(invitation_grants: { room_id: room_id })
+      open_invitations_for(recipient.id)
         .where(activity_items: { created_at: INVITATION_DEDUP_WINDOW.ago.. })
         .exists?
+    end
+
+    def open_invitations_for(user_id)
+      ActivityItem
+        .where(user_id:, source_type: HuddleGrant.polymorphic_name, event_type: ActivityItem::HUDDLE_EVENT_TYPES, handled_at: nil)
+        .joins("INNER JOIN huddle_grants AS invitation_grants ON invitation_grants.id = activity_items.source_id")
+        .where(invitation_grants: { room_id: room_id })
+    end
+
+    def stale_invitation?(item)
+      item.handled? || item.event_type != "huddle_started" || item.created_at < INVITATION_DEDUP_WINDOW.ago
     end
 end

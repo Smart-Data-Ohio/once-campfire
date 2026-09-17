@@ -10,7 +10,8 @@ export default class extends Controller {
     roomId: Number,
     roomName: String,
     roomPath: String,
-    readPath: String
+    readPath: String,
+    handledPath: String
   }
 
   async connect() {
@@ -18,6 +19,10 @@ export default class extends Controller {
     this.handleHuddleChange = this.#huddleChanged.bind(this)
     window.addEventListener("huddle:join", this.handleHuddleJoin)
     window.addEventListener("huddle:changed", this.handleHuddleChange)
+
+    // Learn the panel's current room so an invitation for a call the user
+    // already joined never rings; the panel answers with huddle:changed.
+    queueMicrotask(() => window.dispatchEvent(new CustomEvent("huddle:query")))
 
     const generation = this.generation = Symbol()
     try {
@@ -43,12 +48,17 @@ export default class extends Controller {
     window.removeEventListener("huddle:changed", this.handleHuddleChange)
   }
 
-  join(event) {
+  async join(event) {
     event?.preventDefault()
 
     const roomId = this.roomIdValue
     const roomName = this.roomNameValue
+    const handledPath = this.handledPathValue
     this.#hide()
+
+    // Joining answers the call, so the invitation is handled immediately
+    // rather than waiting for the missed-huddle resolution.
+    if (handledPath) await this.#patch(handledPath)
     if (!roomId) return
 
     if (window.location.pathname === this.roomPathValue) {
@@ -68,18 +78,7 @@ export default class extends Controller {
     this.#hide()
     if (!readPath) return
 
-    try {
-      await fetch(readPath, {
-        method: "PATCH",
-        headers: {
-          Accept: "application/json",
-          "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content
-        },
-        credentials: "same-origin"
-      })
-    } catch {
-      // The banner is already gone; the inbox still offers Mark read.
-    }
+    await this.#patch(readPath)
   }
 
   #activityReceived(payload) {
@@ -98,8 +97,26 @@ export default class extends Controller {
   }
 
   #huddleChanged({ detail }) {
-    if (!detail || Number(detail.roomId) !== this.roomIdValue) return
+    if (!detail) return
+    this.huddleRoomId = Number(detail.roomId)
+    this.huddleState = detail.state
+    if (Number(detail.roomId) !== this.roomIdValue) return
     if (ACTIVE_HUDDLE_STATES.includes(detail.state)) this.#hide()
+  }
+
+  async #patch(path) {
+    try {
+      await fetch(path, {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content
+        },
+        credentials: "same-origin"
+      })
+    } catch {
+      // The banner is already gone; the inbox still offers Mark read.
+    }
   }
 
   #dispatchJoin(roomId, roomName) {
@@ -109,11 +126,15 @@ export default class extends Controller {
   }
 
   #show(invitation) {
+    // Never ring for a call the user is already in.
+    if (Number(invitation.roomId) === this.huddleRoomId && ACTIVE_HUDDLE_STATES.includes(this.huddleState)) return
+
     this.activityItemIdValue = invitation.activityItemId
     this.roomIdValue = invitation.roomId
     this.roomNameValue = invitation.roomName
     this.roomPathValue = invitation.roomPath
     this.readPathValue = invitation.readPath
+    this.handledPathValue = invitation.handledPath
     this.titleTarget.textContent = `${invitation.callerName} started a huddle`
     this.descriptionTarget.textContent = `Join the huddle in ${invitation.roomName}`
     this.element.hidden = false
