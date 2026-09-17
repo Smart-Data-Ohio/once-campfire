@@ -205,6 +205,8 @@
             <summary class="btn">Work history</summary>
             <ol data-thread-panel-target="workHistoryList"></ol>
           </details>
+
+          <%= turbo_frame_tag work_thread_links_panel_frame_id, data: { thread_panel_target: "workLinksFrame" }, hidden: true %>
         </section>
 
         <div class="thread-panel__thread-status" role="status" aria-live="polite" data-thread-panel-target="threadStatus"></div>

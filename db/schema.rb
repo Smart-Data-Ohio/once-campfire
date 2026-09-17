@@ -514,6 +514,25 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
     t.index ["event_type", "created_at"], name: "index_work_thread_events_on_type_and_created_at"
   end
 
+  create_table "work_thread_links", force: :cascade do |t|
+    t.integer "channel_thread_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "created_by_id", null: false
+    t.integer "event_id"
+    t.integer "github_pull_request_id"
+    t.string "kind", null: false
+    t.string "title"
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.index ["channel_thread_id", "event_id"], name: "index_work_thread_links_on_thread_and_event", unique: true, where: "event_id IS NOT NULL"
+    t.index ["channel_thread_id", "kind", "github_pull_request_id"], name: "index_work_thread_links_on_thread_kind_and_pr", unique: true, where: "github_pull_request_id IS NOT NULL"
+    t.index ["channel_thread_id", "url"], name: "index_work_thread_links_on_thread_and_url", unique: true, where: "url IS NOT NULL"
+    t.index ["channel_thread_id"], name: "index_work_thread_links_on_channel_thread_id"
+    t.index ["created_by_id"], name: "index_work_thread_links_on_created_by_id"
+    t.index ["event_id"], name: "index_work_thread_links_on_event_id"
+    t.index ["github_pull_request_id"], name: "index_work_thread_links_on_github_pull_request_id"
+  end
+
   create_table "workspace_icons", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creator_id", null: false
@@ -571,6 +590,10 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_022912) do
   add_foreign_key "webhooks", "users"
   add_foreign_key "work_thread_events", "channel_threads", on_delete: :cascade
   add_foreign_key "work_thread_events", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "work_thread_links", "channel_threads", on_delete: :cascade
+  add_foreign_key "work_thread_links", "events", on_delete: :cascade
+  add_foreign_key "work_thread_links", "github_pull_requests"
+  add_foreign_key "work_thread_links", "users", column: "created_by_id"
   add_foreign_key "workspace_icons", "users", column: "creator_id"
   add_foreign_key "workspace_presence_leases", "sessions", on_delete: :cascade
   add_foreign_key "workspace_presence_leases", "users", on_delete: :cascade

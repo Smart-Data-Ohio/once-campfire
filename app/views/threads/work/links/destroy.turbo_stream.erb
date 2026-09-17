@@ -1,0 +1,9 @@
+<%= turbo_stream.replace work_thread_links_box_id(@thread, :panel) do %>
+  <%= render "threads/work/links/box", thread: @thread, links: @links, linkable_events: @linkable_events, context: :panel %>
+<% end %>
+<%= turbo_stream.replace work_thread_links_box_id(@thread, :header) do %>
+  <%= render "threads/work/links/box", thread: @thread, links: @links, linkable_events: @linkable_events, context: :header %>
+<% end %>
+<%= turbo_stream.replace work_thread_links_box_id(@thread, :row) do %>
+  <%= render "threads/work/links/box", thread: @thread, links: @links, linkable_events: @linkable_events, context: :row %>
+<% end %>
