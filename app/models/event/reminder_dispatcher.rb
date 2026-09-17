@@ -16,7 +16,7 @@ class Event::ReminderDispatcher
 
     private
       def due_events(now)
-        Event.upcoming
+        Event.active
           .where(reminded_at: nil)
           .where(starts_at: (now - REMIND_AFTER_GRACE)..(now + REMIND_BEFORE))
       end

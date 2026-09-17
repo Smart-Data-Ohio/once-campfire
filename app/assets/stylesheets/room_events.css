@@ -155,3 +155,9 @@
   font-size: 0.8rem;
   margin: 0;
 }
+
+.room-events__zone {
+  color: var(--color-text-subtle, #6b7280);
+  font-size: 0.9em;
+  white-space: nowrap;
+}

@@ -16,9 +16,12 @@ class Event < ApplicationRecord
   validate :ends_at_must_follow_starts_at
   validate :organizer_must_be_eligible
 
-  scope :upcoming, -> { where(cancelled_at: nil) }
+  scope :active, -> { where(cancelled_at: nil) }
+  scope :upcoming, -> { active.where("COALESCE(events.ends_at, events.starts_at) >= ?", Time.current) }
+  scope :past, -> { active.where("COALESCE(events.ends_at, events.starts_at) < ?", Time.current) }
   scope :cancelled, -> { where.not(cancelled_at: nil) }
   scope :ordered, -> { order(starts_at: :desc, id: :desc) }
+  scope :soonest_first, -> { order(starts_at: :asc, id: :asc) }
 
   after_create :record_organizer_attendance
   after_create_commit :fan_out_invitations

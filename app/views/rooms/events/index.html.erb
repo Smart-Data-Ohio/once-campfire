@@ -42,6 +42,13 @@
     </div>
   <% end %>
 
+  <% if @past_events.any? %>
+    <h2 class="room-events__heading" id="past-events">Past</h2>
+    <div class="room-events__list" role="list" aria-labelledby="past-events">
+      <%= render partial: "rooms/events/event", collection: @past_events, as: :event, locals: { room: @room } %>
+    </div>
+  <% end %>
+
   <h2 class="room-events__heading" id="cancelled-events">Cancelled</h2>
   <% if @cancelled_events.empty? %>
     <p class="room-events__empty">No cancelled events.</p>

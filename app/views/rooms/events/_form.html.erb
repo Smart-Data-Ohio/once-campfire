@@ -36,17 +36,25 @@
     </div>
   </div>
 
-  <%= form.hidden_field :time_zone, value: zone, data: { event_time_zone: true } %>
-  <p class="room-events__hint">
-    Times are saved in your time zone (<span data-event-time-zone-label><%= zone %></span>).
-    Attendees see them converted to their own.
-  </p>
+  <% if event.persisted? %>
+    <p class="room-events__hint">
+      Times are in <%= zone %>, the time zone this event was scheduled in.
+      Attendees see them converted to their own.
+    </p>
+  <% else %>
+    <%= form.hidden_field :time_zone, value: zone, data: { event_time_zone: true } %>
+    <p class="room-events__hint">
+      Times are saved in your time zone (<span data-event-time-zone-label><%= zone %></span>).
+      Attendees see them converted to their own.
+    </p>
+  <% end %>
 
   <div>
     <%= form.submit event.persisted? ? "Save changes" : "Schedule event", class: "btn btn--primary" %>
   </div>
 <% end %>
 
+<% unless event.persisted? %>
 <script>
   (function () {
     var field = document.querySelector("[data-event-time-zone]");
@@ -61,3 +69,4 @@
     } catch (error) { /* keep the UTC fallback */ }
   })();
 </script>
+<% end %>

@@ -7,12 +7,18 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     sign_in :david
   end
 
-  test "index lists upcoming events separately from cancelled ones" do
+  test "index lists upcoming, past, and cancelled events separately" do
+    @room.events.create!(organizer: users(:david), title: "Old kickoff", starts_at: 2.days.ago, time_zone: "UTC")
+
     get room_events_url(@room)
 
     assert_response :success
-    assert_includes response.body, "Launch party planning"
-    assert_includes response.body, "Sprint retro"
+    upcoming, rest = response.body.split("id=\"past-events\"", 2)
+    past, cancelled = rest.split("id=\"cancelled-events\"", 2)
+    assert_includes upcoming, "Launch party planning"
+    assert_not_includes upcoming, "Old kickoff"
+    assert_includes past, "Old kickoff"
+    assert_includes cancelled, "Sprint retro"
   end
 
   test "show renders for members and 404s for non-members" do
@@ -100,8 +106,42 @@ class Rooms::EventsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_redirected_to room_event_path(@room, @event)
-    assert_equal Time.utc(2026, 9, 26, 15, 30), @event.reload.starts_at
+    # Posted times are read in the event's own zone, not the posted one.
+    assert_equal ActiveSupport::TimeZone["America/New_York"].parse("2026-09-26 15:30"), @event.reload.starts_at
+    assert_equal "America/New_York", @event.time_zone
     assert_equal "event_update", ActivityItem.find_by!(user: users(:kevin), source: @event).event_type
+  end
+
+  test "saving the edit form from another time zone does not move the event" do
+    @event.attendances.create!(user: users(:kevin), response: :going)
+    # The form posts minute precision, as a browser would.
+    @event.update_columns(starts_at: @event.starts_at.change(sec: 0), ends_at: @event.ends_at.change(sec: 0))
+    original_starts_at = @event.starts_at
+    zone = @event.time_zone
+
+    assert_no_difference -> { ActivityItem.count } do
+      patch room_event_url(@room, @event), params: {
+        event: {
+          title: "Launch party planning (renamed)",
+          starts_at: original_starts_at.in_time_zone(zone).strftime("%Y-%m-%dT%H:%M"),
+          ends_at: @event.ends_at.in_time_zone(zone).strftime("%Y-%m-%dT%H:%M"),
+          time_zone: "Europe/Berlin"
+        }
+      }
+    end
+
+    assert_redirected_to room_event_path(@room, @event)
+    @event.reload
+    assert_equal "Launch party planning (renamed)", @event.title
+    assert_equal original_starts_at.to_i, @event.starts_at.to_i
+    assert_equal zone, @event.time_zone
+  end
+
+  test "show prints the scheduled zone next to the localized time" do
+    get room_event_url(@room, @event)
+
+    assert_response :success
+    assert_select ".room-events__zone", text: /E[DS]T\)\z/
   end
 
   test "cancelled events cannot be edited" do

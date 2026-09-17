@@ -32,10 +32,11 @@
       <span class="room-events__eyebrow">Event · organized by <%= @event.organizer.name %></span>
       <h1 id="event-title"><%= @event.title %></h1>
       <p class="room-events__times">
-        <%= local_datetime_tag(@event.starts_at, style: :datetime) do %><%= @event.starts_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+        <%= local_datetime_tag(@event.starts_at, style: :datetime) do %><%= @event.starts_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p") %><% end %>
         <% if @event.ends_at.present? %>
-          &ndash; <%= local_datetime_tag(@event.ends_at, style: :datetime) do %><%= @event.ends_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p %Z") %><% end %>
+          &ndash; <%= local_datetime_tag(@event.ends_at, style: :datetime) do %><%= @event.ends_at.in_time_zone(@event.time_zone).strftime("%B %-d, %Y at %-I:%M %p") %><% end %>
         <% end %>
+        <span class="room-events__zone"><%= event_zone_label(@event) %></span>
       </p>
     </div>
 

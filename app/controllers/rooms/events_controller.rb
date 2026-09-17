@@ -9,7 +9,8 @@ class Rooms::EventsController < ApplicationController
   before_action :ensure_event_canceller, only: :cancel
 
   def index
-    @upcoming_events = @room.events.upcoming.ordered.includes(:organizer, :attendances)
+    @upcoming_events = @room.events.upcoming.soonest_first.includes(:organizer, :attendances)
+    @past_events = @room.events.past.ordered.includes(:organizer, :attendances)
     @cancelled_events = @room.events.cancelled.ordered.includes(:organizer, :attendances)
   end
 
@@ -69,7 +70,10 @@ class Rooms::EventsController < ApplicationController
 
     def event_attributes
       permitted = params.require(:event).permit(:title, :description, :starts_at, :ends_at, :time_zone)
-      zone = permitted[:time_zone].presence || "UTC"
+      # The zone is fixed when the event is scheduled. Edits keep reading the
+      # posted times in that zone, so an editor elsewhere cannot move the event
+      # by saving the form untouched.
+      zone = @event ? @event.time_zone : (permitted[:time_zone].presence || "UTC")
       permitted[:time_zone] = zone
       permitted[:starts_at] = parse_event_time(permitted[:starts_at], zone)
       permitted[:ends_at] = parse_event_time(permitted[:ends_at], zone)

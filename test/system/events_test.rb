@@ -14,7 +14,7 @@ class EventsTest < ApplicationSystemTestCase
       click_on "New event"
       fill_in "Title", with: "Launch retro"
       fill_in "Description (optional)", with: "Bring your notes."
-      fill_in "Starts", with: "2026-09-25T15:30"
+      fill_in "Starts", with: 8.days.from_now.strftime("%Y-%m-%dT15:30")
       click_on "Schedule event"
 
       assert_selector "h1", text: "Launch retro"
