@@ -29,19 +29,23 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     assert_selector "#voice_rooms .voice-room .voice-stack:not(.voice-stack--live)"
 
     # The test cable adapter delivers over a thread pool, so back-to-back
-    # presence broadcasts can arrive out of order. The pauses below let each
-    # broadcast land before the next one fires; in production, issuance and
-    # first sighting are seconds apart.
+    # presence broadcasts can arrive out of order and the issuance render
+    # (nobody in voice yet) could land after the sighting render. Wait for
+    # each issuance render before recording the sighting; in production,
+    # issuance and first sighting are seconds apart.
+    observe_turbo_stream_renders
+    renders = header_voice_renders
     david_grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
-    sleep 0.5
+    wait_for_issuance_broadcast(after: renders)
     david_grant.record_seen!
 
     within "#voice_rooms .voice-room" do
       assert_selector ".voice-stack__count", text: "1", wait: BROADCAST_WAIT
     end
 
+    renders = header_voice_renders
     jason_grant = HuddleGrant.issue!(session: users(:jason).sessions.create!(user_agent: "Test"), membership: @room.memberships.find_by!(user: users(:jason)))
-    sleep 0.5
+    wait_for_issuance_broadcast(after: renders)
     jason_grant.record_seen!
 
     within "#voice_rooms .voice-room" do
@@ -128,8 +132,9 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     stack = find(".room-header__actions .voice-stack")
     assert_equal "15000", stack["data-huddle-participants-interval-value"]
 
+    observe_turbo_stream_renders
     grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
-    sleep 0.5 # Let the issuance broadcast land first (see above).
+    wait_for_issuance_broadcast # Let the issuance render land first (see above).
     grant.record_seen!
 
     within ".room-header__actions" do
@@ -199,7 +204,7 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     # The sidebar row drops over the broadcast, or (when the test adapter
     # reorders the broadcast behind the connection reset) on the reconnect
     # reload a few seconds later.
-    assert_no_selector "#voice_rooms .voice-room", text: "Lounge", wait: BROADCAST_WAIT
+    assert_no_selector "#voice_rooms .voice-room", text: "Lounge", wait: 15
 
     # The header stack usually drops over the same broadcast. If this run's
     # delivery reordered it behind the reset, drive the revoked poll instead:
@@ -412,11 +417,17 @@ class VoiceChannelsTest < ApplicationSystemTestCase
     # page, while the sidebar render travels a user stream whose
     # subscription has a legitimate gap during the sidebar's initial
     # reload (rooms-list reconnects once on every page load).
-    def wait_for_issuance_broadcast
-      expected = "replace:#{dom_id(@room, :header_voice_participants)}"
+    def wait_for_issuance_broadcast(after: 0)
       Timeout.timeout(10) do
-        sleep 0.05 until page.evaluate_script("window.voiceRemovalStreams").include?(expected)
+        sleep 0.05 until header_voice_renders > after
       end
+    end
+
+    # Number of header participant renders observed so far; pass it as
+    # `after:` so a later wait cannot be satisfied by an earlier render.
+    def header_voice_renders
+      expected = "replace:#{dom_id(@room, :header_voice_participants)}"
+      page.evaluate_script("window.voiceRemovalStreams").count(expected)
     end
 
     # The header stack is stably clear once its element is gone (removal
