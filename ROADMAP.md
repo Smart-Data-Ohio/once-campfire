@@ -14,7 +14,7 @@ The deployed application source is `dfebf3fbc781bf60bd4c14b3c4a2fdf9e2751f2b` on
 
 - Responsive channel workspace, light/dark themes, member presence, and Markdown composition.
 - Message context menus, quick/grouped reactions, normal-composer editing, replies with notification choice, forwarding, and channel threads.
-- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels with visible participants, join/leave controls, and text chat are live. Stage channels remain future work.
+- Huddles in channels and one-to-one DMs, with audio, screen sharing, and camera video, membership enforcement, and a separate media host. Persistent voice channels with visible participants, join/leave controls, and text chat are live, and Stage channels with hosts, speakers, listeners, and hand raising are live. Streaming remains future work.
 - Personal activity inbox and human-owned work threads with status, change history, and a workspace-wide work list.
 - Open Roles feed and existing bot API. These do not yet provide the agent identity model described below.
 - Documented backup, isolated migration rehearsal, pinned releases, and rollback procedure in [deploy/README.md](deploy/README.md), now automated end to end by the image-publish and deploy workflows in [deploy/gcp/README.md](deploy/gcp/README.md).
