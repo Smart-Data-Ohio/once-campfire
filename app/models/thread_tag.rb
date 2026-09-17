@@ -7,8 +7,7 @@ class ThreadTag < ApplicationRecord
   validates :name, presence: true, length: { maximum: NAME_LIMIT },
     format: { with: NAME_FORMAT }, uniqueness: { scope: :channel_thread_id }
 
-  after_create_commit :broadcast_board_row_replace
-  after_destroy_commit :broadcast_board_row_replace
+  after_commit :broadcast_board_row_replace, on: %i[ create destroy ]
 
   private
     # Tags render inside the board row, so any tag change refreshes it.

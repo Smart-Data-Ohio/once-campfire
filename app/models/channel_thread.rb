@@ -162,6 +162,11 @@ class ChannelThread < ApplicationRecord
     @pending_tag_names = value.to_s.split(",").map { |name| name.strip.downcase }.reject(&:blank?).uniq
   end
 
+  def reload(*)
+    @pending_tag_names = nil
+    super
+  end
+
   def run_link?
     run_url.to_s.start_with?("https://")
   end
@@ -525,7 +530,7 @@ class ChannelThread < ApplicationRecord
     end
 
     def set_default_name
-      return if name.present?
+      return if name.present? || room&.board?
 
       source = parent_message&.plain_text_body.to_s.lines.first.to_s.strip
       self.name = source.truncate(NAME_LIMIT, omission: "…").presence || "New thread"
