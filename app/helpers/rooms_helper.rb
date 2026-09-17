@@ -69,6 +69,8 @@ module RoomsHelper
       "Direct message"
     elsif room.voice?
       "Voice channel"
+    elsif room.board?
+      "Board"
     else
       "Channel"
     end

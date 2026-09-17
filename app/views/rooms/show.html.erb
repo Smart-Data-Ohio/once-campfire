@@ -1,3 +1,6 @@
+<% if @room.board? %>
+  <%= render "rooms/boards/index" %>
+<% else %>
 <% @page_title = room_display_name(@room) %>
 <% @body_class = "sidebar room-workspace" %>
 <% content_for :head do %>
@@ -28,3 +31,4 @@
 <% end %>
 
 <%= render "rooms/show/composer", room: @room %>
+<% end %>
