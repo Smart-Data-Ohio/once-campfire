@@ -63,7 +63,7 @@
 
 /* A small live pip after the count while anyone is in the call. */
 .voice-stack--huddle.voice-stack--live::after {
-  background: var(--color-negative);
+  background: var(--color-positive);
   block-size: 0.5rem;
   border-radius: 50%;
   content: "";
