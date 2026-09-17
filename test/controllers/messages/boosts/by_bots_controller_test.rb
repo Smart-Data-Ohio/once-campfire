@@ -34,6 +34,27 @@ class Messages::Boosts::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Nice!", @message.boosts.last.content
   end
 
+  test "create includes the booster icon fields" do
+    @bot.update!(icon_name: "openai")
+
+    post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +"👀"
+    assert_response :created
+
+    json = JSON.parse(response.body)
+    assert_equal "openai", json["booster"]["icon_name"]
+    assert_equal Icons.brand_image_urls.fetch("openai"), json["booster"]["icon_avatar_url"]
+  end
+
+  test "booster icon fields are present and null without an icon" do
+    post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +"👀"
+    assert_response :created
+
+    json = JSON.parse(response.body)
+    assert json["booster"].key?("icon_name")
+    assert_nil json["booster"]["icon_name"]
+    assert_nil json["booster"]["icon_avatar_url"]
+  end
+
   test "create broadcasts the boost" do
     assert_turbo_stream_broadcasts [ @message.room, :messages ], count: 1 do
       post room_bot_message_boosts_url(@room, @bot.bot_key, @message), params: +"👍"

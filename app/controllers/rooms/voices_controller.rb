@@ -20,22 +20,33 @@ class Rooms::VoicesController < RoomsController
 
     broadcast_create_room(room)
     redirect_to room_url(room)
+  rescue ActiveRecord::RecordInvalid => error
+    @room = error.record
+    @users = User.active.ordered
+    render :new, status: :unprocessable_entity
   end
 
   def edit
-    selected_user_ids = @room.users.pluck(:id)
-    @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    set_member_lists
   end
 
   def update
-    @room.update! room_params
-    @room.memberships.revise(granted: grantees, revoked: revokees)
+    if @room.update(room_params)
+      @room.memberships.revise(granted: grantees, revoked: revokees)
 
-    broadcast_update_room
-    redirect_to room_url(@room)
+      broadcast_update_room
+      redirect_to room_url(@room)
+    else
+      set_member_lists
+      render :edit, status: :unprocessable_entity
+    end
   end
 
   private
+    def set_member_lists
+      selected_user_ids = @room.users.pluck(:id)
+      @selected_users, @unselected_users = User.active.ordered.partition { |user| selected_user_ids.include?(user.id) }
+    end
     # Voice rooms keep their type: only voice rooms are in reach here, and the
     # open/closed namespaces keep voice rooms out of reach in return.
     def room_scope
@@ -55,20 +66,23 @@ class Rooms::VoicesController < RoomsController
     end
 
     def broadcast_create_room(room)
-      each_user_and_html_for(room) do |user, html|
+      each_user_and_html_for(room, "users/sidebars/rooms/voice") do |user, html|
         broadcast_prepend_to user, :rooms, target: :voice_rooms, html: html
       end
     end
 
     def broadcast_update_room
-      each_user_and_html_for(@room) do |user, html|
+      each_user_and_html_for(@room, "users/sidebars/rooms/voice") do |user, html|
         broadcast_replace_to user, :rooms, target: [ @room, :list ], html: html
+      end
+      each_user_and_html_for(@room, "rooms/show/header_identity") do |user, html|
+        broadcast_replace_to user, :rooms, target: [ @room, :header ], html: html
       end
     end
 
-    def each_user_and_html_for(room)
+    def each_user_and_html_for(room, partial)
       # Optimization to avoid rendering the same partial for every user
-      html = render_to_string(partial: "users/sidebars/rooms/voice", locals: { room: room })
+      html = render_to_string(partial:, locals: { room: room })
 
       room.users.each { |user| yield user, html }
     end

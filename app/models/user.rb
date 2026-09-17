@@ -29,6 +29,9 @@ class User < ApplicationRecord
   validates :github_login, uniqueness: { case_sensitive: false, message: "is already linked to another user" }, allow_nil: true
   validate :inbox_preferences_must_be_boolean
 
+  normalizes :icon_name, with: ->(name) { Icons.normalize_name(name) }
+  validate :icon_name_must_resolve, if: :icon_name_changed?
+
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
   before_update -> { AgentGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
@@ -107,6 +110,12 @@ class User < ApplicationRecord
   end
 
   private
+    def icon_name_must_resolve
+      if icon_name.present? && Icons.find(icon_name).nil?
+        errors.add :icon_name, "is not a known icon"
+      end
+    end
+
     # For every stage room where this user is the only host and other members
     # remain, promote one remaining member to host before the memberships are
     # deleted: an active administrator member is preferred, otherwise the

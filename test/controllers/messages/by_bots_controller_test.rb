@@ -88,6 +88,34 @@ class Messages::ByBotsControllerTest < ActionDispatch::IntegrationTest
     assert_equal room_at_message_url(@room, message), json_message["url"]
   end
 
+  test "index includes icon fields for creator and room" do
+    users(:bender).update!(icon_name: "openai")
+    @room.update!(icon_name: "fire")
+    post room_bot_messages_url(@room, users(:bender).bot_key), params: +"Hello from Bender!"
+
+    get room_bot_messages_url(@room, users(:bender).bot_key)
+    assert_response :success
+
+    json_message = JSON.parse(response.body).last
+    assert_equal "openai", json_message["creator"]["icon_name"]
+    assert_equal Icons.brand_image_urls.fetch("openai"), json_message["creator"]["icon_avatar_url"]
+    assert_equal "fire", json_message["room"]["icon_name"]
+  end
+
+  test "icon fields are present and null without icons" do
+    post room_bot_messages_url(@room, users(:bender).bot_key), params: +"Hello from Bender!"
+
+    get room_bot_messages_url(@room, users(:bender).bot_key)
+    assert_response :success
+
+    json_message = JSON.parse(response.body).last
+    assert json_message["creator"].key?("icon_name")
+    assert_nil json_message["creator"]["icon_name"]
+    assert_nil json_message["creator"]["icon_avatar_url"]
+    assert json_message["room"].key?("icon_name")
+    assert_nil json_message["room"]["icon_name"]
+  end
+
   test "index includes safe rendered HTML and exact source for Markdown messages" do
     source = "## Status\n\n<script>alert(1)</script>\n\n**Ready**"
     message = @room.messages.create!(creator: users(:jason), markdown_source: source, client_message_id: "markdown-json")
