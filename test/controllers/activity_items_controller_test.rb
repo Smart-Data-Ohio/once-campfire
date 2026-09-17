@@ -3,10 +3,16 @@ require "test_helper"
 class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
   setup do
     host! "once.campfire.test"
+    @original_api_secret = ENV["LIVEKIT_API_SECRET"]
+    ENV["LIVEKIT_API_SECRET"] = "test-api-secret"
     @room = rooms(:designers)
     @source = messages(:first)
     @item = ActivityItem.create!(user: users(:david), source: @source, event_type: "mention")
     sign_in :david
+  end
+
+  teardown do
+    ENV["LIVEKIT_API_SECRET"] = @original_api_secret
   end
 
   test "index returns only the signed-in user's accessible activity" do
@@ -129,4 +135,88 @@ class ActivityItemsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to room_at_message_url(@room, @source)
     assert_predicate @item.reload, :read?
   end
+
+  test "index serializes a huddle invitation with its DM destination" do
+    item = start_dm_huddle_for(users(:david))
+
+    get activity_items_url, as: :json
+
+    assert_response :success
+    payload = response.parsed_body.fetch("activity_items").find { |entry| entry.fetch("id") == item.id }
+    assert_equal "huddle_started", payload.fetch("event_type")
+    assert_equal "HuddleGrant", payload.dig("source", "type")
+    assert_equal rooms(:david_and_jason).id, payload.dig("source", "room_id")
+    assert_equal users(:jason).id, payload.dig("source", "creator_id")
+    assert_equal "Jason started a huddle", payload.dig("source", "body")
+    assert_equal room_path(rooms(:david_and_jason)), payload.dig("source", "path")
+  end
+
+  test "opening a huddle invitation marks it read and redirects to the DM room" do
+    item = start_dm_huddle_for(users(:david))
+
+    post open_activity_item_url(item)
+
+    assert_response :see_other
+    assert_redirected_to room_url(rooms(:david_and_jason))
+    assert_predicate item.reload, :read?
+  end
+
+  test "index resolves the current user's overdue invitations but no one else's" do
+    # Three minutes back: a handled item inside the two-minute dedup window
+    # would keep the fresh start at the end of this test from ringing.
+    overdue_item = travel_to 3.minutes.ago do
+      start_dm_huddle_for(users(:david))
+    end
+    # Created directly: issuing through issue! would handle the recipient's
+    # own open invitation for the room as a join.
+    other_item = travel_to 3.minutes.ago do
+      other_grant = HuddleGrant.create!(
+        identity: "campfire-participant-#{SecureRandom.hex(32)}",
+        room_name: Huddle.room_name(rooms(:david_and_jason).id),
+        session: Session.create!(user_id: users(:david).id, user_agent: "huddle test", ip_address: "127.0.0.2"),
+        user: users(:david),
+        membership: memberships(:david_david_and_jason),
+        room: rooms(:david_and_jason)
+      )
+      ActivityItems::Recorder.record!(recipient: users(:jason), source: other_grant, event_type: "huddle_started")
+    end
+
+    get activity_items_url, as: :json
+
+    assert_response :success
+    assert_equal "huddle_missed", overdue_item.reload.event_type
+    assert_equal "huddle_started", other_item.reload.event_type
+    payload = response.parsed_body.fetch("activity_items").find { |entry| entry.fetch("id") == overdue_item.id }
+    assert_equal "huddle_missed", payload.fetch("event_type")
+
+    overdue_item.mark_handled!
+    fresh_item = start_dm_huddle_for(users(:david))
+    get activity_items_url, as: :json
+    assert_equal "huddle_started", fresh_item.reload.event_type
+  end
+
+  test "started and missed huddles render their copy in the inbox" do
+    # The missed item is outside the dedup window so the second ring proceeds;
+    # a fresh missed item would suppress it.
+    missed_item = travel_to(3.minutes.ago) { start_dm_huddle_for(users(:david)) }
+    missed_item.update!(event_type: "huddle_missed")
+    started_item = start_dm_huddle_for(users(:david))
+
+    get activity_items_url
+
+    assert_response :success
+    assert_select "##{ActionView::RecordIdentifier.dom_id(started_item)}", text: /Incoming huddle/
+    assert_select "##{ActionView::RecordIdentifier.dom_id(started_item)}", text: /Jason started a huddle/
+    assert_select "##{ActionView::RecordIdentifier.dom_id(missed_item)}", text: /Missed huddle/
+    assert_select "##{ActionView::RecordIdentifier.dom_id(missed_item)}", text: /You missed a huddle from Jason/
+  end
+
+  private
+    def start_dm_huddle_for(recipient)
+      starter = (rooms(:david_and_jason).user_ids - [ recipient.id ]).first
+      session = Session.create!(user_id: starter, user_agent: "huddle test", ip_address: "127.0.0.1")
+      membership = Membership.find_by!(room: rooms(:david_and_jason), user_id: starter)
+      grant = HuddleGrant.issue!(session:, membership:)
+      ActivityItem.find_by!(user: recipient, source: grant)
+    end
 end

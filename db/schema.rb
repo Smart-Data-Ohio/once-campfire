@@ -69,6 +69,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
     t.string "source_type", null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["event_type", "created_at"], name: "index_activity_items_on_event_type_and_created_at"
     t.index ["source_type", "source_id"], name: "index_activity_items_on_source"
     t.index ["user_id", "read_at", "handled_at", "created_at"], name: "index_activity_items_on_user_and_state"
     t.index ["user_id", "source_type", "source_id"], name: "index_activity_items_on_user_and_source", unique: true
@@ -207,6 +208,8 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
   create_table "huddle_grants", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "identity", null: false
+    t.datetime "last_issued_at"
+    t.datetime "last_seen_at"
     t.integer "membership_id", null: false
     t.datetime "revoked_at"
     t.integer "room_id", null: false
@@ -216,6 +219,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_16_050000) do
     t.integer "user_id", null: false
     t.index ["identity"], name: "index_huddle_grants_on_identity", unique: true
     t.index ["membership_id"], name: "index_huddle_grants_on_membership_id"
+    t.index ["room_id", "last_seen_at"], name: "index_huddle_grants_on_room_and_last_seen_at"
     t.index ["room_id"], name: "index_huddle_grants_on_room_id"
     t.index ["session_id", "membership_id"], name: "index_active_huddle_grants_on_session_and_membership", unique: true, where: "revoked_at IS NULL"
     t.index ["session_id"], name: "index_huddle_grants_on_session_id"
