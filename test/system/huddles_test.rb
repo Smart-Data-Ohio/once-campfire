@@ -9,7 +9,10 @@ class HuddlesTest < ApplicationSystemTestCase
   CAMPFIRE_PORT = 3001
   GATEWAY_PORT = 7884
 
-  Capybara.server_port = CAMPFIRE_PORT
+  # The gateway spawned below calls back into this fixture server, so the port
+  # is fixed only for LiveKit-backed runs. Every other system test file loads
+  # this class too, and a fixed port would make parallel workers collide.
+  Capybara.server_port = CAMPFIRE_PORT if ENV["LIVEKIT_SYSTEM_TESTS"] == "1"
 
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1000 ], options: { name: :huddle_chrome } do |options|
     options.add_argument "--use-fake-device-for-media-stream"
