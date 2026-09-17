@@ -545,13 +545,18 @@ class Agents::WorkControllerTest < ActionDispatch::IntegrationTest
     assert_equal "work_update", item.event_type
   end
 
-  test "put result is Bearer-only" do
+  test "patch and put result are Bearer-only" do
     grant!(capability: "read_messages", room: @room)
     grant!(capability: "post_messages", room: @room)
     grant!(capability: "manage_threads", room: @room)
     thread = create_owned_thread!(name: "Session result")
 
     sign_in :david
+    patch agents_work_thread_url(thread),
+      params: { work_status: "done" }
+    assert_response :forbidden
+    assert_equal "planned", thread.reload.work_status
+
     put agents_work_thread_url(thread) + "/result",
       params: { markdown: "Human" }
     assert_response :forbidden
