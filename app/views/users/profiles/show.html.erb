@@ -89,6 +89,24 @@
         </label>
       </div>
 
+      <div class="flex align-center gap">
+        <%= translation_button(:github_login) %>
+
+        <label class="flex align-center gap flex-item-grow input input--actor">
+          <%= form.text_field :github_login, class: "input txt-large", placeholder: "GitHub username",
+                required: false, autocomplete: "off", data: { "1p-ignore": true } %>
+          <%= image_tag "link.svg", aria: { hidden: "true" }, size: 24, class: "colorize--black" %>
+        </label>
+      </div>
+      <% if @user.errors[:github_login].any? %>
+        <p class="txt-small margin-none" style="color: var(--color-negative)">
+          GitHub username <%= @user.errors[:github_login].to_sentence %>.
+          Link it to receive review requests in your activity inbox.
+        </p>
+      <% else %>
+        <p class="txt-small margin-none">Link your GitHub username to receive review requests in your activity inbox.</p>
+      <% end %>
+
       <%= profile_form_submit_button %>
     </div>
   <% end %>

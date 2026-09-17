@@ -209,8 +209,7 @@ class HuddlesTest < ApplicationSystemTestCase
     within("#sidebar") { click_link "Designers", exact: true }
     click_button "Leave", exact: true
     assert_no_selector "#channel-huddle:not([hidden])"
-    click_button "Join huddle"
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_selector "[data-huddle-target='camera'][aria-pressed='false']", text: "Camera off"
     assert_no_selector ".huddle__camera video"
   end
@@ -256,6 +255,43 @@ class HuddlesTest < ApplicationSystemTestCase
       end
       assert_media_received "video"
     end
+  end
+
+  test "a camera switched in-call falls back silently when it is unplugged" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Check devices"
+    switch_device_select("cameraSelect")
+    camera_id = device_select_value("cameraSelect")
+    wait_for_condition("the camera switch never completed") do
+      active_device_id("videoinput") == camera_id
+    end
+
+    # Unplug the camera: an exact request for it now fails while an ideal one
+    # falls back to whatever is attached.
+    page.execute_script(<<~JS, camera_id)
+      const missingId = arguments[0];
+      window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = (constraints) => {
+        const wanted = constraints?.video?.deviceId;
+        const exact = wanted?.exact ?? (typeof wanted === "string" ? wanted : undefined);
+        if (exact === missingId) return Promise.reject(new DOMException("Test unplugged camera", "OverconstrainedError"));
+        return window.huddleTestGetUserMedia(constraints);
+      };
+    JS
+
+    click_button "Camera off", exact: true
+    assert_selector "[data-huddle-target='camera'][aria-pressed='true']", text: "Camera on"
+    page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
+    using_session("Kevin") do
+      assert_selector ".huddle__camera video"
+      wait_for_condition("the fallback camera did not decode video") { remote_camera_decoding? }
+    end
+
+    # The in-call switch must not leave an exact constraint behind: that is
+    # what turns the unplug into an OverconstrainedError instead of a fallback.
+    assert_equal({ "ideal" => camera_id }, video_capture_device_constraint)
   end
 
   test "two direct message participants exchange audio and screen while navigating and reconnecting" do
@@ -399,8 +435,7 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_equal "off", page.evaluate_script("window.localStorage.getItem('campfire.huddle.noiseSuppression')")
 
     click_button "Leave", exact: true
-    click_button "Join huddle"
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
 
     assert_selector "[data-huddle-target='noise'][aria-pressed='false']", text: "Noise suppression off"
     assert_nil microphone_processor_name
@@ -489,9 +524,7 @@ class HuddlesTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     break_noise_suppression
 
-    click_button "Join huddle"
-
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
     assert_selector "[data-huddle-target='status']", text: /Noise suppression couldn’t start/
@@ -512,9 +545,7 @@ class HuddlesTest < ApplicationSystemTestCase
     join_room rooms(:designers)
     break_noise_suppression error: "NotSupportedError"
 
-    click_button "Join huddle"
-
-    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    join_huddle_and_confirm
     assert_media_received "audio"
     assert_selector "[data-huddle-target='noise'][disabled]", text: "Noise suppression unavailable"
     assert_nil microphone_processor_name
@@ -529,9 +560,15 @@ class HuddlesTest < ApplicationSystemTestCase
       window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Test permission denial', 'NotAllowedError'));
     JS
+    credentials_before = huddle_credentials_count
+
     click_button "Join huddle"
+
+    # A returning user skips the device check, so this denial lands after
+    # credentials were issued; the failed join must leave nobody behind.
     assert_selector "#channel-huddle[data-state='failed']"
     assert_selector "[data-huddle-target='notice']", text: /Microphone access was denied/
+    assert_operator huddle_credentials_count, :>, credentials_before
     # A failed join can close signaling before LiveKit processes the leave packet.
     # Allow the gateway's three-second reconnect grace plus its cleanup request.
     using_session("Kevin") { assert_selector ".huddle__participant", count: 1, wait: 5 }
@@ -541,6 +578,323 @@ class HuddlesTest < ApplicationSystemTestCase
     assert_selector "#channel-huddle[data-state='connected']"
     assert_selector ".huddle__participant", count: 2
     assert_media_received "audio"
+  end
+
+  test "denied microphone stops the device check before anything is published and can be retried" do
+    prepare_browser
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+    stub_microphone_permission "prompt"
+    page.execute_script <<~JS
+      window.huddleTestGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Test permission denial', 'NotAllowedError'));
+    JS
+    credentials_before = huddle_credentials_count
+
+    click_button "Join huddle"
+
+    # With fresh permissions the denial lands in the device check, before any
+    # credentials are requested, so no ghost participant can exist server-side.
+    assert_selector "#channel-huddle[data-state='prejoin']"
+    assert_selector "[data-huddle-target='checkError']", text: /Microphone access was denied/
+    assert_equal credentials_before, huddle_credentials_count
+
+    page.execute_script "navigator.mediaDevices.getUserMedia = window.huddleTestGetUserMedia"
+    restore_microphone_permission
+    click_button "Try again"
+    assert_selector "[data-huddle-target='checkJoin']:not([disabled])", wait: 20
+    find("[data-huddle-target='checkJoin']").click
+    assert_selector "#channel-huddle[data-state='connected']"
+    assert_selector ".huddle__participant", count: 1
+
+    using_session("Kevin") do
+      open_huddle_as "kevin@37signals.com"
+      assert_selector ".huddle__participant", count: 2
+      assert_media_received "audio"
+    end
+    assert_selector ".huddle__participant", count: 2
+    assert_media_received "audio"
+  end
+
+  test "device pickers list the fake devices and switching keeps media flowing" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Check devices"
+    assert_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+
+    microphone_labels = device_select_labels("microphoneSelect")
+    camera_labels = device_select_labels("cameraSelect")
+    speaker_labels = device_select_labels("speakerSelect")
+    assert_not_empty microphone_labels
+    assert_not_empty camera_labels
+    assert_not_empty speaker_labels
+    # Permissions are granted by now, so these are real device names rather
+    # than the numbered placeholders used before access.
+    assert microphone_labels.none? { |label| label.start_with?("Microphone ") }
+    assert camera_labels.none? { |label| label.start_with?("Camera ") }
+    assert speaker_labels.none? { |label| label.start_with?("Speaker ") }
+    assert_selector "[data-huddle-target='speakerRow']:not([hidden])"
+
+    # The fake backend offers several microphones and speakers but one camera.
+    other_microphone = device_select_other_option("microphoneSelect")
+    assert other_microphone, "expected the fake backend to offer at least two microphones"
+    select other_microphone["label"], from: "Microphone"
+    wait_for_condition("the microphone switch was not remembered") do
+      stored_device_preferences["audioinput"] == other_microphone["value"]
+    end
+    using_session("Kevin") { assert_media_received "audio" }
+    wait_for_condition("the meter never came back after the microphone switch") do
+      microphone_meter_level > 0
+    end
+
+    other_speaker = device_select_other_option("speakerSelect")
+    assert other_speaker, "expected the fake backend to offer at least two speakers"
+    select other_speaker["label"], from: "Speaker"
+    wait_for_condition("the speaker switch was not remembered") do
+      stored_device_preferences["audiooutput"] == other_speaker["value"]
+    end
+    assert_media_received "audio"
+
+    # One fake camera means no second option to click; driving the handler with
+    # the listed camera still restarts the capture on the real switch path.
+    click_button "Camera off", exact: true
+    using_session("Kevin") do
+      assert_selector ".huddle__camera video"
+      wait_for_condition("the camera did not decode video") { remote_camera_decoding? }
+    end
+    switch_device_select("cameraSelect")
+    wait_for_condition("the camera switch was not remembered") do
+      stored_device_preferences["videoinput"] == device_select_value("cameraSelect")
+    end
+    using_session("Kevin") do
+      wait_for_condition("the camera switch stopped the video") { remote_camera_decoding? }
+    end
+
+    # A speaker that vanished mid-call fails as a status line, not a disconnect.
+    select_missing_device_option("speakerSelect")
+    assert_selector "[data-huddle-target='status']", text: /speaker could not be switched/
+    assert_media_received "audio"
+
+    click_button "Done"
+    assert_no_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+  end
+
+  test "an SDK device retarget keeps the stored preference and updates the picker" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    click_button "Check devices"
+    assert_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+
+    # The user's own selection is the stored preference. Speakers exercise the
+    # same handler path as microphones; a microphone retarget would also
+    # restart the track, and the fake backend reports every microphone as
+    # "default", which races that restart against the retarget itself.
+    speakers = device_select_options("speakerSelect").reject { |option| option["value"] == "default" }
+    assert_operator speakers.size, :>=, 2, "expected the fake backend to offer at least two speakers"
+    preferred, fallback = speakers.first(2)
+    select preferred["label"], from: "Speaker"
+    wait_for_condition("the speaker switch was not remembered") do
+      stored_device_preferences["audiooutput"] == preferred["value"]
+    end
+
+    # A retarget that comes from the SDK rather than the picker — the preferred
+    # device disappearing, for example — must not overwrite that preference.
+    retargeted = page.evaluate_async_script(<<~JS, fallback["value"])
+      const deviceId = arguments[0];
+      const done = arguments[arguments.length - 1];
+      window.Stimulus
+        .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+        .room.switchActiveDevice('audiooutput', deviceId)
+        .then(() => done(true))
+        .catch(error => done(`switch failed: ${error.message}`));
+    JS
+    assert_equal true, retargeted
+    wait_for_condition("the SDK retarget did not take effect") do
+      active_device_id("audiooutput") == fallback["value"]
+    end
+    assert_equal preferred["value"], stored_device_preferences["audiooutput"],
+      "the SDK fallback overwrote the stored speaker preference"
+    wait_for_condition("the picker did not follow the SDK retarget") do
+      device_select_value("speakerSelect") == fallback["value"]
+    end
+    using_session("Kevin") { assert_media_received "audio" }
+  end
+
+  test "the microphone meter follows the fake microphone and rests while muted" do
+    open_huddle_as "jz@37signals.com"
+
+    assert_selector "[data-huddle-target='meter']:not([hidden])"
+    wait_for_condition("the microphone meter never rose") { microphone_meter_level > 0 }
+
+    click_button "Mute", exact: true
+    assert_no_selector "[data-huddle-target='meter']:not([hidden])"
+    assert_equal 0, microphone_meter_level
+    assert_not microphone_meter_running,
+      "the meter kept polling while muted"
+
+    click_button "Unmute", exact: true
+    assert_selector "[data-huddle-target='meter']:not([hidden])"
+    wait_for_condition("the microphone meter never came back after unmuting") do
+      microphone_meter_level > 0
+    end
+
+    page.execute_script <<~JS
+      window.huddleTestMeterContext = window.Stimulus
+        .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+        .microphoneMeter.analyser.analyser.context;
+    JS
+    assert_equal "running", page.evaluate_script("window.huddleTestMeterContext.state")
+
+    click_button "Leave", exact: true
+    assert_no_selector "#channel-huddle:not([hidden])"
+    assert_not microphone_meter_running,
+      "the meter kept polling after leaving"
+    assert_equal "closed", page.evaluate_script("window.huddleTestMeterContext.state"),
+      "leaving the huddle left the meter AudioContext alive"
+  end
+
+  test "the microphone meter restarts after a full reconnect" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    wait_for_condition("the microphone meter never rose") { microphone_meter_level > 0 }
+    track_id_before = microphone_track_id
+    remember_microphone_analyser
+
+    peer_connection_count = page.evaluate_script("window.huddleTestPeerConnections.length")
+    force_full_reconnect
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_new_active_media_received "audio", after: peer_connection_count
+
+    # The reconnect republishes the microphone onto a new track. The analyser
+    # is bound to the old one, so the meter has to restart on the new track.
+    assert_not_equal track_id_before, microphone_track_id,
+      "the full reconnect did not restart the microphone track"
+    wait_for_condition("the microphone meter was not restarted after the reconnect") do
+      microphone_analyser_restarted?
+    end
+    # The meter keeps showing live input on the new track. Headless Chrome's
+    # fake microphone keeps feeding an ended track's analyser, so the level
+    # alone cannot prove the restart here; the analyser swap above does.
+    wait_for_condition("the microphone meter never came back after the reconnect") do
+      microphone_meter_level > 0
+    end
+    using_session("Kevin") { assert_media_received "audio" }
+  end
+
+  test "the device check appears for a first join and is skipped once permissions were granted" do
+    prepare_browser
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+    stub_microphone_permission "prompt"
+    credentials_before = huddle_credentials_count
+
+    click_button "Join huddle"
+
+    assert_selector "#channel-huddle[data-state='prejoin']"
+    assert_selector "[data-huddle-target='devicesBlock']", text: "Check your devices"
+    assert_selector "[data-huddle-target='microphoneSelect'] option", minimum: 1
+    assert_selector "[data-huddle-target='cameraSelect'] option", minimum: 1
+    # Nothing is requested or published before the user confirms.
+    assert_equal credentials_before, huddle_credentials_count
+
+    assert_selector "[data-huddle-target='checkJoin']:not([disabled])", wait: 20
+    wait_for_condition("the pre-join meter never rose") { prejoin_meter_level > 0 }
+    wait_for_condition("the camera preview did not show video") { camera_preview_live? }
+    tracks_before_join = page.evaluate_script("window.huddleTestLocalTracks.length")
+    find("[data-huddle-target='checkJoin']").click
+
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+    assert_selector ".huddle__participant", count: 1
+    wait_for_condition("the preview tracks were not stopped on join") do
+      page.evaluate_script("window.huddleTestLocalTracks.slice(0, #{tracks_before_join}).every(track => track.readyState === 'ended')")
+    end
+
+    click_button "Leave", exact: true
+    assert_no_selector "#channel-huddle:not([hidden])"
+
+    # The check needs no confirmation the second time: reaching connected
+    # without touching it proves it was skipped, since it never advances alone.
+    restore_microphone_permission
+    click_button "Join huddle"
+    assert_selector "#channel-huddle[data-state='connected']", wait: 20
+
+    click_button "Check devices"
+    assert_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+    assert_selector "[data-huddle-target='microphoneSelect'] option", minimum: 1
+    click_button "Done"
+    assert_no_selector "[data-huddle-target='devicesBlock']:not([hidden])"
+  end
+
+  test "the connection indicator renders and the details panel shows sampled statistics" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    assert_selector "[data-huddle-target='connection']:not([hidden])"
+    quality = page.evaluate_script("document.querySelector(\"[data-huddle-target='connection']\").dataset.quality")
+    assert_includes %w[good fair poor], quality
+
+    # Statistics are sampled only while the panel is open.
+    assert_not connection_sampling?, "connection statistics were sampled before the panel opened"
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    assert connection_sampling?, "connection statistics were not sampled while the panel was open"
+
+    wait_for_condition("round-trip time was never sampled") { connection_stat("statRtt") != "–" }
+    assert_match(/\A[\d.]+ ms\z/, connection_stat("statRtt"))
+    assert_match(/\A[\d.]+%\z/, connection_stat("statLoss"))
+    assert_match(/\A[\d.]+ ms\z/, connection_stat("statJitter"))
+    # Bitrates need two samples, so they trail the first paint by one interval.
+    wait_for_condition("bitrates were never sampled") do
+      connection_stat("statRx") != "–" && connection_stat("statSent") != "–"
+    end
+    assert_match(/\A[\d.]+ (kbps|Mbps)\z/, connection_stat("statRx"))
+    assert_match(/\A[\d.]+ (kbps|Mbps)\z/, connection_stat("statSent"))
+    assert_equal force_relay? ? "Relayed (TURN)" : "Direct", connection_stat("statTransport")
+
+    find("[data-huddle-target='connection']").click
+    assert_no_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    assert_not connection_sampling?, "connection statistics kept sampling after the panel closed"
+  end
+
+  test "reopening the connection panel samples bitrates from scratch" do
+    open_huddle_as "jz@37signals.com"
+    using_session("Kevin") { open_huddle_as "kevin@37signals.com" }
+
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    wait_for_condition("bitrates were never sampled") do
+      connection_stat("statRx") != "–" && connection_stat("statSent") != "–"
+    end
+
+    find("[data-huddle-target='connection']").click
+    assert_no_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    # Leave the panel closed past a sampling interval, so a stale baseline
+    # would average the next bitrate over the closed gap.
+    sleep 3
+
+    reopened_at = (Time.now.to_f * 1000).to_i
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    wait_for_condition("no fresh sample landed after reopening") do
+      (connection_summary_sampled_at || 0) >= reopened_at
+    end
+    # The first sample after reopening has no previous sample to compare
+    # against, so both bitrates wait one interval instead of spiking.
+    assert_equal "–", connection_stat("statSent")
+    assert_equal "–", connection_stat("statRx")
+  end
+
+  test "the connection panel shows no received bitrate while alone in the call" do
+    open_huddle_as "jz@37signals.com"
+
+    find("[data-huddle-target='connection']").click
+    assert_selector "[data-huddle-target='connectionDetails']:not([hidden])"
+    # Sent needs two samples; received has no subscribed track to measure.
+    wait_for_condition("the sent bitrate was never sampled") { connection_stat("statSent") != "–" }
+    assert_equal "–", connection_stat("statRx")
   end
 
   test "server removal disconnects only the targeted participant and stops their media" do
@@ -617,8 +971,7 @@ class HuddlesTest < ApplicationSystemTestCase
       assert_signal_token_rejected original_signal_url, refreshed_token
 
       rooms(:designers).memberships.grant_to(users(:jz))
-      click_button "Try again"
-      assert_selector "#channel-huddle[data-state='connected']", wait: 20
+      retry_huddle_and_confirm
       replacement_credentials = captured_credentials(1)
 
       assert_not_equal credentials.fetch("grant_id"), replacement_credentials.fetch("grant_id")
@@ -681,9 +1034,36 @@ class HuddlesTest < ApplicationSystemTestCase
       prepare_browser
       sign_in email
       join_room room
+      join_huddle_and_confirm
+    end
+
+    # The first join in a browser stops at the device check; later joins skip
+    # it. Either way the huddle ends up connected.
+    def join_huddle_and_confirm
       click_button "Join huddle"
+      confirm_prejoin_if_present
       assert_selector "#channel-huddle[data-state='connected']", wait: 20
       assert_button "Mute", exact: true
+    end
+
+    def retry_huddle_and_confirm
+      click_button "Try again"
+      confirm_prejoin_if_present
+      assert_selector "#channel-huddle[data-state='connected']", wait: 20
+      assert_button "Mute", exact: true
+    end
+
+    def confirm_prejoin_if_present
+      wait_for_condition("the huddle did not start joining") do
+        %w[prejoin connecting connected].any? do |state|
+          page.has_css?("#channel-huddle[data-state='#{state}']", wait: 0)
+        end
+      end
+      return unless page.has_css?("#channel-huddle[data-state='prejoin']", wait: 0)
+
+      # The preview needs a moment to acquire the fake devices before Join enables.
+      assert_selector "[data-huddle-target='checkJoin']:not([disabled])", wait: 20
+      find("[data-huddle-target='checkJoin']").click
     end
 
     def prepare_browser
@@ -831,6 +1211,142 @@ class HuddlesTest < ApplicationSystemTestCase
       JS
     end
 
+    def device_select_labels(target)
+      page.evaluate_script(<<~JS, target)
+        Array.from(document.querySelector(`[data-huddle-target='${arguments[0]}']`).options).map(option => option.text)
+      JS
+    end
+
+    def stored_device_preferences
+      JSON.parse(page.evaluate_script("window.localStorage.getItem('campfire.huddle.devices')") || "{}")
+    end
+
+    def device_select_options(target)
+      page.evaluate_script("Array.from(document.querySelector(\"[data-huddle-target='#{target}']\").options).map(option => ({ value: option.value, label: option.text }))")
+    end
+
+    def device_select_value(target)
+      page.evaluate_script("document.querySelector(\"[data-huddle-target='#{target}']\").value")
+    end
+
+    def active_device_id(kind)
+      page.evaluate_script(<<~JS, kind)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.getActiveDevice(arguments[0]) ?? null
+      JS
+    end
+
+    def video_capture_device_constraint
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.options?.videoCaptureDefaults?.deviceId ?? null
+      JS
+    end
+
+    def device_select_other_option(target)
+      options = device_select_options(target)
+      current = device_select_value(target)
+      options.find { |option| option["value"] != current }
+    end
+
+    # Drives the change handler with the current selection. The fake backend
+    # offers a single camera, so its switch path is exercised this way; the
+    # switch still restarts the capture through `switchActiveDevice`.
+    def switch_device_select(target)
+      page.execute_script("document.querySelector(\"[data-huddle-target='#{target}']\").dispatchEvent(new Event('change', { bubbles: true }))")
+    end
+
+    # A device that vanished between listing and switching, such as an unplugged
+    # USB headset, fails the switch without touching the call.
+    def select_missing_device_option(target)
+      page.execute_script(<<~JS, target)
+        const select = document.querySelector(`[data-huddle-target='${arguments[0]}']`);
+        const option = document.createElement('option');
+        option.value = 'missing-device';
+        option.text = 'Missing device';
+        select.appendChild(option);
+        select.value = 'missing-device';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      JS
+    end
+
+    def microphone_meter_level
+      page.evaluate_script("document.querySelector(\"[data-huddle-target='meter']\").getAttribute('aria-valuenow')").to_i
+    end
+
+    def microphone_meter_running
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.microphoneMeter?.running ?? false
+      JS
+    end
+
+    # The raw capture track, not the noise suppressor's processed output: a
+    # republish replaces this one.
+    def microphone_track_id
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.room?.localParticipant?.getTrackPublication('microphone')?.audioTrack?._mediaStreamTrack?.id ?? null
+      JS
+    end
+
+    def remember_microphone_analyser
+      page.execute_script(<<~JS)
+        window.huddleTestMeterAnalyser = window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          .microphoneMeter.analyser;
+      JS
+    end
+
+    def microphone_analyser_restarted?
+      page.evaluate_script(<<~JS)
+        (() => {
+          const analyser = window.Stimulus
+            .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+            .microphoneMeter.analyser
+          return Boolean(analyser) && analyser !== window.huddleTestMeterAnalyser
+        })()
+      JS
+    end
+
+    def prejoin_meter_level
+      page.evaluate_script("document.querySelector(\"[data-huddle-target='prejoinMeter']\").getAttribute('aria-valuenow')").to_i
+    end
+
+    def camera_preview_live?
+      page.evaluate_script(<<~JS)
+        (() => {
+          const video = document.querySelector("[data-huddle-target='preview']");
+          return Boolean(video && !video.closest("[data-huddle-target='previewWrap']").hidden &&
+            video.readyState >= 2 && video.videoWidth > 0);
+        })()
+      JS
+    end
+
+    def connection_stat(target)
+      page.evaluate_script("document.querySelector(\"[data-huddle-target='#{target}']\").textContent")
+    end
+
+    def connection_sampling?
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.connectionStatsTimer !== null
+      JS
+    end
+
+    def connection_summary_sampled_at
+      page.evaluate_script(<<~JS)
+        window.Stimulus
+          .getControllerForElementAndIdentifier(document.getElementById('channel-huddle'), 'huddle')
+          ?.connectionStatsSummary?.previous?.at ?? null
+      JS
+    end
+
     # A plain Error stands in for a download that failed and may succeed later.
     # A NotSupportedError stands in for a browser that simply cannot do this.
     def break_noise_suppression(error: nil)
@@ -854,6 +1370,28 @@ class HuddlesTest < ApplicationSystemTestCase
         page.evaluate_script("window.huddleTestCredentials.length") > index
       end
       page.evaluate_script("window.huddleTestCredentials[#{Integer(index)}]")
+    end
+
+    def huddle_credentials_count
+      page.evaluate_script("window.huddleTestCredentials.length")
+    end
+
+    # The fake-media flags report microphone access as granted from the start,
+    # so fresh-permission tests stub the query instead of depending on browser
+    # state. Navigation clears the stub.
+    def stub_microphone_permission(state)
+      page.execute_script(<<~JS, state)
+        const state = arguments[0];
+        window.huddleTestPermissionsQuery ||= navigator.permissions.query.bind(navigator.permissions);
+        navigator.permissions.query = (description) => {
+          if (description && description.name === 'microphone') return Promise.resolve({ state, onchange: null });
+          return window.huddleTestPermissionsQuery(description);
+        };
+      JS
+    end
+
+    def restore_microphone_permission
+      page.execute_script("navigator.permissions.query = window.huddleTestPermissionsQuery;")
     end
 
     def ignore_huddle_access_checks

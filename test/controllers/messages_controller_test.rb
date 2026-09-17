@@ -238,7 +238,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "mentioning a bot triggers a webhook" do
     WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
 
-    assert_enqueued_jobs 1, only: Bot::WebhookJob do
+    assert_enqueued_jobs 1, only: Agent::DeliveryJob do
       post room_messages_url(@room, format: :turbo_stream), params: { message: {
         body: "<div>Hey #{mention_attachment_for(:bender)}</div>", client_message_id: 999 } }
     end
@@ -247,10 +247,65 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "mentioning a bot from Markdown triggers a webhook" do
     WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
 
-    assert_enqueued_jobs 1, only: Bot::WebhookJob do
+    assert_enqueued_jobs 1, only: Agent::DeliveryJob do
       post room_messages_url(@room, format: :turbo_stream), params: { message: {
         markdown_source: "Hey @[Bender Bot]", client_message_id: 999 } }
     end
+  end
+
+  test "mentioning an agent-backed bot skips the legacy webhook job" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+
+    assert_no_enqueued_jobs only: Bot::WebhookJob do
+      post room_messages_url(@room, format: :turbo_stream), params: { message: {
+        markdown_source: "Hey @[Bender Bot]", client_message_id: "agent-only" } }
+    end
+  end
+
+  test "mentioning an agent-backed bot posts exactly one webhook with the agent key" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+
+    post room_messages_url(@room, format: :turbo_stream), params: { message: {
+      markdown_source: "Hey @[Bender Bot]", client_message_id: "agent-once" } }
+
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    perform_enqueued_jobs only: Bot::WebhookJob
+
+    assert_requested :post, webhooks(:bender).url, times: 1
+    assert_requested :post, webhooks(:bender).url,
+      body: hash_including("agent" => hash_including("id" => agents(:bender_agent).id)), times: 1
+  end
+
+  test "revoked agent delivery posts no webhook" do
+    WebMock.stub_request(:post, webhooks(:bender).url).to_return(status: 200)
+    grant = AgentGrant.create!(agent: agents(:bender_agent), room: @room, granted_by: users(:david), capability: "read_messages")
+
+    post room_messages_url(@room, format: :turbo_stream), params: { message: {
+      markdown_source: "Hey @[Bender Bot]", client_message_id: "agent-revoked" } }
+
+    grant.revoke!
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    perform_enqueued_jobs only: Bot::WebhookJob
+
+    assert_not_requested :post, webhooks(:bender).url
+  end
+
+  test "mentioning a bot without an agent row still uses the legacy webhook" do
+    bot = User.create_bot!(name: "Legacy Bot", webhook_url: "https://example.test/legacy-hook")
+    @room.memberships.grant_to(bot)
+    WebMock.stub_request(:post, bot.webhook.url).to_return(status: 200)
+
+    assert_enqueued_jobs 1, only: Bot::WebhookJob do
+      assert_no_enqueued_jobs only: Agent::DeliveryJob do
+        post room_messages_url(@room, format: :turbo_stream), params: { message: {
+          markdown_source: "Hey @[Legacy Bot]", client_message_id: "legacy-only" } }
+      end
+    end
+
+    perform_enqueued_jobs only: Agent::DeliveryJob
+    perform_enqueued_jobs only: Bot::WebhookJob
+
+    assert_requested :post, bot.webhook.url, body: hash_excluding("agent"), times: 1
   end
 
   private

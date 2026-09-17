@@ -24,6 +24,10 @@ class User < ApplicationRecord
 
   enum :status, %i[ active deactivated banned ], default: :active
 
+  normalizes :github_login, with: ->(login) { login.to_s.strip.downcase.presence }
+
+  validates :github_login, uniqueness: { case_sensitive: false, message: "is already linked to another user" }, allow_nil: true
+
   before_update -> { HuddleGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
   before_destroy -> { HuddleGrant.revoke_for_user!(self) }, prepend: true
   before_update -> { AgentGrant.revoke_for_user!(self) }, if: -> { will_save_change_to_status? && !active? }
@@ -31,7 +35,11 @@ class User < ApplicationRecord
 
   has_secure_password validations: false
 
-  after_create_commit :grant_membership_to_open_rooms
+  # Users whose memberships are managed explicitly (like the GitHub bot)
+  # skip the automatic open-room grant at creation.
+  attr_accessor :skip_open_room_grant
+
+  after_create_commit :grant_membership_to_open_rooms, unless: :skip_open_room_grant
 
   scope :ordered, -> { order("LOWER(name)") }
   scope :filtered_by, ->(query) { where("name like ?", "%#{query}%") }

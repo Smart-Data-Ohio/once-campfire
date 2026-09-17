@@ -60,4 +60,30 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Google rejected the connection, reconnect"
     assert_includes response.body, "Connect Google Calendar"
   end
+
+  test "linking a github login strips and downcases it" do
+    put user_profile_url, params: { user: { github_login: "  David-GH " } }
+
+    assert_redirected_to user_profile_url
+    assert_equal "david-gh", users(:david).reload.github_login
+  end
+
+  test "a github login cannot be claimed by a second user" do
+    users(:jason).update!(github_login: "shared-login")
+
+    put user_profile_url, params: { user: { github_login: "Shared-Login" } }
+
+    assert_response :unprocessable_entity
+    assert_select "p", text: /already linked to another user/
+    assert_nil users(:david).reload.github_login
+  end
+
+  test "clearing a github login unlinks it" do
+    users(:david).update!(github_login: "david-gh")
+
+    put user_profile_url, params: { user: { github_login: "" } }
+
+    assert_redirected_to user_profile_url
+    assert_nil users(:david).reload.github_login
+  end
 end

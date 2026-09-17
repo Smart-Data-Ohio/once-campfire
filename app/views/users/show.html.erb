@@ -32,6 +32,14 @@
                 Manage capability grants
               <% end %>
             </div>
+            <% if @user.agent %>
+              <div class="margin-block-start">
+                <%= link_to agent_events_path(@user.agent), class: "btn full-width" do %>
+                  <%= image_tag "messages-outlined.svg", aria: { hidden: "true" }, size: 20 %>
+                  View activity ledger
+                <% end %>
+              </div>
+            <% end %>
           <% end %>
         <% else %>
           <div><%= @user.name %> is no longer on this account</div>
