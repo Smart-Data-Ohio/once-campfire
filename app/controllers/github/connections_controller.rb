@@ -14,6 +14,9 @@ module Github
       account = Current.user.github_connected_account || Current.user.build_github_connected_account
       account.assign_attributes(github_login: login, access_token: token, disconnected_reason: nil)
       account.save!
+      # The repo-access cache key carries updated_at: bump it even when the
+      # token is unchanged so a cached denial never survives a relink.
+      account.touch
 
       redirect_to user_profile_path, notice: link_notice(login)
     rescue WriteClient::Unauthorized

@@ -130,7 +130,7 @@ class AgentCapabilityTest < ActionDispatch::IntegrationTest
   test "Bearer endpoint keeps 401 for authentication failures" do
     post room_agent_messages_url(@room),
       params: { message: { body: "Nope", client_message_id: "bearer-bad" } }.to_json,
-      headers: { "Authorization" => "Bearer [REDACTED]", "Content-Type" => "application/json" }
+      headers: { "Authorization" => "Bearer not-a-real-token", "Content-Type" => "application/json" }
     assert_response :unauthorized
   end
 

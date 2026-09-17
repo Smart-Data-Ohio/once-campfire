@@ -52,6 +52,19 @@ module Github
       request(uri) { |http| http.get(uri.request_uri, headers) }
     end
 
+    # GET /repos/{owner}/{repo}: true when the token's user can read the
+    # repository, backing the per-viewer gate for private-repo cards. 403
+    # and 404 both mean no access (GitHub answers 404 for repositories the
+    # token cannot see). 401 raises Unauthorized like the write calls, so
+    # callers mark the account disconnected the same way.
+    def repository_readable?(owner, repo)
+      uri = URI::HTTPS.build(host: API_HOST, path: "/repos/#{owner}/#{repo}")
+      request(uri) { |http| http.get(uri.request_uri, headers) }
+      true
+    rescue Refused
+      false
+    end
+
     private
       def post(pull_request, relative_path, payload)
         uri = URI::HTTPS.build(host: API_HOST,

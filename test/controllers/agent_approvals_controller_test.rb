@@ -56,7 +56,7 @@ class AgentApprovalsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Ship it"
   end
 
-  test "agent Bearer [REDACTED] 404" do
+  test "agent Bearer token is 404" do
     approval = AgentApproval.create!(agent: @agent, room: @room, action: "deploy", summary: "Ship it")
 
     patch agent_approval_url(approval, decision: "approved"),

@@ -5,14 +5,14 @@
 
   <% if account&.usable? %>
     <p>Connected as <%= account.github_login %></p>
-    <p>Comments and reviews you post from PR threads act as <strong>@<%= account.github_login %></strong> on GitHub.</p>
+    <p>Comments and reviews you post from PR threads act as <strong>@<%= account.github_login %></strong> on GitHub. Your linked account also unlocks cards for private repositories it can read.</p>
     <%= button_to "Disconnect GitHub", github_connection_path, method: :delete, class: "btn btn--negative",
           form: { data: { turbo_confirm: "Disconnect GitHub? You will no longer be able to comment or review from PR threads." } } %>
   <% else %>
     <% if account %>
       <p>GitHub rejected the connection<% if account.disconnected_reason.present? %> (<%= account.disconnected_reason %>)<% end %>. Paste a new token to reconnect.</p>
     <% else %>
-      <p>Paste a fine-grained personal access token to comment and review from PR threads as yourself. It needs <strong>Pull requests: Read and write</strong>, <strong>Issues: Read and write</strong>, and <strong>Metadata: Read</strong>. The token is validated with GitHub before it is stored and is never shown again.</p>
+      <p>Paste a fine-grained personal access token to comment and review from PR threads as yourself. It needs <strong>Pull requests: Read and write</strong>, <strong>Issues: Read and write</strong>, and <strong>Metadata: Read</strong>. The token is validated with GitHub before it is stored and is never shown again. Linking also shows you cards for private repositories the token can read.</p>
     <% end %>
     <%= form_with url: github_connection_path, class: "flex align-center gap" do |form| %>
       <%= form.password_field :access_token, class: "input flex-item-grow", placeholder: "github_pat_…",

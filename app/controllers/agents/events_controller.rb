@@ -49,8 +49,8 @@ class Agents::EventsController < ApplicationController
   end
 
   # GET /agents/:id/events (HTML). Activity ledger for admins and the
-  # agent's owner. Paginated, filterable by outcome. Bearer [REDACTED] are
-  # denied by default; this is a session-authenticated management page.
+  # agent's owner. Paginated, filterable by outcome. Bearer agent tokens
+  # are denied by default; this is a session-authenticated management page.
   def ledger
     @agent = Agent.find(params[:id])
     @bot = @agent.user
@@ -74,7 +74,7 @@ class Agents::EventsController < ApplicationController
   private
     def ensure_agent_token
       unless authenticated_by.agent_token? && Current.agent
-        render json: { error: "Forbidden: Bearer [REDACTED] token required" }, status: :forbidden
+        render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
       end
     end
 

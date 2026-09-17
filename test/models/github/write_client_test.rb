@@ -114,6 +114,46 @@ class Github::WriteClientTest < ActiveSupport::TestCase
     assert_not_includes log.string, "user-token-123"
   end
 
+  test "repository_readable? is true when GitHub answers 200" do
+    client = Github::WriteClient.new(token: "viewer-token")
+    stub = stub_request(:get, "https://api.github.com/repos/rails/rails")
+      .with(headers: { "Authorization" => "Bearer viewer-token" })
+      .to_return(status: 200, body: { private: true }.to_json)
+
+    assert client.repository_readable?("rails", "rails")
+    assert_requested stub
+  end
+
+  test "repository_readable? is false on 403 and 404" do
+    stub_request(:get, "https://api.github.com/repos/rails/rails")
+      .to_return(status: 403, body: { message: "Resource not accessible by personal access token" }.to_json)
+
+    assert_not @client.repository_readable?("rails", "rails")
+
+    stub_request(:get, "https://api.github.com/repos/rails/rails")
+      .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+    assert_not @client.repository_readable?("rails", "rails")
+  end
+
+  test "repository_readable? raises Unauthorized on 401" do
+    stub_request(:get, "https://api.github.com/repos/rails/rails")
+      .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+
+    assert_raises(Github::WriteClient::Unauthorized) do
+      @client.repository_readable?("rails", "rails")
+    end
+  end
+
+  test "repository_readable? raises Error on network failure" do
+    stub_request(:get, "https://api.github.com/repos/rails/rails").to_timeout
+
+    error = assert_raises(Github::WriteClient::Error) do
+      @client.repository_readable?("rails", "rails")
+    end
+    assert_match(/Could not reach GitHub/, error.message)
+  end
+
   private
     def with_swapped_logger(io)
       capture = ActiveSupport::TaggedLogging.new(Logger.new(io))

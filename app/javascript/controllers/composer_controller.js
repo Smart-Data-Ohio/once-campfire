@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import FileUploader from "models/file_uploader"
+import { DRIVE_KIND_ICONS } from "controllers/drive_link_controller"
 import { onNextEventLoopTick, nextFrame } from "helpers/timing_helpers"
 import { escapeHTML } from "helpers/string_helpers"
 
@@ -153,6 +154,7 @@ export default class extends Controller {
     this.#clearReplyInputs()
     this.#setContext("Editing Message", detail.previewText || "")
     this.#setMarkdownValue(source)
+    this.#setEditAttachments(detail.driveAttachments || [])
     this.#focusComposer()
   }
 
@@ -321,6 +323,14 @@ export default class extends Controller {
       body.set("message[markdown_source]", content)
     }
 
+    // The strip holds the message's current attachments as editable chips
+    // (plus anything re-attached from the picker mid-edit). Always send the
+    // key with the blank sentinel so removal works like the /edit form.
+    for (const input of this.#driveAttachmentInputs()) {
+      if (input.value.trim() !== "") body.append("message[drive_file_ids][]", input.value)
+    }
+    body.append("message[drive_file_ids][]", "")
+
     try {
       const response = await fetch(edit.url, {
         method: "PATCH",
@@ -369,10 +379,17 @@ export default class extends Controller {
   }
 
   #captureDraft() {
+    // The strip's pending chips move aside with the draft so an edit starts
+    // from the message's own attachments and the draft's survive a cancel.
+    const strip = this.#driveAttachmentsStrip
+    const driveAttachments = strip ? Array.from(strip.children) : []
+    strip?.replaceChildren()
+
     return {
       content: this.markdownTarget.value,
       files: [ ...this.#files ],
       reply: this.#mode?.type === "reply" ? { ...this.#mode } : null,
+      driveAttachments,
     }
   }
 
@@ -386,6 +403,7 @@ export default class extends Controller {
     this.#mode = null
     this.#clearContext()
     this.#setMarkdownValue(content)
+    this.#driveAttachmentsStrip?.replaceChildren(...(saved?.driveAttachments || []))
     this.#files = saved?.files ? [ ...saved.files ] : []
     this.#updateFileList()
 
@@ -490,8 +508,66 @@ export default class extends Controller {
     return this.hasMessagesOutlet && source === this.messagesOutlet.element
   }
 
+  // An edit shows the message's current attachments as removable chips in
+  // the same strip new attachments use, so removal and re-adding (from the
+  // picker mid-edit) work without leaving the room.
+  #setEditAttachments(attachments) {
+    this.#driveAttachmentsStrip?.replaceChildren(
+      ...attachments.filter((attachment) => attachment?.id).map((attachment) => this.#editAttachmentChip(attachment))
+    )
+  }
+
+  // Same chip markup as the drive-picker: the hidden input is what the
+  // server reads, and element-removal drops the whole chip.
+  #editAttachmentChip(attachment) {
+    const chip = document.createElement("span")
+    chip.className = "drive-attachment-chip"
+    chip.dataset.controller = "element-removal"
+
+    const input = document.createElement("input")
+    input.type = "hidden"
+    input.name = "message[drive_file_ids][]"
+    input.value = attachment.id
+
+    const icon = document.createElement("span")
+    icon.className = "drive-attachment-chip__icon"
+    icon.setAttribute("aria-hidden", "true")
+    icon.innerHTML = DRIVE_KIND_ICONS[attachment.kind] || DRIVE_KIND_ICONS.file
+
+    const name = document.createElement("span")
+    name.className = "drive-attachment-chip__name"
+    name.textContent = attachment.name || "Google Drive file"
+
+    const remove = document.createElement("button")
+    remove.type = "button"
+    remove.className = "drive-attachment-chip__remove"
+    remove.setAttribute("aria-label", `Remove ${attachment.name || "Google Drive file"}`)
+    remove.dataset.action = "element-removal#remove"
+    remove.textContent = "×"
+
+    chip.append(input, icon, name, remove)
+    return chip
+  }
+
+  get #driveAttachmentsStrip() {
+    return this.element.querySelector(".composer__drive-attachments")
+  }
+
+  #driveAttachmentInputs() {
+    return Array.from(this.element.querySelectorAll(".composer__drive-attachments input[name='message[drive_file_ids][]']"))
+  }
+
   #validInput() {
-    return this.markdownTarget.value.trim().length > 0
+    return this.markdownTarget.value.trim().length > 0 || this.#hasDriveAttachments()
+  }
+
+  // Pending Drive chips make a textless message sendable, like a file
+  // upload does; the server validates the ids themselves. Every chip in
+  // the strip is submitted — with the form for a new message, copied into
+  // the edit fetch by #submitEdit — so counting the strip agrees with what
+  // the server receives in both modes.
+  #hasDriveAttachments() {
+    return this.#driveAttachmentInputs().some((input) => input.value.trim() !== "")
   }
 
   #generateClientId() {

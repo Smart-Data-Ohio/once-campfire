@@ -1,5 +1,5 @@
 class MessagesController < ApplicationController
-  include ActiveStorage::SetCurrent, RoomScoped
+  include ActiveStorage::SetCurrent, RoomScoped, Messages::DriveAttachable
 
   before_action :set_room, except: :create
   before_action :set_message, only: %i[ show edit update destroy actions ]
@@ -25,7 +25,10 @@ class MessagesController < ApplicationController
 
   def create
     set_room
-    @message = @room.root_messages.create_with_attachment!(message_params)
+    @message = @room.root_messages.new(message_params)
+    apply_drive_file_ids!(@message) if drive_file_ids_key_present?
+    @message.save!
+    @message.process_attachment
 
     @message.broadcast_create
     deliver_webhooks_to_bots
@@ -61,9 +64,15 @@ class MessagesController < ApplicationController
   def update
     attributes = message_params
     @message.preserve_legacy_attachments_on_next_markdown_render! if !@message.markdown? && attributes[:markdown_source].present?
-    @message.update!(attributes)
+    @message.assign_attributes(attributes)
+    apply_drive_file_ids!(@message) if drive_file_ids_key_present?
+    @message.save!
 
     @message.broadcast_replace_to @room, :messages, target: [ @message, :presentation ], partial: "messages/presentation", attributes: { maintain_scroll: true }
+    if drive_file_ids_key_present?
+      @message.broadcast_replace_to @room, :messages, target: [ @message, :drive_attachments ],
+        partial: "messages/drive_attachments", locals: { message: @message }, attributes: { maintain_scroll: true }
+    end
 
     respond_to do |format|
       format.html { redirect_to room_message_url(@room, @message) }
@@ -113,8 +122,9 @@ class MessagesController < ApplicationController
     def message_params
       permitted = params.require(:message).permit(
         :body, :attachment, :client_message_id, :markdown_source,
-        :reply_to_message_id, :reply_notify_author
+        :reply_to_message_id, :reply_notify_author, drive_file_ids: []
       )
+      permitted.delete(:drive_file_ids)
 
       if permitted.key?(:markdown_source) && !permitted[:markdown_source].nil?
         permitted.delete(:body)

@@ -179,3 +179,222 @@ a:hover .drive-chip {
     display: none;
   }
 }
+
+/* Each picker row keeps its click-to-insert option and gains an Attach
+   button that pins the file to the message instead. The button reveals on
+   hover or focus but stays in the tab order throughout, so keyboard users
+   always reach it; touch devices (no hover) see it outright. */
+.drive-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.drive-picker__option {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.drive-picker__attach {
+  flex: none;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  opacity: 0;
+
+  &:hover {
+    border-color: var(--color-link);
+  }
+
+  .drive-picker__item:hover &,
+  .drive-picker__item:focus-within & {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+}
+
+/* Pending attachment chips in the composer strip and on the edit form.
+   Same markup in both places: a hidden message[drive_file_ids][] input,
+   the kind icon and name the picker already showed, and a remove button. */
+.composer__drive-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-block-end: 0.5rem;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.drive-attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.drive-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-inline-size: 100%;
+  padding: 0.25rem 0.25rem 0.25rem 0.55rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5rem;
+  background-color: var(--color-bg);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.drive-attachment-chip__icon {
+  flex: none;
+  display: inline-flex;
+  opacity: 0.75;
+}
+
+.drive-attachment-chip__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-attachment-chip__open {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.drive-attachment-chip__remove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-border);
+  }
+}
+
+/* Drive attachment blocks under the message body. The generic anchor keeps
+   the block frame; once the drive-link controller upgrades it for a viewer
+   who can open the file, the chip inside fills that frame instead of
+   nesting its own. Inline link chips elsewhere are untouched. */
+.drive-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.drive-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.6rem;
+  background-color: var(--color-bg);
+  text-decoration: none;
+  color: inherit;
+}
+
+a.drive-attachment:hover {
+  border-color: var(--color-link);
+}
+
+.drive-attachment__icon {
+  flex: none;
+  display: inline-flex;
+  opacity: 0.75;
+}
+
+.drive-attachment__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  line-height: 1.3;
+}
+
+.drive-attachment__name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-attachment__meta {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-attachments .drive-chip {
+  display: flex;
+  inline-size: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.drive-attachments .drive-chip__icon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.drive-attachments .drive-chip__name {
+  font-size: 0.9375rem;
+}
+
+/* Standalone edit form (the in-room composer handles quick text edits). */
+.message-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-inline-size: 40rem;
+}
+
+.message-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.message-edit__label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.message-edit__textarea {
+  inline-size: 100%;
+}
+
+.message-edit__actions {
+  display: flex;
+  gap: 0.5rem;
+}

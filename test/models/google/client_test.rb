@@ -185,7 +185,7 @@ class Google::ClientTest < ActiveSupport::TestCase
     file = @client.drive_file("1AbcDefGhIjKlMnOpQrSt")
 
     assert_equal "Q3 Planning", file["name"]
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub, headers: { "Authorization" => "Bearer #{@account.access_token}" }
     assert_requested :get, "#{GOOGLE_DRIVE_FILES_URL}/1AbcDefGhIjKlMnOpQrSt",
       query: hash_including({
         "fields" => "id,name,mimeType,modifiedTime,owners(displayName),webViewLink,iconLink",
@@ -201,7 +201,7 @@ class Google::ClientTest < ActiveSupport::TestCase
     @client.drive_file("1AbcDefGhIjKlMnOpQrSt")
 
     assert_requested :post, GOOGLE_TOKEN_URL
-    assert_requested file_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested file_stub, headers: { "Authorization" => "Bearer refreshed-access-token" }
   end
 
   test "drive_file maps 403 and 404 to NotFound" do
@@ -227,7 +227,7 @@ class Google::ClientTest < ActiveSupport::TestCase
     result = @client.list_drive_files(query: "")
 
     assert_equal [ "Q3 Planning", "Budget 2026" ], result["files"].map { |file| file["name"] }
-    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested stub, headers: { "Authorization" => "Bearer #{@account.access_token}" }
     assert_requested :get, GOOGLE_DRIVE_FILES_URL,
       query: {
         "q" => "trashed=false",
@@ -264,6 +264,6 @@ class Google::ClientTest < ActiveSupport::TestCase
     @client.list_drive_files(query: "")
 
     assert_requested :post, GOOGLE_TOKEN_URL
-    assert_requested list_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested list_stub, headers: { "Authorization" => "Bearer refreshed-access-token" }
   end
 end

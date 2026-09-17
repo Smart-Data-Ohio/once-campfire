@@ -102,7 +102,10 @@ module Messages
           forwarded_from_message: source,
           forwarded_at: Time.current,
           forward_note: note
-        ).tap { |message| copy_attachment_to(source, message) }
+        ).tap do |message|
+          copy_attachment_to(source, message)
+          copy_drive_attachments_to(source, message)
+        end
       end
 
       # Store a private copy of the rendered body, rather than source markdown
@@ -148,6 +151,14 @@ module Messages
             @copied_blobs << blob
             destination.attachment.attach(blob)
           end
+        end
+      end
+
+      # Ids only, never names: each viewer resolves the file with their own
+      # Google credentials, exactly like the source message's attachments.
+      def copy_drive_attachments_to(source, destination)
+        source.drive_attachments.each do |attachment|
+          destination.drive_attachments.build(file_id: attachment.file_id)
         end
       end
 

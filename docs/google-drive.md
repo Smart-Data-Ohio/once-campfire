@@ -92,6 +92,51 @@ Results are the viewer's own Drive view: nothing is shared until the
 member sends the message, and then only the link, which other viewers
 resolve with their own credentials as with pasted Drive links.
 
+## Attachments
+
+Members with Drive previews enabled can also **attach** Drive files to a
+room or thread message. Every picker row carries an **Attach** button next
+to the click-to-insert row: it pins the file as a chip in a strip above the
+composer (showing the same name and kind icon the row showed), and sending
+the message stores the attachment with it. A message with attachments and
+no text is valid. Up to 10 files per message.
+
+Only the file id is stored (`drive_attachments`: `message_id`, `file_id`).
+No name, MIME type, owner, or URL is persisted. The attachment renders as a
+block under the message body carrying an `open?id=` link, in markup that is
+identical for every viewer: a generic file icon, the text "Google Drive
+file", and an "Open in Drive" hint. The `drive-link` controller then
+upgrades the block with the viewer's own credentials, exactly like a
+pasted link: viewers who can open the file see its name, kind icon,
+modified time, and owner, while viewers without Drive consent or without
+access keep the generic block and learn nothing else. No new endpoints are
+involved, and the file name is never logged.
+
+The message's edit form lists the current attachments as removable chips
+(the author can drop all of them; only the existing edit permission
+applies). Editing in the composer shows the same current attachments as
+removable chips in the composer's own strip, and saving sends the edited
+set with the same replace semantics, so removal and re-adding work without
+leaving the room. Forwarding a message copies its attachment ids onto the
+forward, whose block then behaves like any other. Attachment changes touch
+the message so caches refresh.
+
+Thread messages accept the same `message[drive_file_ids][]` set as room
+messages on create and update — stored, replaced, left alone when absent,
+cleared by the blank sentinel, 422 on an invalid id or a scalar — and a
+thread edit rebroadcasts the attachments block over the thread stream.
+
+The JSON message shape and the agent delivery payload carry the set as:
+
+```json
+"drive_attachments": [
+  { "file_id": "1AbcDefGhIjKlMnOpQrSt", "url": "https://drive.google.com/open?id=1AbcDefGhIjKlMnOpQrSt" }
+]
+```
+
+Never a name: bots receive no Drive credentials. The bot posting API does
+not accept attachments.
+
 ## The 404 policy
 
 The endpoint answers **404 with an empty body** in every denial case: the

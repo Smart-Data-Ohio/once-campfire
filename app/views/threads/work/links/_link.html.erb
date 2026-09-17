@@ -6,7 +6,9 @@
         pull_request.html_url.presence || "https://github.com/#{pull_request.full_name}/pull/#{pull_request.number}",
         class: "work-links__pr", target: "_blank", rel: "noopener noreferrer" %>
   <span class="work-links__pr-state"><%= github_pr_state_label(pull_request) %></span>
-  <% if pull_request.title.present? %>
+  <%# The title is private-repository content; these boxes are also broadcast
+      without a viewer, so only public repositories show it here. %>
+  <% if github_pr_public?(pull_request) && pull_request.title.present? %>
     <span class="work-links__pr-title"><%= pull_request.title %></span>
   <% end %>
 <% when "event" %>

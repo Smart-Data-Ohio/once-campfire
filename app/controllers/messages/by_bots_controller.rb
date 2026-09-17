@@ -27,6 +27,11 @@ class Messages::ByBotsController < MessagesController
   end
 
   private
+    # The bot posting API takes no Drive attachments (docs/google-drive.md).
+    def drive_file_ids_key_present?
+      false
+    end
+
     # This endpoint renders message_payload, which never reads boosts or image
     # variant records, so it skips the heavier rendering preloads.
     def paged_message_scope

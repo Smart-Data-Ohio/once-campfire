@@ -65,7 +65,7 @@ class Agents::Github::PullRequestActionsController < ApplicationController
   private
     def ensure_agent_token
       unless authenticated_by.agent_token? && Current.agent
-        render json: { error: "Forbidden: Bearer [REDACTED] token required" }, status: :forbidden
+        render json: { error: "Forbidden: Bearer agent token required" }, status: :forbidden
       end
     end
 

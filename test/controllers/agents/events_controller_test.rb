@@ -396,7 +396,7 @@ class Agents::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "ledger page is forbidden to Bearer [REDACTED]" do
+  test "ledger page is forbidden to Bearer agent tokens" do
     get agent_events_url(@agent), headers: bearer_headers
 
     assert_response :forbidden

@@ -1,7 +1,13 @@
 <div id="<%= dom_id(thread, :github_pr_header) %>" class="github-pr-thread-header">
   <%= turbo_stream_from thread, :messages, channel: "RoomMessagesChannel" %>
-  <%= render "github/pull_requests/card", pull_request: pull_request %>
-  <%= render "github/pull_requests/files_summary", pull_request: pull_request %>
+  <% if github_pr_public?(pull_request) %>
+    <%= render "github/pull_requests/card", pull_request: pull_request %>
+    <%= render "github/pull_requests/files_summary", pull_request: pull_request %>
+  <% else %>
+    <%= turbo_frame_tag dom_id(pull_request, :"card_for_thread_#{thread.id}"),
+          src: room_github_pull_request_card_path(thread.room_id, pull_request, thread_id: thread.id),
+          loading: "lazy", class: "github-pr-card-frame" %>
+  <% end %>
   <%= turbo_frame_tag dom_id(thread, :github_write_actions),
         src: room_github_pull_request_write_action_path(thread.room_id, pull_request),
         class: "github-pr-write" do %>
