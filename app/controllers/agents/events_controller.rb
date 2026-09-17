@@ -3,11 +3,6 @@ class Agents::EventsController < ApplicationController
 
   allow_agent_access only: %i[ index ack ]
 
-  # Bearer-only polling endpoints: session-cookie requests are rejected with
-  # 403 JSON by ensure_agent_token, so no session-authenticated state change
-  # is possible and forgery verification would only mask that rejection.
-  skip_forgery_protection only: :ack
-
   before_action :ensure_agent_token, only: %i[ index ack ]
   before_action :set_ack_event, only: :ack
   require_agent_capability :read_messages, only: %i[ index ack ]
