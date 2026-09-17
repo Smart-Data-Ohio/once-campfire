@@ -248,6 +248,17 @@ button.github-pr-card__discuss:hover {
   justify-content: flex-end;
 }
 
+.github-pr-write__request-review {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0;
+  align-items: center;
+}
+
+.github-pr-write__request-review .input {
+  flex: 1;
+}
+
 .github-pr-write__connect {
   margin: 0;
 }

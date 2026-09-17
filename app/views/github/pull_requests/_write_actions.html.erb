@@ -17,6 +17,14 @@
       <%= form.submit "Comment on GitHub", class: "btn" %>
     <% end %>
 
+    <%= form_with url: room_github_pull_request_review_requests_path(thread.room_id), class: "github-pr-write__request-review" do |form| %>
+      <%= hidden_field_tag :pull_request_id, pull_request.id %>
+      <%= form.text_field :reviewers, class: "input", value: reviewers_body,
+            placeholder: "GitHub usernames",
+            aria: { label: "GitHub usernames" } %>
+      <%= form.submit "Request review", class: "btn" %>
+    <% end %>
+
     <%= form_with url: room_github_pull_request_reviews_path(thread.room_id), class: "github-pr-write__review" do |form| %>
       <%= hidden_field_tag :pull_request_id, pull_request.id %>
       <%= form.text_area :body, rows: 2, class: "input", value: review_body,

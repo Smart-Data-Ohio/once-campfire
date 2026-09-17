@@ -143,6 +143,7 @@ Rails.application.routes.draw do
       resources :pull_request_threads, only: :create
       resources :pull_request_comments, only: :create
       resources :pull_request_reviews, only: :create
+      resources :pull_request_review_requests, only: :create
       resources :pull_request_write_actions, only: :show
     end
 
