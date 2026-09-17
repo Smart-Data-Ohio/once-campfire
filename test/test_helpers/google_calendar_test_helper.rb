@@ -97,6 +97,35 @@ module GoogleCalendarTestHelper
         .to_return(status:, body: body.to_json, headers: { "Content-Type" => "application/json" })
     end
 
+    def stub_google_drive_list(status: 200, body: drive_list_payload, files: nil)
+      body = drive_list_payload(files:) if files
+      stub_request(:get, GOOGLE_DRIVE_FILES_URL)
+        .with(query: hash_including({ "pageSize" => "10" }))
+        .to_return(status:, body: body.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    def drive_list_payload(files: nil)
+      files ||= [
+        {
+          "id" => "1AbcDefGhIjKlMnOpQrSt",
+          "name" => "Q3 Planning",
+          "mimeType" => "application/vnd.google-apps.document",
+          "modifiedTime" => "2026-09-16T10:30:00.000Z",
+          "owners" => [ { "displayName" => "Riel" } ],
+          "webViewLink" => "https://docs.google.com/document/d/1AbcDefGhIjKlMnOpQrSt/edit"
+        },
+        {
+          "id" => "2BcdEfgHiJkLmNoPqRsTu",
+          "name" => "Budget 2026",
+          "mimeType" => "application/vnd.google-apps.spreadsheet",
+          "modifiedTime" => "2026-09-15T09:00:00.000Z",
+          "owners" => [ { "displayName" => "Jon" } ],
+          "webViewLink" => "https://docs.google.com/spreadsheets/d/2BcdEfgHiJkLmNoPqRsTu/edit"
+        }
+      ]
+      { "files" => files }
+    end
+
     def drive_file_payload(name: "Q3 Planning", mime_type: "application/vnd.google-apps.document")
       {
         "id" => "1AbcDefGhIjKlMnOpQrSt",

@@ -44,6 +44,48 @@ class DriveLinkPreviewsTest < ApplicationSystemTestCase
     assert_empty drive_requests
   end
 
+  test "composer Drive picker inserts the chosen file link at the caret" do
+    connect_google!(users(:jz), scopes: DRIVE_SCOPES)
+    stub_google_drive_list
+    sign_in "jz@37signals.com"
+    join_room rooms(:designers)
+
+    fill_in_markdown "message_markdown_source", with: "see brief"
+    page.execute_script(<<~JS)
+      const editor = document.getElementById("message_markdown_source")
+      editor.setSelectionRange(4, 4)
+      editor.focus()
+    JS
+
+    find("button.composer__drive-btn").click
+
+    assert_selector '[role="dialog"][aria-label="Find a Drive file"]'
+    assert_selector ".drive-picker__item", text: "Q3 Planning"
+
+    fill_in "Search Drive files", with: "plan"
+
+    assert_selector ".drive-picker__item", text: "Q3 Planning"
+    assert_selector ".drive-picker__meta", text: /Modified.+Riel/
+    assert_selector ".drive-picker__icon svg"
+
+    find_field("Search Drive files").send_keys(:down)
+
+    assert_selector ".drive-picker__item--active", text: "Q3 Planning"
+
+    find(".drive-picker__item", text: "Q3 Planning").click
+
+    assert_equal "see https://docs.google.com/document/d/1AbcDefGhIjKlMnOpQrSt/edit brief",
+      find_field("message_markdown_source").value
+    assert_no_selector '[role="dialog"][aria-label="Find a Drive file"]'
+  end
+
+  test "composer omits the Drive button without the Drive scope" do
+    sign_in "kevin@37signals.com"
+    join_room rooms(:designers)
+
+    assert_no_selector "button.composer__drive-btn"
+  end
+
   private
     def install_fetch_recorder
       page.execute_script <<~JS

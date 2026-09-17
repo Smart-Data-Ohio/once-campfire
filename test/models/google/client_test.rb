@@ -220,4 +220,50 @@ class Google::ClientTest < ActiveSupport::TestCase
 
     assert_equal "Google Drive request failed (Net::OpenTimeout)", error.message
   end
+
+  test "list_drive_files requests the recent list with the Drive list parameters" do
+    stub = stub_google_drive_list
+
+    result = @client.list_drive_files(query: "")
+
+    assert_equal [ "Q3 Planning", "Budget 2026" ], result["files"].map { |file| file["name"] }
+    assert_requested stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+    assert_requested :get, GOOGLE_DRIVE_FILES_URL,
+      query: {
+        "q" => "trashed=false",
+        "pageSize" => "10",
+        "fields" => "files(id,name,mimeType,modifiedTime,owners(displayName),webViewLink)",
+        "orderBy" => "modifiedTime desc",
+        "spaces" => "drive"
+      }
+  end
+
+  test "list_drive_files searches by name and escapes quotes and backslashes" do
+    stub_google_drive_list
+
+    @client.list_drive_files(query: "bob's\\draft")
+
+    assert_requested :get, GOOGLE_DRIVE_FILES_URL,
+      query: hash_including({ "q" => "name contains 'bob\\'s\\\\draft' and trashed=false" })
+  end
+
+  test "list_drive_files treats a blank query as a recent list" do
+    stub_google_drive_list
+
+    @client.list_drive_files(query: "   ")
+
+    assert_requested :get, GOOGLE_DRIVE_FILES_URL,
+      query: hash_including({ "q" => "trashed=false" })
+  end
+
+  test "list_drive_files refreshes an expired access token first" do
+    @account.update!(access_token_expires_at: 1.hour.ago)
+    stub_google_token_refresh
+    list_stub = stub_google_drive_list
+
+    @client.list_drive_files(query: "")
+
+    assert_requested :post, GOOGLE_TOKEN_URL
+    assert_requested list_stub, headers: { "Authorization" => "Bearer [REDACTED]" }
+  end
 end

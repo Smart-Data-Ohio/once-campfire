@@ -31,6 +31,9 @@ const ICONS = {
   file: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg>'
 }
 
+// Shared with the composer drive-picker so its rows reuse the chip artwork.
+export const DRIVE_KIND_ICONS = ICONS
+
 export function driveFileId(url) {
   for (const pattern of PATTERNS) {
     const match = String(url).match(pattern)
