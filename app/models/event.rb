@@ -22,6 +22,7 @@ class Event < ApplicationRecord
   validate :recurrence_until_requirements, if: :validates_recurrence_range?
   validate :recurrence_occurrence_cap, if: :validates_recurrence_range?
   validate :series_head_must_keep_rule
+  validate :series_head_time_requires_following_scope, on: :update
   validate :recurrence_fields_require_scoped_api, on: :update
   validate :series_order_must_be_preserved, on: :update
 
@@ -275,6 +276,16 @@ class Event < ApplicationRecord
       errors.add :recurrence_rule, "can't be removed from a repeating event"
     end
 
+    # The head's start anchors the whole series: it may only move through
+    # "This and following", which shifts (and, on rule changes, rebuilds)
+    # every follower with it.
+    def series_head_time_requires_following_scope
+      return unless series_head? && will_save_change_to_starts_at?
+      return if @following_reorder
+
+      errors.add :starts_at, "moves the whole series: choose This and following or the entire series"
+    end
+
     def series_order_must_be_preserved
       return unless series_id.present? && will_save_change_to_starts_at?
       return if @skip_series_order_validation
@@ -384,6 +395,20 @@ class Event < ApplicationRecord
       with_recurrence_mutation { without_series_order_validation { yield } }
     end
 
+    # Parks every row that is about to be re-timed by clearing its series_id.
+    # The slot index only covers rows with a non-NULL series_id, so parked
+    # rows cannot collide with each other while destinations are written;
+    # each placement save below restores the series_id together with the
+    # final times. Runs inside the caller's transaction, so any failure
+    # rolls the parking back with everything else.
+    def with_parked_series_rows(rows)
+      rows = Array(rows)
+      return yield if rows.empty?
+
+      rows.each { |row| row.update_columns(series_id: nil) }
+      yield
+    end
+
     def update_series_and_following!(attributes, actor:)
       time_changed = false
 
@@ -413,18 +438,21 @@ class Event < ApplicationRecord
         ends_removed = will_save_change_to_ends_at? && ends_at.nil?
 
         self.reminded_at = nil if time_changed
-        with_following_reorder { with_recurrence_mutation { save! } }
-
         followers = Event.where(id: scope_ids - [ id ]).includes(:attendances).order(:starts_at, :id).to_a
-        followers.each do |occurrence|
-          occurrence.title = title if title_changed
-          occurrence.description = description if description_changed
-          occurrence.time_zone = time_zone if zone_changed
-          shift_occurrence_times!(occurrence, starts_delta:, ends_delta:, ends_added:, ends_removed:)
-          occurrence.recurrence_rule = recurrence_rule if rule_changed
-          occurrence.recurrence_until = recurrence_until if rule_changed
-          occurrence.reminded_at = nil if time_changed
-          occurrence.send(:with_series_follower_save) { occurrence.save! }
+
+        if starts_delta.nonzero? && followers.any?
+          shift_series_and_following_with_parking!(followers,
+            starts_delta:, ends_delta:, ends_added:, ends_removed:,
+            title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+        else
+          with_following_reorder { with_recurrence_mutation { save! } }
+
+          followers.each do |occurrence|
+            assign_following_changes(occurrence,
+              starts_delta:, ends_delta:, ends_added:, ends_removed:,
+              title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+            occurrence.send(:with_series_follower_save) { occurrence.save! }
+          end
         end
 
         synced_ids = rule_changed ? rematerialize_series!(followers, actor:, time_changed:) : []
@@ -441,6 +469,47 @@ class Event < ApplicationRecord
       end
 
       time_changed
+    end
+
+    # A "This and following" re-time of more than one row: the edited
+    # occurrence is validated against the current slots first (previous
+    # sibling only, since every follower moves by the same offset), then
+    # every mover is parked and placed in series order with a guarded save,
+    # so no destination can collide with a slot another mover still holds.
+    def shift_series_and_following_with_parking!(followers, starts_delta:, ends_delta:, ends_added:, ends_removed:,
+        title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+      with_following_reorder do
+        with_recurrence_mutation do
+          raise ActiveRecord::RecordInvalid, self unless valid?
+        end
+      end
+
+      followers.each do |occurrence|
+        assign_following_changes(occurrence,
+          starts_delta:, ends_delta:, ends_added:, ends_removed:,
+          title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+      end
+
+      parked_series_id = series_id
+      with_parked_series_rows([ self ] + followers) do
+        with_following_reorder do
+          ([ self ] + followers).sort_by { |row| [ row.starts_at, row.id ] }.each do |row|
+            row.series_id = parked_series_id
+            row.send(:with_series_follower_save) { row.save! }
+          end
+        end
+      end
+    end
+
+    def assign_following_changes(occurrence, starts_delta:, ends_delta:, ends_added:, ends_removed:,
+        title_changed:, description_changed:, zone_changed:, rule_changed:, time_changed:)
+      occurrence.title = title if title_changed
+      occurrence.description = description if description_changed
+      occurrence.time_zone = time_zone if zone_changed
+      shift_occurrence_times!(occurrence, starts_delta:, ends_delta:, ends_added:, ends_removed:)
+      occurrence.recurrence_rule = recurrence_rule if rule_changed
+      occurrence.recurrence_until = recurrence_until if rule_changed
+      occurrence.reminded_at = nil if time_changed
     end
 
     # Later occurrences move with the edited one: their starts shift by the
@@ -473,7 +542,8 @@ class Event < ApplicationRecord
     # occurrences are reused in place, retimed onto a new slot (keeping their
     # calendar entries), or removed when the series shrank; remaining slots
     # are created with the head's responses. Removals and cancellations run
-    # before any move, so a moved row never lands on a slot another row still
+    # before any move, and every mover is parked before any destination is
+    # written, so a moved row never lands on a slot another row still
     # occupies. Returns the ids already synced to calendars here, so the
     # caller does not sync them twice.
     def rematerialize_series!(followers, actor:, time_changed:)
@@ -519,8 +589,11 @@ class Event < ApplicationRecord
 
       destroys.each(&:destroy!)
       cancels.each { |occurrence| occurrence.cancel!(actor:) }
-      synced_ids = moves.filter_map do |(occurrence, slot, rearm_reminder)|
-        occurrence.id if retime_occurrence!(occurrence, slot, rearm_reminder:)
+      synced_ids = with_parked_series_rows(moves.map(&:first)) do
+        moves.sort_by { |(occurrence, slot, _)| [ slot.first, occurrence.id ] }.filter_map do |(occurrence, slot, rearm_reminder)|
+          occurrence.series_id = id
+          occurrence.id if retime_occurrence!(occurrence, slot, rearm_reminder:)
+        end
       end
 
       unmatched_slots.each do |(slot_starts, slot_ends)|
@@ -536,12 +609,14 @@ class Event < ApplicationRecord
 
     # Moves an occurrence onto a rebuilt slot and syncs its calendar entries
     # when the earlier shift or this retime touched a synced attribute.
-    # Returns true when synced, so the caller does not sync it twice.
+    # The caller restores the parked series_id just before; this save writes
+    # it back together with the final times. Returns true when synced, so the
+    # caller does not sync it twice.
     def retime_occurrence!(occurrence, slot, rearm_reminder:)
       shift_synced = (Calendar::EntrySync::SYNCED_ATTRIBUTES & occurrence.saved_changes.keys).any?
       attributes = { starts_at: slot.first, ends_at: slot.second }
       attributes[:reminded_at] = nil if rearm_reminder
-      occurrence.send(:without_series_order_validation) { occurrence.update!(attributes) }
+      occurrence.send(:with_series_follower_save) { occurrence.update!(attributes) }
 
       if shift_synced || (Calendar::EntrySync::SYNCED_ATTRIBUTES & occurrence.saved_changes.keys).any?
         occurrence.sync_calendar_entries!
