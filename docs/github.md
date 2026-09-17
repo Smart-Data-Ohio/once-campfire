@@ -192,7 +192,8 @@ only, JSON) takes `pull_request_id`, `kind` (`comment`, `approve`,
 `request_changes`, `request_review`), `body` (comment text or review
 note), `reviewers` (usernames separated by commas or whitespace, the same
 rules as the member control), and an optional idempotency `external_id`.
-The gates, in order: agent authentication (401), room membership (404), a
+The gates, in order: agent authentication (401 for a bad or revoked
+token, 403 for a legacy bot key or a human session), room membership (404), a
 PR-thread mapping for that pull request in that room (404), the
 `external_action` capability in the room (403), a usable linked account
 on the agent (422), and the same input rules as the member endpoints — a
@@ -200,7 +201,12 @@ comment needs a body, request-changes needs a note, a review request
 needs 1 to 15 valid logins (422 with field errors). The endpoint never
 calls GitHub: it creates an approval (`github.<kind>`) and returns 202
 with its `id`, `status`, and `expires_at`; a repeated `external_id`
-returns the existing row with 200.
+returns the existing row with 200. The server builds the approval's
+summary and payload itself and binds them: only this endpoint may create
+`github.*` approvals (`POST /agents/approvals` refuses the prefix with
+422), and at execution time the payload must rebuild to exactly the
+action name and summary the decider saw, so an agent cannot approve one
+thing and execute another.
 
 ```sh
 curl -X POST https://campfire.example.com/rooms/1/agents/github/pull_request_actions \
@@ -215,8 +221,9 @@ Deciders are the existing approval deciders — the agent's owner and
 every administrator — deciding from the activity inbox; there is no new
 inbox item type. When a `github.*` request is approved, the server
 re-checks everything (still approved, agent active, still a member,
-grant still held, thread still mapped, account still usable) and
-performs the action with the agent's token. Any failed re-check, and any
+grant still held, thread still mapped, account still usable, and no
+earlier outcome recorded for the approval, so a queue retry never posts
+twice) and performs the action with the agent's token. Any failed re-check, and any
 GitHub refusal, records a failed completion without posting; a 401
 disconnects the agent's account exactly like the member path. The
 agent's comment or review round-trips through the existing webhook, and
