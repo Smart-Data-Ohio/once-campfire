@@ -127,6 +127,65 @@ class HuddlePresenceTest < ApplicationSystemTestCase
       "the sidebar never ran its aggregate presence poll"
   end
 
+  test "the sidebar aggregate poll runs on connect and skips in-flight refreshes" do
+    grant = HuddleGrant.issue!(session: sessions(:david_safari), membership: @room.memberships.find_by!(user: users(:david)))
+    grant.record_seen!
+
+    visit room_path(@room)
+    wait_for_cable_connection
+
+    within "##{dom_id(@room, :list)}" do
+      assert_selector ".voice-stack--live .voice-stack__count", text: "1"
+    end
+
+    # The grant quietly expires: no broadcast fires, so the sidebar row goes
+    # stale until a poll runs.
+    grant.update_columns(last_seen_at: 1.minute.ago)
+    assert_selector "##{dom_id(@room, :list)} .voice-stack__count", text: "1", wait: 0
+
+    page.execute_script(<<~JS)
+      window.presenceFetches = 0
+      window.fetch = ((originalFetch) => (...args) => {
+        const url = String(args[0] && args[0].url || args[0])
+        if (url.includes("/users/huddle_presence")) window.presenceFetches++
+        return originalFetch(...args)
+      })(window.fetch.bind(window))
+    JS
+
+    # A reconnected sidebar (restored frame, fresh subscription) polls
+    # immediately through the real connect() instead of waiting out the
+    # 15-second interval; the header stack's own interval cannot explain a
+    # clear this fast, and it polls a different URL anyway.
+    page.execute_script(<<~JS)
+      const element = document.querySelector('[data-controller~="huddle-presence"]')
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-presence")
+      controller.disconnect()
+      controller.connect()
+    JS
+
+    within "##{dom_id(@room, :list)}" do
+      assert_no_selector ".voice-stack--live", wait: 10
+    end
+    assert_operator page.evaluate_script("window.presenceFetches"), :>=, 1,
+      "reconnecting the sidebar never ran its aggregate presence poll"
+
+    # Two refreshes issued back to back share one request: the second sees
+    # the first still in flight and skips itself.
+    page.execute_script(<<~JS)
+      window.presenceFetches = 0
+      const element = document.querySelector('[data-controller~="huddle-presence"]')
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(element, "huddle-presence")
+      controller.refresh()
+      controller.refresh()
+    JS
+    Timeout.timeout(10) do
+      sleep 0.05 until page.evaluate_script("window.presenceFetches") >= 1
+    end
+    sleep 0.5
+    assert_equal 1, page.evaluate_script("window.presenceFetches"),
+      "back-to-back refreshes issued duplicate aggregate polls"
+  end
+
   private
     # Records every Turbo Stream render as "action:target" so the test can
     # wait for a specific broadcast to land instead of sleeping a fixed time.
