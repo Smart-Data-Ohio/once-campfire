@@ -27,15 +27,29 @@ class Rooms::StagesController < RoomsController
   end
 
   def update
-    if removed_sole_host = sole_host_removed_by_update
+    # The sole-host check and the revision run in one transaction under a room
+    # lock: without it, two concurrent edits each removing one of two hosts
+    # could both pass the check and strand the room. SQLite's immediate
+    # transaction mode serializes writers, so the transaction plus a re-read
+    # inside it is sufficient.
+    removed_sole_host = nil
+
+    Room.transaction do
+      @room.lock!
+      removed_sole_host = sole_host_removed_by_update
+
+      unless removed_sole_host
+        @room.update! room_params
+        @room.memberships.revise(granted: grantees, revoked: revokees)
+        @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
+      end
+    end
+
+    if removed_sole_host
       set_member_lists
       @room.errors.add(:base, "Promote another host before removing #{removed_sole_host.user.name}")
       return render :edit, status: :unprocessable_entity
     end
-
-    @room.update! room_params
-    @room.memberships.revise(granted: grantees, revoked: revokees)
-    @room.memberships.where(stage_role: nil).update_all(stage_role: "listener")
 
     broadcast_update_room
     redirect_to room_url(@room)

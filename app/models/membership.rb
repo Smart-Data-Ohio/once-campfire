@@ -84,6 +84,13 @@ class Membership < ApplicationRecord
 
     def at_least_one_host_remains
       return unless stage_role_was == "host" && stage_role != "host"
+
+      # The check runs inside the update transaction after locking the room:
+      # without it, two concurrent demotions of the last two hosts could both
+      # pass and strand the room. SQLite's immediate transaction mode
+      # serializes writers, so the transaction plus a re-read inside it is
+      # sufficient.
+      room.lock!
       return if room.memberships.where(stage_role: :host).where.not(id: id).exists?
 
       errors.add(:stage_role, "can't demote the last host")

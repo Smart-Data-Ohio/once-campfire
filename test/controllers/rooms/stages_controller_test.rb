@@ -147,6 +147,35 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the sole-host check and revision run in one locked transaction" do
+    room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
+    events = []
+
+    lock_method = Room.instance_method(:lock!)
+    Room.define_method(:lock!) do |*arguments|
+      events << :lock
+      lock_method.bind_call(self, *arguments)
+    end
+
+    insert_method = Membership.method(:insert_all)
+    Membership.define_singleton_method(:insert_all) do |*arguments, **keywords|
+      events << (ActiveRecord::Base.connection.transaction_open? ? :insert_in_transaction : :insert_outside_transaction)
+      insert_method.call(*arguments, **keywords)
+    end
+
+    begin
+      put rooms_stage_url(room), params: {
+        room: { name: "Town Hall" }, user_ids: [ users(:david).id, users(:jason).id, users(:kevin).id ]
+      }
+    ensure
+      Room.define_method(:lock!, lock_method)
+      Membership.define_singleton_method(:insert_all, insert_method)
+    end
+
+    assert_redirected_to room_url(room)
+    assert_equal [ :lock, :insert_in_transaction ], events
+  end
+
   test "removing everyone including the last host empties the room" do
     room = Rooms::Stage.create_for({ name: "Town Hall", creator: users(:david) }, users: [ users(:david), users(:jason) ])
 
