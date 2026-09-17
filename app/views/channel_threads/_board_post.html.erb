@@ -145,10 +145,18 @@
 
   <section class="board-post__discussion" aria-labelledby="post-discussion-title">
     <h2 id="post-discussion-title">Discussion</h2>
-    <div id="<%= dom_id(@thread, :messages) %>" class="board-post__messages">
-      <%= render partial: "messages/message", collection: @messages %>
+    <div class="board-post__messages">
+      <% if @messages.empty? %>
+        <p class="board-post__messages-empty">No messages yet. Start the discussion below.</p>
+      <% end %>
+      <%= message_area_tag(@room, thread: @thread) do %>
+        <%= messages_tag(@room, thread: @thread) do %>
+          <%= render partial: "messages/message", collection: @messages %>
+        <% end %>
+
+        <%= turbo_stream_from @thread, :messages, channel: "RoomMessagesChannel" %>
+      <% end %>
     </div>
-    <%= turbo_stream_from @thread, :messages, channel: "RoomMessagesChannel" %>
     <%= render "rooms/show/composer", room: @room, thread: @thread, inline: true %>
   </section>
 

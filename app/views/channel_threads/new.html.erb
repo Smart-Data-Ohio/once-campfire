@@ -21,7 +21,7 @@
     <p class="board-post-form__error" role="alert"><%= @thread.errors.full_messages.to_sentence %></p>
   <% end %>
 
-  <%= form_with model: @thread, url: room_threads_path(@room), class: "board-post-form__form" do |form| %>
+  <%= form_with model: @thread, scope: :thread, url: room_threads_path(@room), class: "board-post-form__form" do |form| %>
     <label class="board-post-form__field">
       <span>Title</span>
       <%= form.text_field :name, required: true, maxlength: ChannelThread::NAME_LIMIT,

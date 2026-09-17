@@ -397,10 +397,10 @@
   margin-block-end: 1rem;
 }
 
-.board-post__messages:empty::after {
+.board-post__messages-empty {
   color: var(--workspace-text-muted, var(--color-text));
-  content: "No messages yet. Start the discussion below.";
   font-size: 0.85rem;
+  margin: 0;
 }
 
 .board-post__history ol {
