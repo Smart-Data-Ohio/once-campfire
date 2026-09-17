@@ -6,10 +6,15 @@
 class Rooms::Stage < Room
   has_many :streams, foreign_key: :room_id, dependent: :destroy
 
-  # The room's current live stream, if any. Queried fresh every time: streams
-  # start and end within a request, so a memoized value would go stale.
+  # The room's current live stream, if any. Queried fresh unless the caller
+  # preloaded streams, in which case the preloaded records are read so list
+  # pages can render the live dot without a query per room.
   def live_stream
-    streams.live.first
+    if association(:streams).loaded?
+      streams.detect(&:live?)
+    else
+      streams.live.first
+    end
   end
 
   class << self
