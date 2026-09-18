@@ -68,6 +68,25 @@ class Twitter::PostReferenceBackfillTest < ActiveSupport::TestCase
     assert_equal [ "303" ], message.reload.twitter_posts.map(&:post_id)
   end
 
+  test "creates references without enqueuing fetches when asked, leaving the cards to fetch on render" do
+    message = @room.messages.create!(
+      creator: @creator, markdown_source: "look https://x.com/jack/status/304",
+      client_message_id: "x-backfill-no-enqueue"
+    )
+    message.twitter_post_references.delete_all
+    Twitter::Post.where(post_id: "304").delete_all
+    clear_enqueued_jobs
+
+    assert_no_enqueued_jobs only: Twitter::FetchPostJob do
+      Twitter::PostReferenceBackfill.call(enqueue_fetches: false)
+    end
+
+    post = message.reload.twitter_posts.sole
+    assert_equal "304", post.post_id
+    assert post.fetch_pending?
+    assert_nil post.fetch_requested_at, "the fetch claim must stay free for the first render"
+  end
+
   test "tolerates a message without rich text" do
     message = @room.messages.create_with_attachment!(
       creator: @creator, client_message_id: "x-backfill-bare",

@@ -62,6 +62,10 @@ legacy messages keep their old OpenGraph boxes until their references
 are synced. The `BackfillTwitterPostReferences` data migration syncs
 references for every message whose Markdown source or rich-text body
 contains a post URL; it runs with the normal `bin/rails db:migrate` on
-deploy, is idempotent, and only creates references and enqueues fetch
-jobs. Outside a deploy, `bin/rails twitter:backfill_references` runs
-the same sync ad hoc and prints how many messages it synced.
+deploy and is idempotent. The migration only creates references and
+never enqueues fetch jobs, because migrations run before Redis is
+reachable (the app migrates while `redis-server` is still starting, and
+the release rehearsal runs with no network); each backfilled card
+enqueues its own fetch the first time it renders. Outside a deploy,
+`bin/rails twitter:backfill_references` runs the same sync ad hoc, does
+enqueue fetches, and prints how many messages it synced.

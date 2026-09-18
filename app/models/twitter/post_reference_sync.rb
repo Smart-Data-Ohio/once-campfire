@@ -3,9 +3,13 @@ module Twitter
   # currently contains, and enqueues a fetch for every newly referenced post
   # that still needs one. Idempotent: re-running with unchanged content
   # enqueues nothing new.
+  #
+  # Pass `enqueue_fetches: false` from contexts that cannot reach Redis,
+  # such as migrations: references are still created, and each card
+  # enqueues its own fetch the first time it renders (Twitter::PostsHelper).
   module PostReferenceSync
     class << self
-      def call(message)
+      def call(message, enqueue_fetches: true)
         references = Twitter::PostUrl.extract(reference_text(message))
 
         posts = references.map do |reference|
@@ -18,7 +22,7 @@ module Twitter
 
         posts.each do |post|
           reference = message.twitter_post_references.find_or_create_by!(post: post)
-          if reference.previously_new_record? && post.needs_fetch?
+          if enqueue_fetches && reference.previously_new_record? && post.needs_fetch?
             Twitter::FetchPostJob.perform_later(post) if post.claim_fetch_request!
           end
         end
