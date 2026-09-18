@@ -56,6 +56,15 @@ module RoomsHelper
       data: composer_data_options(room, thread:), &
   end
 
+  # True when the composer offers the enhanced Drive picker: browser
+  # sharing is configured and the viewer is a signed-in human member.
+  # Calendar/metadata consent is not required; the recipients endpoint
+  # re-checks membership and humanity on every request.
+  def drive_share_picker_available?
+    user = Current.user
+    Google::Picker.configured? && user&.active? && !user.bot? && user.agent.nil?
+  end
+
   def room_display_name(room, for_user: Current.user)
     if room.direct?
       room.users.without(for_user).pluck(:name).to_sentence.presence || for_user&.name

@@ -14,6 +14,9 @@ Rails.application.routes.draw do
     end
   end
 
+  post "session/google", to: "sessions/google#create", as: :session_google
+  get "session/google/callback", to: "sessions/google#callback", as: :session_google_callback
+
   resource :account do
     scope module: "accounts" do
       resources :users
@@ -129,6 +132,9 @@ Rails.application.routes.draw do
 
     scope module: "rooms" do
       resources :members, only: :index
+      resources :drive_recipients, only: :index do
+        post :validate, on: :collection
+      end
       resources :events, only: %i[ index show new create edit update ] do
         patch :cancel, on: :member
         resource :attendance, only: %i[ show update ], controller: "events/attendances"
@@ -214,6 +220,10 @@ Rails.application.routes.draw do
     get "drive/files", to: "drive_files#index", as: :drive_files
     get "drive/files/:id", to: "drive_files#show", as: :drive_file
   end
+
+  get "/about", to: "public_pages#about", as: :about
+  get "/privacy", to: "public_pages#privacy", as: :privacy
+  get "/terms", to: "public_pages#terms", as: :terms
 
   get "webmanifest"    => "pwa#manifest"
   get "service-worker" => "pwa#service_worker"

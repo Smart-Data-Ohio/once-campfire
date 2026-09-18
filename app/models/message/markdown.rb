@@ -20,7 +20,7 @@ class Message::Markdown
   SKIPPED_MENTION_ANCESTORS = %w[ a code pre ].freeze
   SKIPPED_ICON_ANCESTORS = %w[ a action-text-attachment code pre ].freeze
   ALLOWED_CLASSES = %w[ contains-task-list markdown-body task-list-item ].freeze
-  LANGUAGE_CLASS_PATTERN = /\Alanguage-[a-zA-Z0-9_+.-]+\z/
+  LANGUAGE_CLASS_PATTERN = /\Alanguage-[a-zA-Z0-9_+#.-]+\z/
   BLOCK_TAGS = %w[ blockquote h1 h2 h3 h4 h5 h6 li ol p pre table tr ul ].freeze
   CELL_TAGS = %w[ td th ].freeze
   ICON_ALT_PATTERN = /\A:(?<name>[a-z0-9_]+):\z/

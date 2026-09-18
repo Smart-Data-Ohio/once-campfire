@@ -6,6 +6,7 @@ Smartfire began as a fork of Basecamp's Campfire, released under the MIT license
 
 ## Features
 
+- **Google Workspace sign-in.** Sign in with an approved work Google account, retain existing member accounts, or join automatically as a member. Email/password access remains available. See [Google sign-in](docs/google-sign-in.md).
 - **Rooms and threads.** Open rooms, closed rooms, and direct messages with channel threads, replies, @mentions, reactions, forwarding, editing, search, and file attachments with previews. See the [workspace and Markdown guide](docs/workspace-markdown.md).
 - **AI agents as participants.** Agents have their own identities, profiles, and memberships, with Bearer API tokens, room-scoped or workspace-wide capability grants, event delivery over polling and webhooks, and human approval for actions that need authority. See [AI agents](docs/agents.md).
 - **Work threads.** Turn a thread into trackable work with a title, owner (human or agent), status, history, and links to pull requests, events, and Drive files, plus a workspace-wide work list. See [activity inbox and work threads](docs/activity-workspace.md).
@@ -17,7 +18,7 @@ Smartfire began as a fork of Basecamp's Campfire, released under the MIT license
 - **X cards.** X post links render rich cards with text, author, and media. See [X post cards](docs/x-posts.md).
 - **Markdown composer.** Compact Markdown composition with source-preserving editing, sanitized rendering, and autocomplete for mentions, icons, and emoji. See the [workspace and Markdown guide](docs/workspace-markdown.md).
 - **Events and Google Calendar.** Native events with RSVP and reminders, plus one-way publishing to each connected attendee's Google Calendar. See [native events](docs/events.md) and [Google Calendar](docs/google-calendar.md).
-- **Drive attachments.** Drive file links render preview chips resolved with each viewer's own credentials; members can also discover files from the composer and attach them to messages. See [Google Drive](docs/google-drive.md).
+- **Drive attachments and sharing.** Choose files in the composer, keep their current permissions or explicitly grant selected room members view access, and render previews with each viewer's own credentials. See [Google Drive](docs/google-drive.md).
 - **Icons and emoji.** Discord-style `:shortcodes:` for brand icons and emoji in messages and reactions, with administrator-uploaded workspace icons. See [brand icons and emoji shortcodes](docs/icons.md).
 
 See [ROADMAP.md](ROADMAP.md) for direction and sequencing, and the [agent boards design](docs/design/agent-boards.md) for where boards are headed.
@@ -43,7 +44,10 @@ When you start Smartfire for the first time, you'll be guided through a wizard t
 - [Native events](docs/events.md) — scheduling, RSVP, reminders, and recurrence.
 - [GitHub pull request cards](docs/github.md) — PR cards, threads, subscriptions, and write actions.
 - [Google Calendar publishing](docs/google-calendar.md) — one-way event publishing setup and reconciliation.
-- [Google Drive link previews](docs/google-drive.md) — preview chips, file discovery, and attachments.
+- [Google Drive sharing](docs/google-drive.md) — preview chips, file discovery, attachments, and optional recipient access.
+- [Google sign-in](docs/google-sign-in.md) — Workspace domains, automatic onboarding, and email/password fallback.
+- [Google Workspace deployment setup](docs/google-workspace-setup.md) — shared OAuth, Calendar, Drive Picker, and host configuration checklist.
+- [Public privacy and terms pages](docs/public-policies.md) — self-hosted workspace disclosures and operator configuration.
 - [Huddle authorization boundary](docs/huddle-enforcement.md) — gateway checks, revocation, and verification requirements.
 - [Huddle audio and video quality](docs/huddle-quality.md) — applied media settings and how to check them.
 - [Huddles](docs/huddles.md) — local LiveKit operation and huddle behavior.

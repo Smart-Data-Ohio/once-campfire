@@ -1,6 +1,8 @@
 import { onNextEventLoopTick } from "helpers/timing_helpers"
+import { highlightCodeBlock } from "models/code_highlighter"
 
 const THREADING_TIME_WINDOW_MILLISECONDS = 5 * 60 * 1000 // 5 minutes
+const connectedCopyButtons = new WeakSet()
 
 export const ThreadStyle = {
   none: 0,
@@ -72,24 +74,20 @@ export default class MessageFormatter {
   #highlightCode(body) {
     body.querySelectorAll("pre").forEach(pre => {
       onNextEventLoopTick(() => {
-        this.#highlightCodeBlock(pre)
+        highlightCodeBlock(pre)
         this.#addCopyButton(pre)
       })
     })
   }
 
-  #highlightCodeBlock(pre) {
-    const code = pre.querySelector(":scope > code") || pre
-    if (!code.dataset.highlighted && this.#isPlainText(code)) window.hljs.highlightElement(code)
-  }
-
   #addCopyButton(pre) {
     if (!pre.closest(".markdown-body, .markdown-preview")) return
-    if (pre.querySelector(":scope > .markdown-code-copy")) return
+
+    const button = pre.querySelector(":scope > .markdown-code-copy") || document.createElement("button")
+    if (connectedCopyButtons.has(button)) return
 
     const code = pre.querySelector(":scope > code") || pre
     const sourceText = code.textContent
-    const button = document.createElement("button")
     button.type = "button"
     button.className = "markdown-code-copy btn btn--borderless txt-small"
     button.textContent = "Copy code"
@@ -110,11 +108,10 @@ export default class MessageFormatter {
       }
     })
 
+    // Turbo caches cloned DOM without event listeners; reconnect cached copy
+    // buttons without duplicating handlers on nodes that are still live.
+    connectedCopyButtons.add(button)
     pre.append(button)
-  }
-
-  #isPlainText(element) {
-    return Array.from(element.childNodes).every(node => node.nodeType === Node.TEXT_NODE)
   }
 
   #previousMessageIsRecent(message) {

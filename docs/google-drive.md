@@ -137,6 +137,96 @@ The JSON message shape and the agent delivery payload carry the set as:
 Never a name: bots receive no Drive credentials. The bot posting API does
 not accept attachments.
 
+## Sharing a file with chat members (enhanced picker)
+
+When browser sharing is configured (see [Setup](#setup-google-cloud-console)
+and the [Workspace setup runbook](google-workspace-setup.md)), the composer
+carries a single **Drive** button for every signed-in human member — no
+Calendar or metadata consent required — driven by the `drive-share`
+Stimulus controller. Choosing a file opens the official Google Picker; a
+review dialog then offers two explicit actions: **Attach only**, which pins
+the file id exactly like the legacy picker and changes nothing in Drive, or
+**Grant view access and attach**, which grants the checked chat recipients
+reader access before pinning. When sharing is not configured, the composer
+falls back to the legacy metadata picker above, unchanged.
+
+Authorization uses Google Identity Services with **only** the
+`https://www.googleapis.com/auth/drive.file` scope and
+`include_granted_scopes=false`: the app can touch only files the user opens
+or creates with it, never the whole Drive, and it never requests or uses
+the separate `drive.metadata.readonly` grant. The access token lives in JS
+memory alone.
+It is never written to the DOM, hidden fields, Turbo snapshots, storage,
+logs, or the server, and it is dropped on Turbo cache, navigation, and
+controller disconnect. The official GIS and Picker scripts load lazily,
+only after the member presses the Drive button. The server-side
+Calendar/metadata connection is separate and untouched: stored refresh and
+access tokens are never rendered into the browser.
+
+The browser calls Drive REST directly with the token in an `Authorization`
+header:
+
+- `files.get` reads `id,name,mimeType,capabilities(canShare)` with
+  `supportsAllDrives=true`. Folders and shortcuts can be attached but are
+  never offered for sharing, and a file without `canShare` keeps
+  attach-only with an explanation of the manual Drive steps.
+- `permissions.list` reads **all** pages before granting. Any direct,
+  non-deleted user permission — reader, commenter, writer, owner, or
+  organizer — already counts as sufficient, so existing writers and owners
+  are preserved and duplicate grants are never issued.
+- `permissions.create` grants missing recipients one at a time (Google does
+  not support concurrent permission writes on one file) with
+  `{ role: "reader", type: "user", emailAddress }`,
+  `sendNotificationEmail=false`, and `supportsAllDrives=true`. Reader
+  access only: never editor, public, domain, `anyone`, ownership transfer,
+  or revocation of existing access.
+
+The attached URL is always rebuilt from the validated file id
+(`https://drive.google.com/open?id=<id>`); Picker-supplied URLs are never
+trusted, and file metadata is inserted via `textContent`. One file per
+selection, repeatable to the usual 10 attachments, with the same
+dedup/limit/clear semantics as the legacy picker. Selection, cancellation,
+attach-only, and message forwarding never mutate permissions.
+
+The dialog lists eligible **current** chat recipients by name and email,
+unchecked by default with a select-all, served by two room-scoped JSON
+endpoints that both require an active membership (the same audience that
+can post):
+
+- `GET /rooms/:room_id/drive_recipients` previews the snapshot: active
+  human members other than the requester, with a usable email address,
+  across every login method and domain. Bots, agent-backed users,
+  deactivated/banned members, and blank or malformed emails are excluded.
+- `POST /rooms/:room_id/drive_recipients/validate` re-checks the explicit
+  user-id selection immediately before any Google call. Any stale,
+  removed, or unauthorized id rejects the whole selection with 422, and
+  the dialog refreshes its list. Approval covers both the member id and
+  the displayed email: if a canonical email changed since the review, or
+  membership changed while a retry or reconnect was pending, the dialog
+  returns to a fresh explicit review and nothing is auto-granted. Only
+  user ids from member records are accepted — never arbitrary emails —
+  bounded at 100, throttled at 60 requests per user per minute, and the
+  POST carries the usual CSRF token.
+  Responses are `no-store`; nonmembers learn nothing (404), and signed-out
+  JSON callers get 401.
+
+Grants are a deliberately approved snapshot, stated in the dialog: access
+grants happen immediately and remain even if the message is never sent or
+a recipient later leaves; future members are not added. Partial failures
+report per-recipient success and failure honestly, never claiming success
+when Google denied, and retry covers only the outstanding recipients after
+re-reading the permission list. If the Google session expires mid-grant, a
+fresh explicit Reconnect gesture continues the already-approved set; if an
+organization blocks cross-org sharing, the dialog explains the manual
+Drive steps. Thread composers grant against the parent room's membership.
+
+Local tests stub Google throughout and cannot establish live OAuth or
+organization-policy readiness. Rollout checks — one user per Workspace
+organization, a password-login member, cancelled consent, rejected
+cross-domain sharing, attach-only, explicit grant, preserved editor,
+partial failure, and mobile recovery — are listed in the
+[Workspace setup runbook](google-workspace-setup.md).
+
 ## The 404 policy
 
 The endpoint answers **404 with an empty body** in every denial case: the
@@ -164,3 +254,21 @@ On the same OAuth client used for Calendar (see
 
 When `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing, the profile
 shows nothing new and the endpoint answers 404.
+
+The enhanced share picker additionally needs, on the same project and OAuth
+web client (full checklist in the
+[Workspace setup runbook](google-workspace-setup.md)):
+
+1. Enable the **Google Picker API** (`picker.googleapis.com`).
+2. Register the app's **authorized JavaScript origin** (scheme + host, no
+   path) on the OAuth client.
+3. Create a browser API key restricted to the Picker API and the
+   app's HTTPS referrer (plus `https://docs.google.com/*`, which hosts the
+   Picker iframe), and configure the host with `GOOGLE_PICKER_API_KEY` and
+   `GOOGLE_CLOUD_PROJECT_NUMBER` alongside the existing `GOOGLE_CLIENT_ID`.
+   The key authorizes Picker loading only; Drive REST calls authenticate
+   with the OAuth Bearer token, not the key.
+
+All three values must be present for the enhanced button; otherwise the
+composer keeps the legacy metadata picker for members with Drive consent,
+and the recipients endpoints answer 404.

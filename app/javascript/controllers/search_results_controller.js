@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import MessageFormatter, { ThreadStyle } from "models/message_formatter"
 
 export default class extends Controller {
-  static targets = [ "message" ]
+  static targets = [ "message", "body" ]
   static classes = [ "me", "threaded", "mentioned", "formatted" ]
 
   #formatter
@@ -22,5 +22,9 @@ export default class extends Controller {
 
   messageTargetConnected(target) {
     this.#formatter.format(target, ThreadStyle.none)
+  }
+
+  bodyTargetConnected(target) {
+    this.#formatter.formatBody(target)
   }
 }

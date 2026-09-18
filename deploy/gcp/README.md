@@ -72,6 +72,29 @@ file, an environment variable or `argv`. The `finish` (or `logout`) phase runs
 `auths` entry. So the worst a compromised app VM can do with what it was handed is
 read images it can already run.
 
+## Optional Google configuration
+
+The deploy workflow's `configure_google` input defaults to `false`. When enabled,
+it validates the protected environment configuration before preflight (including
+in a dry run), then calls `configure-google.py` after successful cutover and before
+`finish` removes the read-only registry credential. This second ONCE update keeps
+the same pinned image and storage and merges the complete existing environment.
+It verifies all old runtime values and non-environment settings, with only the
+six declared Google/URL values allowed to change. Automatic image updates remain
+disabled. See [Google setup](../../docs/google-workspace-setup.md) for the secret
+and variable names; no domain or company defaults are built into the scripts.
+
+The configuration step takes the same release lock, saves private settings and
+diagnostics in a root-only `/var/backups/smartfire-google-config-<timestamp>/`
+directory, and emits only an allowlisted verification result. It does not modify
+the database directly. If it fails after cutover, the workflow reports failure,
+does not restore the database or automatically downgrade the healthy image, and
+leaves the feed timer paused for an operator; the always-run cleanup still removes
+registry credentials. Inspect the protected diagnostics before retrying.
+
+Run its local checks with
+`python3 -m unittest discover -s deploy/gcp -p 'test_google_configuration.py'`.
+
 ## Repository tags are immutable
 
 Artifact Registry rejects moving an existing tag. `publish-gcp-image.yml` therefore

@@ -371,6 +371,249 @@ a.drive-attachment:hover {
   font-size: 0.9375rem;
 }
 
+/* Enhanced share picker: the inline panel anchors status and Continue /
+   retry actions to the Drive button like the legacy picker popover. */
+.drive-share {
+  position: relative;
+  align-self: flex-end;
+}
+
+.drive-share__panel {
+  position: absolute;
+  inset-block-end: calc(100% + 0.5rem);
+  inset-inline-start: 0;
+  z-index: 3;
+  inline-size: min(22rem, calc(100vw - 2rem));
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border-darker);
+  border-radius: 0.7rem;
+  box-shadow: 0 0.4rem 1.2rem color-mix(in oklch, var(--color-text) 12%, transparent);
+  padding: 0.75rem;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.drive-share__status {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.drive-share__action {
+  margin-block-start: 0.6rem;
+}
+
+/* Grant review dialog. Native <dialog> in the top layer, so it escapes
+   composer and thread-panel transforms; mobile gets near-full width. */
+.drive-share-dialog {
+  inline-size: min(30rem, calc(100vw - 2rem));
+  max-block-size: min(85vh, 40rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border-darker);
+  border-radius: 0.8rem;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 0.8rem 2.4rem color-mix(in oklch, var(--color-text) 20%, transparent);
+}
+
+.drive-share-dialog::backdrop {
+  background: color-mix(in oklch, var(--color-text) 35%, transparent);
+}
+
+.drive-share-dialog__title {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+.drive-share-dialog__file {
+  margin: 0.35rem 0 0;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.drive-share-dialog__status {
+  margin: 0.6rem 0 0;
+  font-size: 0.875rem;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.drive-share-dialog__body {
+  margin-block-start: 0.75rem;
+}
+
+.drive-share-dialog__explainer {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.drive-share-dialog__notice {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.drive-share-dialog__recipients {
+  margin-block-start: 0.75rem;
+}
+
+.drive-share-dialog__select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-block-size: 2.75rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.drive-share-dialog__list {
+  display: flex;
+  flex-direction: column;
+  max-block-size: 16rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5rem;
+}
+
+.drive-share-dialog__recipient {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-block-size: 2.75rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+
+  & + & {
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  &:hover {
+    background-color: var(--color-border);
+  }
+}
+
+.drive-share-dialog__recipient input[type="checkbox"],
+.drive-share-dialog__select-all input[type="checkbox"] {
+  flex: none;
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  /* The global reset strips native control rendering; without this
+     unchecked boxes are invisible. */
+  appearance: auto;
+  accent-color: var(--color-link);
+}
+
+.drive-share-dialog__recipient-text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  line-height: 1.3;
+}
+
+.drive-share-dialog__recipient-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.drive-share-dialog__recipient-email {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.drive-share-dialog__summary {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.drive-share-dialog__results {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.drive-share-dialog__result {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.drive-share-dialog__result-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.drive-share-dialog__result--granted .drive-share-dialog__result-marker,
+.drive-share-dialog__result--already .drive-share-dialog__result-marker,
+.drive-share-dialog__result--confirmed .drive-share-dialog__result-marker {
+  background-color: var(--color-positive, #1a7f37);
+  color: #fff;
+}
+
+.drive-share-dialog__completed {
+  margin-block-end: 0.75rem;
+}
+
+.drive-share-dialog__completed .drive-share-dialog__summary {
+  font-size: 0.875rem;
+}
+
+.drive-share-dialog__result--failed .drive-share-dialog__result-marker {
+  background-color: var(--color-negative, #b42318);
+  color: #fff;
+}
+
+.drive-share-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 1rem;
+}
+
+@media (max-width: 480px) {
+  .drive-share-dialog {
+    padding: 1rem;
+  }
+
+  .drive-share-dialog__footer .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drive-share-dialog {
+    box-shadow: none;
+  }
+}
+
 /* Standalone edit form (the in-room composer handles quick text edits). */
 .message-edit {
   display: flex;

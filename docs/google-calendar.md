@@ -12,6 +12,10 @@ shows "Added to your Google Calendar" while a copy exists for the viewer.
 
 ## Setup (Google Cloud Console)
 
+For a deployment using sign-in and Drive too, follow the combined
+[Google Workspace setup checklist](google-workspace-setup.md), including
+publishing status and Workspace administrator approval.
+
 1. Create (or reuse) a project and configure an **OAuth client** of type
    **Web application**.
 2. Add an authorized redirect URI: `<app root URL>/google/callback`
@@ -26,6 +30,14 @@ shows "Added to your Google Calendar" while a copy exists for the viewer.
    scope through the same connect flow.
 4. Set the client credentials on the app host:
    `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+5. Set `APP_URL` to the public application origin, for example
+   `https://smartfire.example.com`. Background jobs use it to generate
+   complete event and meeting-room links inside Google Calendar entries.
+   It must contain a scheme and host, with an optional port, and no path.
+
+These credentials can also support [Google sign-in](google-sign-in.md).
+Sign-in uses its own `/session/google/callback` redirect and identity-only
+permissions; signing in does not opt a member into Calendar publishing.
 
 When either variable is missing, the profile shows "Google Calendar is not
 configured for this workspace" and the connect routes answer 404.

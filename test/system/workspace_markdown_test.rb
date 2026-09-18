@@ -67,9 +67,17 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
     assert_field "Write a message", with: MARKDOWN
     fill_in_markdown "Write a message", with: MARKDOWN.sub("Design review", "Review complete")
     click_on "Send Message"
-    within_message(message) { assert_selector "h2", text: "Review complete" }
+    within_message(message) do
+      assert_selector "h2", text: "Review complete"
+      assert_highlighted_code
+    end
 
-    using_session("Kevin") { assert_selector ".message__body h2", text: "Review complete" }
+    using_session("Kevin") do
+      within_message(message) do
+        assert_selector "h2", text: "Review complete"
+        assert_highlighted_code
+      end
+    end
     join_room rooms(:designers)
     within_message(message) do
       reveal_message_actions
@@ -318,7 +326,13 @@ class WorkspaceMarkdownTest < ApplicationSystemTestCase
       assert_selector "table td", text: "Markdown"
       assert_selector "input[type='checkbox'][disabled]", count: 2, visible: true
       assert_selector "pre code", text: 'const message = "<script>literal code</script>";'
+      assert_highlighted_code
       assert_link "Project notes", href: "https://example.com/notes"
+    end
+
+    def assert_highlighted_code
+      assert_selector "pre code.language-javascript[data-highlighted='yes'] .code-token", text: "const"
+      assert_selector ".markdown-code-copy", count: 1
     end
 
     def emulate_theme(theme)

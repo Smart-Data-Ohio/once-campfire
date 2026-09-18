@@ -31,7 +31,15 @@
         <% end %>
       </fieldset>
     <% end %>
+
+    <%= render "google_sign_in" if Google::SignIn.configured? %>
   </div>
+
+  <nav class="txt-align-center txt-small margin-block-start" aria-label="About this workspace">
+    <%= link_to "About", about_path %> ·
+    <%= link_to "Privacy Policy", privacy_path %> ·
+    <%= link_to "Terms of Service", terms_path %>
+  </nav>
 
   <%= render "accounts/help_contact" %>
 </section>

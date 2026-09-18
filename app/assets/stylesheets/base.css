@@ -73,6 +73,12 @@ turbo-cable-stream-source {
   display: contents;
 }
 
+/* Channel switches keep the current channel on screen until the next one
+   renders; hide Turbo's top progress bar while such a visit is in flight. */
+html[data-channel-navigation] .turbo-progress-bar {
+  display: none;
+}
+
 /* For settings */
 fieldset {
   border: 2px solid var(--fieldset-border-color, var(--color-border));

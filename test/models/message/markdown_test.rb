@@ -37,6 +37,19 @@ class Message::MarkdownTest < ActiveSupport::TestCase
     assert_match %r{<table>.*<th>Status</th>.*<td>Ready</td>.*</table>}m, html
   end
 
+  test "preserves full language labels and literal code through storage and presentation" do
+    %w[ c# c++ tsx text unknown-language ].each do |language|
+      source = "```#{language}\n<img onerror=\"alert(1)\"> @[David] :smile:\n```"
+      message = create_markdown_message(source)
+      html = Message::Markdown.sanitize_presentation(message.reload.body.body.to_html)
+      fragment = Nokogiri::HTML5.fragment(html)
+
+      assert_equal "language-#{language}", fragment.at_css("pre code")["class"]
+      assert_equal "<img onerror=\"alert(1)\"> @[David] :smile:\n", fragment.at_css("pre code").text
+      assert_empty fragment.css("img, script, [onerror], action-text-attachment")
+    end
+  end
+
   test "removes raw HTML unsafe links handlers and images while preserving code literally" do
     source = <<~MARKDOWN
       <script>alert("raw")</script>

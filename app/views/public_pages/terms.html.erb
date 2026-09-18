@@ -1,0 +1,100 @@
+<% @page_description = "Smartfire terms of service: the open-source software license and the rules for using a self-hosted workspace." %>
+
+<h1>Terms of Service</h1>
+<p class="public-updated">Last updated: <%= PublicPolicy.effective_date %></p>
+<p class="public-lede">
+  These terms cover two different things: the Smartfire software, which is
+  open source, and the workspace you use, which is run by its own hosting
+  organization. Nothing here limits rights the law does not allow to be limited.
+</p>
+
+<h2>1. The software</h2>
+<p>
+  Smartfire is open-source software provided under the MIT license included with
+  it (the <code>MIT-LICENSE</code> file in the repository). You may use, copy,
+  modify, and share it under that license's conditions, which include keeping
+  the copyright and permission notices. The license gives no warranties and
+  limits the authors' liability; read the full file for the exact terms.
+</p>
+<p>
+  These terms do not change the MIT license, and using a workspace gives you no
+  ownership of the software itself.
+</p>
+
+<h2>2. The workspace</h2>
+<p>
+  Your workspace runs on a server controlled by its hosting organization, whose
+  own workplace policies also apply to you. Access is by invitation or account
+  from that organization: use only workspaces you are authorized to use, keep
+  your sign-in details to yourself, and tell your workspace administrator if you
+  suspect unauthorized access.
+</p>
+
+<h2>3. Your responsibilities</h2>
+<ul>
+  <li>
+    Share only content you have the right to share, including the right to store
+    it on the workspace's server and show it to the room's members.
+  </li>
+  <li>
+    Remember that messages, including direct messages, and uploaded files are
+    stored on the workspace's server, may remain in backups, and can be
+    accessible to the people operating it. Do not treat workspace chat as
+    private from the hosting organization.
+  </li>
+  <li>
+    When you connect Google Calendar or share a Drive file, you grant the Google
+    permissions shown in Google's own consent screens. Those grants are yours:
+    understand who receives access before you confirm.
+  </li>
+  <li>
+    Do not misuse the service: no unauthorized access attempts, no interference
+    with other members' use, no unlawful content, and no use of integrations to
+    harm other systems.
+  </li>
+</ul>
+
+<h2>4. Content rights</h2>
+<p>
+  You and your organization keep your rights in content you post; nothing here
+  assigns them to the people who build Smartfire. By posting, you allow the
+  hosting organization to store, back up, and display that content to workspace
+  members as needed to run the workspace. Employment or contractor agreements
+  with your organization may separately govern who owns work-related content.
+</p>
+
+<h2>5. Third-party services</h2>
+<p>
+  Workspaces can connect to services run by others, such as Google (sign-in,
+  Calendar, Drive), GitHub, and the workspace's real-time media provider. Your
+  use of those services follows their own terms, including Google's terms for
+  Google services. Integrations are provided as available and may change or stop
+  working; neither the software's authors nor, unless they separately promise
+  it, the hosting organization guarantees any integration or service level.
+</p>
+
+<h2>6. Access changes and removal</h2>
+<p>
+  The hosting organization may suspend or remove access, and may remove content
+  or accounts, to operate its workspace or meet its obligations. Removed content
+  may persist in backups or where the organization must keep it for business or
+  legal reasons. See the <%= link_to "privacy policy", privacy_path %> for how
+  data retention works.
+</p>
+
+<h2>7. Contact</h2>
+<% operator_name = PublicPolicy.operator_name %>
+<% contact_email = PublicPolicy.contact_email %>
+<% if operator_name %>
+  <p>This workspace is operated by <strong><%= operator_name %></strong>.</p>
+<% else %>
+  <p>
+    This workspace is operated by the organization hosting it. Your workspace
+    administrator can tell you who that is.
+  </p>
+<% end %>
+<% if contact_email %>
+  <p>Questions about these terms: <%= mail_to contact_email %></p>
+<% else %>
+  <p>Direct questions about these terms to your workspace administrator.</p>
+<% end %>

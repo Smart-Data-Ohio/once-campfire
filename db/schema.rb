@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.2].define(version: 2026_09_18_150000) do
+ActiveRecord::Schema[8.2].define(version: 2026_09_18_160000) do
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "custom_styles"
@@ -369,6 +369,17 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_150000) do
     t.index ["user_id"], name: "index_google_accounts_on_user_id", unique: true
   end
 
+  create_table "google_identities", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "domain"
+    t.string "email", null: false
+    t.string "subject", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["subject"], name: "index_google_identities_on_subject", unique: true
+    t.index ["user_id"], name: "index_google_identities_on_user_id", unique: true
+  end
+
   create_table "huddle_cleanups", force: :cascade do |t|
     t.integer "attempts", default: 0, null: false
     t.datetime "completed_at"
@@ -667,6 +678,7 @@ ActiveRecord::Schema[8.2].define(version: 2026_09_18_150000) do
   add_foreign_key "github_repository_subscriptions", "rooms", on_delete: :cascade
   add_foreign_key "github_repository_subscriptions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "google_accounts", "users"
+  add_foreign_key "google_identities", "users"
   add_foreign_key "messages", "channel_threads", column: "thread_id", on_delete: :cascade
   add_foreign_key "messages", "messages", column: "forwarded_from_message_id", on_delete: :nullify
   add_foreign_key "messages", "messages", column: "reply_to_message_id", on_delete: :nullify

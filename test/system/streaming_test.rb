@@ -103,7 +103,7 @@ class StreamingTest < ApplicationSystemTestCase
 
     assert_predicate Stream.find_by(room_id: room.id), :live?
     assert_selector ".stage-live__badge", text: "Live: David", wait: BROADCAST_WAIT
-    assert_selector "#voice_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
+    assert_selector "#stage_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
     assert_selector ".stage-panel__note--live", text: "Live: David"
     assert_selector "button", text: "Stop stream"
   end
@@ -315,7 +315,7 @@ class StreamingTest < ApplicationSystemTestCase
 
     using_session("Viewer") do
       assert_selector ".stage-live__badge", text: "Live: David", wait: BROADCAST_WAIT
-      assert_selector "#voice_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
+      assert_selector "#stage_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
 
       find("button[aria-label='Show stage']").click
       assert_selector ".stage-panel__note--live", text: "Live: David", wait: BROADCAST_WAIT
@@ -326,7 +326,7 @@ class StreamingTest < ApplicationSystemTestCase
 
     using_session("Viewer") do
       assert_no_selector ".stage-live__badge", wait: BROADCAST_WAIT
-      assert_no_selector "#voice_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
+      assert_no_selector "#stage_rooms .stage-room .stage-live-dot__pip", wait: BROADCAST_WAIT
     end
 
     assert_not_predicate Stream.find_by(room_id: room.id), :live?

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#15171c" media="(prefers-color-scheme: dark)">
+    <meta name="description" content="<%= @page_description || "About Smartfire, the self-hosted team chat workspace, and its privacy policy and terms of service." %>">
+    <%= page_title_tag %>
+    <%= stylesheet_link_tag "public", media: "all" %>
+  </head>
+
+  <body class="public">
+    <a class="public-skip" href="#main-content">Skip to main content</a>
+
+    <header class="public-header">
+      <div class="public-wrap public-header__inner">
+        <%= link_to "Smartfire", about_path, class: "public-brand" %>
+        <nav class="public-nav" aria-label="Public pages">
+          <%= link_to "About", about_path %>
+          <%= link_to "Privacy", privacy_path %>
+          <%= link_to "Terms", terms_path %>
+          <%= link_to "Sign in", new_session_path, class: "public-nav__signin" %>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content" class="public-wrap public-main">
+      <%= yield %>
+    </main>
+
+    <footer class="public-footer">
+      <div class="public-wrap">
+        <nav class="public-nav public-nav--footer" aria-label="Footer">
+          <%= link_to "About", about_path %>
+          <%= link_to "Privacy Policy", privacy_path %>
+          <%= link_to "Terms of Service", terms_path %>
+          <%= link_to "Sign in", new_session_path %>
+        </nav>
+        <p class="public-footer__note">
+          Smartfire is self-hosted software. Each workspace is run by its own hosting organization,
+          which controls that workspace's data.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

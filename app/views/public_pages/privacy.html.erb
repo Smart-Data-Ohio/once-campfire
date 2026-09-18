@@ -1,0 +1,202 @@
+<% @page_description = "Smartfire privacy policy: what each self-hosted workspace stores, who can see it, and how Google sign-in, Calendar, and Drive data is handled." %>
+
+<h1>Privacy Policy</h1>
+<p class="public-updated">Last updated: <%= PublicPolicy.effective_date %></p>
+<p class="public-lede">
+  Smartfire is self-hosted software. This policy describes how the workspace you
+  use handles your data. The organization hosting your workspace controls that
+  data; the people who build Smartfire do not receive your workspace's content
+  simply because you use the software.
+</p>
+
+<div class="public-callout">
+  <p>
+    <strong>Contractors and guests, please note:</strong> everything you post in
+    this workspace, including direct messages, is stored on the workspace's
+    server, may remain in its backups, and can be accessible to the people who
+    operate that server. It does not disappear automatically when you leave.
+    Room permissions limit what ordinary members can see, but they are not
+    end-to-end encryption and are not a privacy guarantee against the hosting
+    organization.
+  </p>
+</div>
+
+<h2>Data this workspace stores</h2>
+<ul>
+  <li>
+    <strong>Account and profile:</strong> your name, email address, avatar, role,
+    and room memberships. Password sign-in stores a password verifier, never your
+    plain password.
+  </li>
+  <li>
+    <strong>Workspace content:</strong> messages in rooms, threads, and direct
+    messages, reactions, and files you upload, which are stored on the
+    workspace's server. Content you post in a room is visible to that room's
+    members; direct messages are visible to their participants.
+  </li>
+  <li>
+    <strong>Sign-in and device data:</strong> a session cookie that keeps you
+    signed in, interface preferences kept in your browser, and, where you enable
+    them, installed-app (PWA) data and push-notification subscriptions.
+  </li>
+  <li>
+    <strong>Connection and security records:</strong> IP addresses, browser and
+    device information, and operational logs used to run the service, investigate
+    abuse, and keep accounts secure.
+  </li>
+</ul>
+
+<h2>Who can see workspace content</h2>
+<ul>
+  <li><strong>Room members</strong> can see content posted in rooms they belong to.</li>
+  <li>
+    <strong>Workspace administrators</strong> manage accounts and workspace
+    settings. That role alone does not let them open private rooms or direct
+    messages they do not belong to through Smartfire's interface.
+  </li>
+  <li>
+    <strong>People with access to the server, database, or backups</strong> can
+    access stored workspace data, including direct messages and uploaded files.
+    This infrastructure access is separate from room membership and the
+    application's administrator role.
+  </li>
+  <li>
+    <strong>Configured bots, agents, and webhooks</strong> can receive messages and
+    attachment links in rooms they belong to, limited by their capability grants.
+  </li>
+</ul>
+<p>
+  The public pages describing Smartfire (About, Privacy, Terms) set no tracking
+  cookies and load no analytics.
+</p>
+
+<h2>Optional integrations</h2>
+<ul>
+  <li>
+    <strong>GitHub:</strong> where enabled, pasting a pull-request link shows a
+    live card fetched from GitHub; members who link their own GitHub account can
+    act on pull requests as themselves. Room subscriptions can post repository
+    events into rooms.
+  </li>
+  <li>
+    <strong>Huddles:</strong> voice and video calls connect through the real-time
+    media server configured for the workspace. Call preferences, such as device
+    choices, are kept in your browser.
+  </li>
+  <li>
+    <strong>Error diagnostics:</strong> the workspace operator may configure error
+    reporting (Sentry) for its own deployment. When configured, crash reports go
+    to the operator's error-reporting account. Reports can include selected
+    record fields, including message text when a message cannot be displayed,
+    as well as error and request details. Default personal data collection is
+    left off, but that does not exclude these diagnostic fields.
+  </li>
+</ul>
+<p>
+  Hosting, backup, and media providers depend on the organization running your
+  workspace; this policy makes no promise about specific vendors or regions.
+</p>
+
+<h2>Signing in with Google</h2>
+<p>
+  Where the workspace enables Google sign-in, Google verifies your identity and
+  Smartfire receives your stable Google account identifier, your verified email
+  address and Workspace domain, and your name for setting up your profile. The
+  request uses only the <code>openid email profile</code> scopes. No Google access
+  tokens or refresh tokens from sign-in are kept. Google sign-in never connects
+  your calendar or your Drive files.
+</p>
+
+<h2>Google Calendar (optional)</h2>
+<p>
+  Connecting Google Calendar from your profile is opt-in. Smartfire keeps your
+  encrypted access and refresh tokens, your connection email address, and the
+  granted scopes on the workspace server, and writes private copies of Smartfire
+  events you are Going to or Maybe attending onto your primary Google Calendar,
+  including the title, description, time, and meeting links. Publishing is one
+  way: Smartfire never reads your existing calendar contents, and changes you
+  make in Google do not sync back.
+</p>
+<p>
+  Disconnecting removes the connection and its local entries from the workspace
+  server and attempts to remove the calendar copies it created, though some
+  remote copies may remain for you to delete. Your Google sign-in link is
+  separate and stays in place. You can also revoke access any time from your
+  <%= link_to "Google Account connections page", "https://myaccount.google.com/connections", target: "_blank", rel: "noopener" %>;
+  revoking stops future access but does not delete events already created, file
+  grants already made, messages already posted, or your sign-in identity.
+</p>
+
+<h2>Google Drive (optional)</h2>
+<p>
+  Where enabled, pasting a Drive link can show a preview chip (file name, type,
+  owner display name, modified time, and link) resolved at view time with the
+  <em>viewer's own</em> Google credentials; people who cannot open the file see
+  only the plain link. Preview metadata is cached briefly (about five minutes)
+  per viewer and never shared across members. Attaching a Drive file to a
+  message stores only the file's ID on the workspace server, never its name or
+  contents.
+</p>
+<p>
+  The file-sharing picker works entirely in your browser with per-file consent:
+  it uses a short-lived token kept only in browser memory, never the tokens
+  stored on the server for Calendar. It reads the selected file's details,
+  whether you may share it, and the existing permission list, then grants reader
+  access only to the current room members you explicitly choose, keeps any
+  stronger access they already have, and sends no Google sharing notification
+  emails. Grants apply immediately and stay in place even if you never send the
+  message or a recipient later leaves; later members are not added
+  automatically.
+</p>
+<p>
+  These Drive features never download or store your file contents; files you
+  upload directly to Smartfire are a separate feature stored on the workspace
+  server. Google's own policies apply to Google's services.
+</p>
+
+<h2>How Google user data is protected</h2>
+<p>
+  Data obtained through Google's sign-in, Calendar, and Drive scopes is used
+  only to provide the visible features described above, to keep the service
+  secure, and as the law requires. It is not sold, not used for advertising, not
+  used to judge credit or lending applications, and not used to train
+  general-purpose AI models. People may read Google user data only with your
+  affirmative agreement to view specific data, when necessary for security or
+  legal compliance, or for internal operations using aggregated, anonymized
+  data as Google's Limited Use requirements permit. Infrastructure access does
+  not authorize additional uses of Google user data. Drive attachments are
+  shared with configured room bots and agents only as file IDs and links under
+  their existing room access, never as Google credentials or file contents.
+  Smartfire follows Google's
+  <%= link_to "API Services User Data Policy, including its Limited Use requirements", "https://developers.google.com/terms/api-services-user-data-policy", target: "_blank", rel: "noopener" %>.
+</p>
+
+<h2>Retention and deletion</h2>
+<p>
+  The workspace keeps messages, uploads, and account data until they are
+  removed. The hosting organization decides retention and backup practices for
+  its workspace, so copies may persist in backups after visible content is
+  deleted, and there is no promise of instant or complete deletion everywhere.
+  Leaving the workspace or having your account deactivated does not
+  automatically delete your messages, uploads, or backup copies.
+  To ask about access, correction, or deletion of your data, contact the
+  organization hosting your workspace, which handles such requests subject to
+  its legal and business obligations.
+</p>
+
+<h2>Contact</h2>
+<% operator_name = PublicPolicy.operator_name %>
+<% contact_email = PublicPolicy.contact_email %>
+<% if operator_name %>
+  <p>This workspace is operated by <strong><%= operator_name %></strong>.</p>
+<% else %>
+  <p>
+    This workspace is operated by the organization hosting it. Your workspace
+    administrator can tell you who that is.
+  </p>
+<% end %>
+<% if contact_email %>
+  <p>Privacy questions for this workspace: <%= mail_to contact_email %></p>
+<% else %>
+  <p>Direct privacy questions to your workspace administrator.</p>
+<% end %>

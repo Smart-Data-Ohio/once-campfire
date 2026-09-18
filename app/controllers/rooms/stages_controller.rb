@@ -112,7 +112,7 @@ class Rooms::StagesController < RoomsController
 
     def broadcast_create_room(room)
       each_user_and_html_for(room, "users/sidebars/rooms/stage") do |user, html|
-        broadcast_prepend_to user, :rooms, target: :voice_rooms, html: html
+        broadcast_prepend_to user, :rooms, target: :stage_rooms, html: html
       end
     end
 

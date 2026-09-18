@@ -41,8 +41,9 @@ check and any microphone acquisition and connects directly, while the token
 remains the authority for publishing after connect. Voice and DM joins pass
 no hint and behave as before.
 
-Stage rooms list under the existing **Voice** section in the sidebar with a
-stage glyph. They never create invitations, ringing, or missed-call items.
+Stage rooms list in their own **Stage** section in the sidebar, immediately
+after **Voice**, with a stage glyph and a separate **New stage channel** button.
+They never create invitations, ringing, or missed-call items.
 
 ## Enforcement
 

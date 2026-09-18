@@ -51,7 +51,7 @@ class Rooms::InvolvementsControllerTest < ActionDispatch::IntegrationTest
     assert_match "voice-room", streams.first.to_html
   end
 
-  test "becoming visible again prepends a stage room as a stage row" do
+  test "becoming visible again prepends a stage room into the stage section" do
     room = Rooms::Stage.create_for({ name: "Town hall", creator: users(:david) }, users: [ users(:david) ])
     membership = room.memberships.find_by!(user: users(:david))
     membership.update!(involvement: "invisible")
@@ -62,7 +62,7 @@ class Rooms::InvolvementsControllerTest < ActionDispatch::IntegrationTest
     streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
     assert_equal 1, streams.count
     assert_equal "prepend", streams.first["action"]
-    assert_equal "voice_rooms", streams.first["target"]
+    assert_equal "stage_rooms", streams.first["target"]
     assert_match "Town hall", streams.first.to_html
     assert_match "stage-room", streams.first.to_html
   end

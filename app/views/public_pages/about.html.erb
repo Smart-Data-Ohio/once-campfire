@@ -1,0 +1,49 @@
+<% @page_description = "What Smartfire is: self-hosted, open-source team chat run by the organization hosting each workspace." %>
+
+<h1>About Smartfire</h1>
+<p class="public-lede">
+  Smartfire is self-hosted, open-source team chat. Each workspace runs on its own
+  server, operated by the organization that set it up, and that organization
+  controls its workspace's data.
+</p>
+
+<h2>What you can do here</h2>
+<ul>
+  <li>Talk in rooms organized by topic or team, with threads for side conversations.</li>
+  <li>Share files, both uploads stored on the workspace server and Google Drive links.</li>
+  <li>Plan with room events, and optionally publish your Going and Maybe RSVPs to your own Google Calendar.</li>
+  <li>Meet over voice and video huddles without leaving the room.</li>
+  <li>Connect optional integrations your workspace enables, such as GitHub pull-request cards, bots, and agents.</li>
+</ul>
+
+<h2>Signing in with Google</h2>
+<p>
+  Where the workspace enables it, members can sign in with their Google Workspace
+  account. Google sign-in only verifies your identity: it does not connect your
+  calendar or your Drive files. Connecting Google Calendar or Drive previews is a
+  separate, optional choice you make later from your profile.
+</p>
+
+<h2>Your data stays with this workspace</h2>
+<p>
+  Messages you post, including direct messages, and files you upload are stored on
+  this workspace's server and may remain in its backups. People who operate that
+  server can access that data. Room membership still controls what ordinary
+  members can see. The
+  <%= link_to "privacy policy", privacy_path %> explains this in detail; the
+  <%= link_to "terms of service", terms_path %> covers the rules for using the workspace.
+</p>
+
+<% operator_name = PublicPolicy.operator_name %>
+<% contact_email = PublicPolicy.contact_email %>
+<% if operator_name || contact_email %>
+  <h2>Who runs this workspace</h2>
+  <% if operator_name %>
+    <p>This workspace is operated by <strong><%= operator_name %></strong>.</p>
+  <% end %>
+  <% if contact_email %>
+    <p>Contact: <%= mail_to contact_email %></p>
+  <% end %>
+<% end %>
+
+<p><%= link_to "Sign in to this workspace", new_session_path %></p>

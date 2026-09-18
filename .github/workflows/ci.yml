@@ -67,6 +67,9 @@ jobs:
         with:
           advanced-security: false
 
+      - name: Test Google deployment configuration
+        run: python3 -m unittest discover -s deploy/gcp -p 'test_google_configuration.py'
+
   test_gateway:
     name: Huddle authorization gateway
     runs-on: ubuntu-latest

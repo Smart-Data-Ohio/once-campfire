@@ -21,7 +21,7 @@ class Rooms::InvolvementsController < ApplicationController
         broadcast_remove_to @membership.user, :rooms, target: [ @room, :list ]
       when @membership.involvement_previously_was.inquiry.invisible?
         if @room.stage?
-          broadcast_prepend_to @membership.user, :rooms, target: :voice_rooms, partial: "users/sidebars/rooms/stage", locals: { room: @room }
+          broadcast_prepend_to @membership.user, :rooms, target: :stage_rooms, partial: "users/sidebars/rooms/stage", locals: { room: @room }
         elsif @room.voice?
           broadcast_prepend_to @membership.user, :rooms, target: :voice_rooms, partial: "users/sidebars/rooms/voice", locals: { room: @room }
         elsif @room.board?

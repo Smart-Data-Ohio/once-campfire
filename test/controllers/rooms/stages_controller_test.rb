@@ -49,13 +49,13 @@ class Rooms::StagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to room_url(Room.last)
   end
 
-  test "create prepends the stage row into the voice section" do
+  test "create prepends the stage row into the stage section" do
     post rooms_stages_url, params: { room: { name: "Town Hall" }, user_ids: [ users(:david).id ] }
 
     streams = capture_turbo_stream_broadcasts([ users(:david), :rooms ])
     assert_equal 1, streams.count
     assert_equal "prepend", streams.first["action"]
-    assert_equal "voice_rooms", streams.first["target"]
+    assert_equal "stage_rooms", streams.first["target"]
     assert_match "Town Hall", streams.first.to_html
     assert_match "stage-room", streams.first.to_html
   end

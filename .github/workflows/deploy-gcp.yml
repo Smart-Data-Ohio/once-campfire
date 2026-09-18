@@ -51,6 +51,11 @@ on:
         type: boolean
         required: false
         default: false
+      configure_google:
+        description: Apply the production Google OAuth and Picker settings after cutover
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -314,7 +319,16 @@ jobs:
             --zone "$GCP_ZONE" --tunnel-through-iap \
             deploy/gcp "${GCP_INSTANCE}:${REMOTE_DIR}"
           gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
-            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/campfire-release.sh\" /opt/campfire-deploy/campfire-release.sh; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+            --command "set -eu; sudo install -d -o root -g root -m 0755 /opt/campfire-deploy; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/campfire-release.sh\" /opt/campfire-deploy/campfire-release.sh; sudo install -o root -g root -m 0755 \"\$HOME/${REMOTE_DIR}/configure-google.py\" /opt/campfire-deploy/configure-google.py; sudo test -x /opt/campfire-deploy/campfire-release.sh"
+
+      - name: Validate optional Google configuration
+        if: inputs.configure_google
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+          GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
+          GOOGLE_SIGN_IN_DOMAINS: ${{ vars.GOOGLE_SIGN_IN_DOMAINS }}
+          GOOGLE_CLOUD_PROJECT_NUMBER: ${{ vars.GOOGLE_CLOUD_PROJECT_NUMBER }}
+        run: python3 deploy/gcp/google-configuration.py --validate
 
       - name: Prepare the host (swap)
         id: prepare_host
@@ -518,6 +532,27 @@ jobs:
             echo "::error::the application is HEALTHY on the new image but a read-only check failed (exit 20). It has been left running; no rollback was attempted."
           fi
           exit "$rc"
+
+      - name: Configure Google integrations on the deployed image
+        id: google_configuration
+        if: inputs.configure_google && steps.plan.outputs.dry_run != 'true'
+        timeout-minutes: 15
+        shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+          GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
+          GOOGLE_SIGN_IN_DOMAINS: ${{ vars.GOOGLE_SIGN_IN_DOMAINS }}
+          GOOGLE_CLOUD_PROJECT_NUMBER: ${{ vars.GOOGLE_CLOUD_PROJECT_NUMBER }}
+          EXPECTED_REVISION: ${{ steps.plan.outputs.sha }}
+          EXPECTED_IMAGE: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          # Secrets travel only through protected environment variables and SSH
+          # stdin. The VM still has the preflight's read-only pull credential;
+          # finish (or the always-run cleanup) removes it after this update.
+          python3 deploy/gcp/google-configuration.py \
+            | gcloud compute ssh "$GCP_INSTANCE" --zone "$GCP_ZONE" --tunnel-through-iap --quiet \
+                --command 'sudo python3 /opt/campfire-deploy/configure-google.py'
 
       # Runs on failure, cancellation and timeout alike: anything that leaves the
       # write freeze without a successful cutover needs the host dealt with.

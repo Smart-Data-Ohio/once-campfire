@@ -1,0 +1,3 @@
+# Authentication tests create identities explicitly. Include this table in
+# fixture cleanup for tests that exercise real cross-connection transactions.
+{}

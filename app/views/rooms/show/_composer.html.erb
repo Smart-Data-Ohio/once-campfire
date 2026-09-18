@@ -42,7 +42,19 @@
                 <span class="for-screen-reader">Attach a file</span>
               </label>
 
-              <% if Current.user&.google_account&.drive? %>
+              <% if drive_share_picker_available? %>
+                <div class="drive-share flex-item-no-shrink" data-controller="drive-share"
+                     data-drive-share-room-id-value="<%= room.id %>"
+                     data-drive-share-thread-id-value="<%= thread&.id %>">
+                  <button type="button" class="btn btn--borderless composer__drive-btn" title="Attach a Drive file"
+                          aria-haspopup="dialog" aria-expanded="false"
+                          data-action="drive-share#open" data-drive-share-target="button">
+                    Drive
+                  </button>
+                  <div class="drive-share__panel" role="dialog" aria-label="Share a Drive file" hidden
+                       data-drive-share-target="panel"></div>
+                </div>
+              <% elsif Current.user&.google_account&.drive? %>
                 <div class="drive-picker flex-item-no-shrink" data-controller="drive-picker">
                   <button type="button" class="btn btn--borderless composer__drive-btn" title="Insert a Drive file"
                           aria-haspopup="dialog" aria-expanded="false"

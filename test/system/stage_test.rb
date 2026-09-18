@@ -80,7 +80,7 @@ class StageTest < ApplicationSystemTestCase
     end
   end
 
-  test "stage rooms list under Voice with Join stage controls and a stage panel" do
+  test "stage rooms list in their own section with distinct creation controls and a stage panel" do
     room = create_stage_room(name: "Town Hall", members: [ users(:david), users(:jason) ])
     sign_in "jason@37signals.com"
     visit room_path(room)
@@ -88,8 +88,19 @@ class StageTest < ApplicationSystemTestCase
 
     assert_selector ".room-header__kind", text: /stage channel/i
     assert_selector ".huddle-launcher", text: "Join stage"
-    assert_selector "#voice_rooms .stage-room", text: "Town Hall"
-    assert_selector "#voice_rooms .stage-room .voice-stack:not(.voice-stack--live)"
+    assert_selector "#stage_rooms .stage-room", text: "Town Hall"
+    assert_selector "#stage_rooms .stage-room .voice-stack:not(.voice-stack--live)"
+    assert_no_selector "#voice_rooms .stage-room"
+    within ".sidebar-section--voice" do
+      assert_selector "h2", text: /\AVoice\z/i
+      assert_selector "a.sidebar-section__add", count: 1
+      assert_link "New voice channel", href: new_rooms_voice_path
+    end
+    within ".sidebar-section--stage" do
+      assert_selector "h2", text: /\AStage\z/i
+      assert_selector "a.sidebar-section__add", count: 1
+      assert_link "New stage channel", href: new_rooms_stage_path
+    end
     assert_no_selector "#shared_rooms .sidebar-item", text: "Town Hall"
     assert_selector ".room-header__actions .voice-stack"
 

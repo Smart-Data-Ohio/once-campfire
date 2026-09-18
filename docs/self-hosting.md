@@ -98,6 +98,32 @@ docker run --publish 80:80 --env DISABLE_SSL=true ...
 To enable error reporting to Sentry in production, supply your DSN in the `SENTRY_DSN` environment variable.
 To disable Sentry initialization entirely, set `SKIP_TELEMETRY=true`.
 
+#### Google sign-in (optional)
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a comma-separated
+`GOOGLE_SIGN_IN_DOMAINS` allowlist. Register
+`https://<your host>/session/google/callback` on the Google OAuth web client.
+There are no default domains; each installation configures its own allowlist.
+A missing or empty allowlist disables Google sign-in. Update the environment
+and restart the application to add or remove domains without changing code.
+Email/password login remains available
+regardless of this setting. See [Google sign-in](google-sign-in.md) for
+account linking, onboarding, and Google Cloud setup.
+
+Calendar and Drive use additional configuration. Follow the
+[Google Workspace deployment checklist](google-workspace-setup.md), including
+`APP_URL` for links created by background Calendar jobs and the restricted
+browser key for Drive Picker.
+
+#### Public privacy and terms pages
+
+`/about`, `/privacy`, and `/terms` are available without sign-in. Set
+`LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` to identify the organization
+hosting your workspace and its privacy contact. Review the texts against your
+actual retention, backup, and access practices before publishing them as your
+policies or submitting the app for Google verification. See
+[public policy configuration](public-policies.md).
+
 ### Example
 
 Putting it all together, here's a complete `docker run` invocation:
