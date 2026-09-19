@@ -9,15 +9,17 @@
       <p>Drive previews enabled</p>
     <% else %>
       <%= button_to "Enable Drive previews", google_connect_path, method: :post, class: "btn",
-            params: { features: [ "drive" ] } %>
+            params: { features: [ "drive" ] }, form: { data: { turbo: false } } %>
     <% end %>
     <%= button_to "Disconnect", google_connection_path, method: :delete, class: "btn btn--negative",
           form: { data: { turbo_confirm: "Disconnect Google Calendar? Your published event entries will be removed." } } %>
   <% elsif user.google_account %>
     <p>Google rejected the connection, reconnect</p>
-    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn" %>
+    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn",
+          form: { data: { turbo: false } } %>
   <% else %>
     <p>Publish events you are going or maybe to to your Google Calendar.</p>
-    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn" %>
+    <%= button_to "Connect Google Calendar", google_connect_path, method: :post, class: "btn",
+          form: { data: { turbo: false } } %>
   <% end %>
 </section>
