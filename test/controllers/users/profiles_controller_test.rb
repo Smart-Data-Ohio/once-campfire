@@ -41,6 +41,7 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
     get user_profile_url
 
     assert_includes response.body, "Connect Google Calendar"
+    assert_select "form[action=?][method=post][data-turbo=false]", google_connect_path, count: 1
   end
 
   test "profile shows the connected account with a disconnect button" do
@@ -59,6 +60,7 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes response.body, "Google rejected the connection, reconnect"
     assert_includes response.body, "Connect Google Calendar"
+    assert_select "form[action=?][method=post][data-turbo=false]", google_connect_path, count: 1
   end
 
   test "profile offers Drive previews for a connected account without the Drive scope" do
@@ -68,6 +70,9 @@ class Users::ProfilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes response.body, "Enable Drive previews"
     assert_not_includes response.body, "Drive previews enabled"
+    assert_select "form[action=?][method=post][data-turbo=false]", google_connect_path, count: 1 do
+      assert_select "input[name='features[]'][value=drive]", count: 1
+    end
   end
 
   test "profile shows Drive previews as enabled when the account has the Drive scope" do
